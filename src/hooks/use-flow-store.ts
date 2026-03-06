@@ -17,6 +17,7 @@ import type { NodeData } from "@/types/node-data";
 interface FlowState {
   flowId: string | null;
   flowName: string;
+  flowIsActive: boolean;
   nodes: Node<NodeData>[];
   edges: Edge[];
   selectedNodeId: string | null;
@@ -28,11 +29,19 @@ interface FlowActions {
   onEdgesChange: OnEdgesChange;
   onConnect: OnConnect;
   setSelectedNodeId: (id: string | null) => void;
-  setFlow: (flowId: string, name: string, nodes: Node<NodeData>[], edges: Edge[]) => void;
+  setFlow: (
+    flowId: string,
+    name: string,
+    nodes: Node<NodeData>[],
+    edges: Edge[],
+    isActive?: boolean
+  ) => void;
+  clearFlow: () => void;
   addNode: (node: Node<NodeData>) => void;
   updateNodeData: (nodeId: string, data: Partial<NodeData>) => void;
   deleteNode: (nodeId: string) => void;
   setFlowName: (name: string) => void;
+  setFlowActive: (isActive: boolean, markDirty?: boolean) => void;
   setClean: () => void;
 }
 
@@ -65,6 +74,7 @@ function normalizeLoadedNodes(nodes: Node<NodeData>[]): Node<NodeData>[] {
 export const useFlowStore = create<FlowState & FlowActions>((set, get) => ({
   flowId: null,
   flowName: "Novo Flow",
+  flowIsActive: false,
   nodes: [],
   edges: [],
   selectedNodeId: null,
@@ -93,12 +103,24 @@ export const useFlowStore = create<FlowState & FlowActions>((set, get) => ({
 
   setSelectedNodeId: (id) => set({ selectedNodeId: id }),
 
-  setFlow: (flowId, name, nodes, edges) =>
+  setFlow: (flowId, name, nodes, edges, isActive = false) =>
     set({
       flowId,
       flowName: name,
+      flowIsActive: isActive,
       nodes: normalizeLoadedNodes(nodes),
       edges,
+      isDirty: false,
+      selectedNodeId: null,
+    }),
+
+  clearFlow: () =>
+    set({
+      flowId: null,
+      flowName: "Novo Flow",
+      flowIsActive: false,
+      nodes: [],
+      edges: [],
       isDirty: false,
       selectedNodeId: null,
     }),
@@ -128,6 +150,12 @@ export const useFlowStore = create<FlowState & FlowActions>((set, get) => ({
     })),
 
   setFlowName: (name) => set({ flowName: name, isDirty: true }),
+
+  setFlowActive: (flowIsActive, markDirty = false) =>
+    set((state) => ({
+      flowIsActive,
+      isDirty: markDirty ? true : state.isDirty,
+    })),
 
   setClean: () => set({ isDirty: false }),
 }));

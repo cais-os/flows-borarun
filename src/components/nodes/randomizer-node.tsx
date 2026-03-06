@@ -25,18 +25,18 @@ export function RandomizerNode({ id, data, selected }: NodeProps) {
       selected={selected}
       sourceHandles={sourceHandles}
     >
-      <div className="space-y-1.5">
+      <div className="space-y-1">
         {nodeData.splits.map((split) => (
-          <div key={split.id} className="flex items-center gap-2">
+          <div key={split.id} className="flex items-center gap-1.5">
             <div
-              className="h-2 rounded-full"
+              className="h-1.5 rounded-full"
               style={{
                 width: `${split.percentage}%`,
                 backgroundColor: config.color,
-                minWidth: 8,
+                minWidth: 6,
               }}
             />
-            <span className="whitespace-nowrap font-medium">
+            <span className="whitespace-nowrap font-medium text-[10px]">
               {split.label}: {split.percentage}%
             </span>
           </div>

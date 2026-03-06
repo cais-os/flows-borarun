@@ -103,6 +103,9 @@ export function FlowCanvas() {
         onPaneClick={() => setSelectedNodeId(null)}
         nodeTypes={nodeTypes}
         fitView
+        fitViewOptions={{ padding: 0.28, maxZoom: 0.9 }}
+        minZoom={0.35}
+        maxZoom={1.3}
         deleteKeyCode={["Backspace", "Delete"]}
         className="bg-gray-50"
       >

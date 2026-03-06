@@ -50,7 +50,7 @@ export function SendMessageNode({ id, data, selected }: NodeProps) {
       selected={selected}
       sourceHandles={sourceHandles}
     >
-      <div className="flex items-center gap-1.5 mb-1">
+      <div className="mb-1 flex items-center gap-1">
         <span className="text-gray-500">Tipo:</span>
         <span className="font-medium">
           {messageLabels[nodeData.messageType]}
@@ -58,17 +58,17 @@ export function SendMessageNode({ id, data, selected }: NodeProps) {
       </div>
 
       {nodeData.messageType === "text" && nodeData.textContent && (
-        <p className="text-gray-700 line-clamp-3 whitespace-pre-wrap">
+        <p className="line-clamp-2 whitespace-pre-wrap text-gray-700">
           {nodeData.textContent}
         </p>
       )}
 
       {replyButtons.length > 0 && (
-        <div className="mt-2 space-y-1.5">
+        <div className="mt-1.5 space-y-1">
           {replyButtons.map((button) => (
             <div
               key={button.id}
-              className="rounded-md border border-[#8bb7f0] bg-[#ebf3ff] px-2 py-1 text-center text-[11px] font-medium text-[#3977d8]"
+              className="rounded border border-[#8bb7f0] bg-[#ebf3ff] px-1.5 py-0.5 text-center text-[10px] font-medium text-[#3977d8]"
             >
               {button.title}
             </div>
@@ -77,7 +77,7 @@ export function SendMessageNode({ id, data, selected }: NodeProps) {
       )}
 
       {nodeData.messageType === "template" && nodeData.templateName && (
-        <div className="px-2 py-0.5 bg-green-50 rounded text-green-700 truncate">
+        <div className="rounded bg-green-50 px-1.5 py-0.5 text-green-700 truncate">
           {nodeData.templateName}
         </div>
       )}
@@ -86,7 +86,7 @@ export function SendMessageNode({ id, data, selected }: NodeProps) {
         nodeData.messageType === "file" ||
         nodeData.messageType === "audio") &&
         nodeData.mediaUrl && (
-          <div className="px-2 py-0.5 bg-gray-50 rounded text-gray-600 truncate">
+          <div className="rounded bg-gray-50 px-1.5 py-0.5 text-gray-600 truncate">
             {nodeData.fileName || "Arquivo anexado"}
           </div>
         )}

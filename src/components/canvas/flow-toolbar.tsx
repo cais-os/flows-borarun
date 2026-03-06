@@ -1,76 +1,68 @@
 "use client";
 
-import { Save, Loader2, PenTool, MessageCircle } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { MessageCircle, PenTool } from "lucide-react";
 import { useFlowStore } from "@/hooks/use-flow-store";
 import { useSimulatorStore } from "@/hooks/use-simulator-store";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip";
 import type { ActiveTab } from "@/types/simulator";
+import { cn } from "@/lib/utils";
 
 interface FlowToolbarProps {
-  onSave?: () => void;
-  isSaving?: boolean;
+  onSelectTab?: (tab: ActiveTab) => void;
 }
 
-export function FlowToolbar({ onSave, isSaving }: FlowToolbarProps) {
-  const flowName = useFlowStore((s) => s.flowName);
-  const setFlowName = useFlowStore((s) => s.setFlowName);
+const navItems: { id: ActiveTab; label: string; icon: React.ReactNode }[] = [
+  { id: "flows", label: "Flows", icon: <PenTool size={20} /> },
+  { id: "conversations", label: "Conversas", icon: <MessageCircle size={20} /> },
+];
+
+export function FlowToolbar({ onSelectTab }: FlowToolbarProps) {
   const isDirty = useFlowStore((s) => s.isDirty);
   const activeTab = useSimulatorStore((s) => s.activeTab);
   const setActiveTab = useSimulatorStore((s) => s.setActiveTab);
 
-  const tabs: { id: ActiveTab; label: string; icon: React.ReactNode }[] = [
-    { id: "flows", label: "Flows", icon: <PenTool size={14} /> },
-    { id: "conversations", label: "Conversas", icon: <MessageCircle size={14} /> },
-  ];
+  const handleTabClick = (tab: ActiveTab) => {
+    if (onSelectTab) {
+      onSelectTab(tab);
+      return;
+    }
+
+    setActiveTab(tab);
+  };
 
   return (
-    <header className="h-12 border-b bg-white flex items-center justify-between px-4">
-      <div className="flex items-center gap-3">
-        <span className="text-sm text-gray-500">Flows</span>
-        <span className="text-gray-300">/</span>
-        <Input
-          value={flowName}
-          onChange={(e) => setFlowName(e.target.value)}
-          className="h-7 w-56 text-sm font-medium border-transparent hover:border-gray-300 focus:border-primary"
-        />
+    <aside className="flex w-16 shrink-0 flex-col items-center gap-3 border-r border-slate-200 bg-white/90 py-4 backdrop-blur">
+      <div className="flex size-10 items-center justify-center rounded-2xl bg-slate-900 text-sm font-semibold text-white shadow-sm">
+        BR
       </div>
 
-      <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-              activeTab === tab.id
-                ? "bg-white text-gray-900 shadow-sm"
-                : "text-gray-500 hover:text-gray-700"
-            }`}
-          >
-            {tab.icon}
-            {tab.label}
-          </button>
+      <div className="flex flex-col items-center gap-1 flex-1">
+        {navItems.map((item) => (
+          <Tooltip key={item.id}>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => handleTabClick(item.id)}
+                className={cn(
+                  "relative flex h-11 w-11 items-center justify-center rounded-2xl transition-colors",
+                  activeTab === item.id
+                    ? "bg-slate-900 text-white"
+                    : "text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                )}
+              >
+                {item.icon}
+                {item.id === "flows" && isDirty && (
+                  <span className="absolute right-2 top-2 size-2 rounded-full bg-amber-400" />
+                )}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">{item.label}</TooltipContent>
+          </Tooltip>
         ))}
       </div>
-
-      <div className="flex items-center gap-2">
-        {isDirty && (
-          <span className="text-xs text-gray-400">Alteracoes nao salvas</span>
-        )}
-        <Button
-          size="sm"
-          onClick={onSave}
-          disabled={isSaving || !isDirty}
-          className="gap-1.5"
-        >
-          {isSaving ? (
-            <Loader2 size={14} className="animate-spin" />
-          ) : (
-            <Save size={14} />
-          )}
-          Salvar
-        </Button>
-      </div>
-    </header>
+    </aside>
   );
 }

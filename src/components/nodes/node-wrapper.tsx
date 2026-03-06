@@ -32,23 +32,23 @@ export function NodeWrapper({
 
   return (
     <div
-      className={`relative min-w-[220px] max-w-[280px] rounded-lg bg-white shadow-md border-2 transition-shadow ${
-        selected ? "shadow-lg ring-2 ring-primary/30" : ""
+      className={`group relative min-w-[176px] max-w-[220px] rounded-md border bg-white shadow-sm transition-shadow ${
+        selected ? "shadow-md ring-2 ring-primary/20" : ""
       }`}
       style={{ borderLeftColor: color, borderLeftWidth: 4 }}
     >
       {showTargetHandle && (
         <Handle
           type="target"
-          position={Position.Top}
-          className="!w-3 !h-3 !bg-gray-400 !border-2 !border-white"
+          position={Position.Left}
+          className="!h-2.5 !w-2.5 !border-2 !border-white !bg-gray-400"
         />
       )}
 
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-gray-100">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-2 border-b border-gray-100 px-2.5 py-1.5">
+        <div className="flex min-w-0 items-center gap-1.5">
           <span style={{ color }}>{icon}</span>
-          <span className="text-sm font-medium text-gray-800 truncate">
+          <span className="truncate text-[13px] font-medium text-gray-800">
             {label}
           </span>
         </div>
@@ -57,33 +57,35 @@ export function NodeWrapper({
             e.stopPropagation();
             deleteNode(id);
           }}
-          className="opacity-0 group-hover:opacity-100 hover:opacity-100 focus:opacity-100 p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-opacity"
+          className="rounded p-0.5 text-gray-400 opacity-0 transition-opacity hover:bg-gray-100 hover:text-gray-600 group-hover:opacity-100 focus:opacity-100"
         >
-          <X size={14} />
+          <X size={12} />
         </button>
       </div>
 
-      <div className="px-3 py-2 text-xs text-gray-600">{children}</div>
+      <div className="px-2.5 py-1.5 text-[11px] leading-4 text-gray-600">
+        {children}
+      </div>
 
       {sourceHandles
         ? sourceHandles.map((handle, index) => (
             <Handle
               key={handle.id}
               type="source"
-              position={Position.Bottom}
+              position={Position.Right}
               id={handle.id}
-              className="!w-3 !h-3 !border-2 !border-white"
+              className="!h-2.5 !w-2.5 !border-2 !border-white"
               style={{
                 backgroundColor: color,
-                left: `${((index + 1) / (sourceHandles.length + 1)) * 100}%`,
+                top: `${((index + 1) / (sourceHandles.length + 1)) * 100}%`,
               }}
             />
           ))
         : showSourceHandle && (
             <Handle
               type="source"
-              position={Position.Bottom}
-              className="!w-3 !h-3 !border-2 !border-white"
+              position={Position.Right}
+              className="!h-2.5 !w-2.5 !border-2 !border-white"
               style={{ backgroundColor: color }}
             />
           )}

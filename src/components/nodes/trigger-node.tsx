@@ -32,14 +32,14 @@ export function TriggerNode({ id, data, selected }: NodeProps) {
       showTargetHandle={false}
       selected={selected}
     >
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1">
         <span className="text-gray-500">Tipo:</span>
         <span className="font-medium">
           {triggerLabels[nodeData.triggerType]}
         </span>
       </div>
       {nodeData.keyword && (
-        <div className="mt-1 px-2 py-0.5 bg-purple-50 rounded text-purple-700 truncate">
+        <div className="mt-1 rounded bg-purple-50 px-1.5 py-0.5 text-purple-700 truncate">
           &quot;{nodeData.keyword}&quot;
         </div>
       )}

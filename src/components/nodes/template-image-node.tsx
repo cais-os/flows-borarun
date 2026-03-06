@@ -20,17 +20,17 @@ export function TemplateImageNode({ id, data, selected }: NodeProps) {
       selected={selected}
     >
       {nodeData.headerImageUrl && (
-        <div className="mb-2 rounded overflow-hidden">
+        <div className="mb-1.5 overflow-hidden rounded">
           <img
             src={nodeData.headerImageUrl}
             alt="Header"
-            className="w-full h-16 object-cover"
+            className="h-12 w-full object-cover"
           />
         </div>
       )}
 
       {nodeData.templateName ? (
-        <div className="px-2 py-0.5 bg-blue-50 rounded text-blue-700 truncate">
+        <div className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-700 truncate">
           {nodeData.templateName}
         </div>
       ) : (
@@ -39,7 +39,7 @@ export function TemplateImageNode({ id, data, selected }: NodeProps) {
 
       {nodeData.bodyVariables &&
         Object.keys(nodeData.bodyVariables).length > 0 && (
-          <div className="mt-1 text-gray-500">
+          <div className="mt-1 text-[10px] text-gray-500">
             {Object.keys(nodeData.bodyVariables).length} variavel(is)
           </div>
         )}

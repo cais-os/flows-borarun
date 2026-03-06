@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import {
   getMetaConfig,
-  getMetaWebhookSummary,
+  sendMetaWhatsAppTextMessage,
   validateMetaWebhookSignature,
   validateMetaWebhookVerifyToken,
 } from "@/lib/meta";
+import { createServerClient } from "@/lib/supabase/server";
+import { findMatchingFlow, executeFlow } from "@/lib/flow-engine";
+import { generateCoachResponse } from "@/lib/ai-coach";
 
 type MetaWebhookChangeValue = {
   messaging_product?: string;
@@ -93,40 +96,166 @@ export async function POST(request: Request) {
 
   const payload = JSON.parse(rawBody) as MetaWebhookPayload;
 
+  const supabase = createServerClient();
+
   for (const entry of payload.entry || []) {
     for (const change of entry.changes || []) {
       const value = change.value;
       if (!value) continue;
 
       for (const message of value.messages || []) {
-        console.log("Meta WhatsApp inbound message", {
-          ...getMetaWebhookSummary(request.url),
-          object: payload.object,
-          field: change.field,
-          entryId: entry.id,
-          from: message.from,
-          type: message.type,
-          text: message.text?.body,
-          buttonReply: message.interactive?.button_reply,
-          listReply: message.interactive?.list_reply,
-          messageId: message.id,
-          phoneNumberId: value.metadata?.phone_number_id,
-          profileName: value.contacts?.[0]?.profile?.name,
+        const contactPhone = message.from || "";
+        const contactName =
+          value.contacts?.[0]?.profile?.name || contactPhone;
+        const phoneNumberId = value.metadata?.phone_number_id || null;
+
+        // Find or create conversation by contact phone
+        let conversationId: string;
+        let isNewContact = false;
+        const { data: existing } = await supabase
+          .from("conversations")
+          .select("id, status, ai_enabled, active_flow_id")
+          .eq("contact_phone", contactPhone)
+          .single();
+
+        let conversationStatus = existing?.status || "running";
+
+        if (existing) {
+          conversationId = existing.id;
+        } else {
+          isNewContact = true;
+          const { data: created } = await supabase
+            .from("conversations")
+            .insert({
+              contact_name: contactName,
+              contact_phone: contactPhone,
+              phone_number_id: phoneNumberId,
+              status: "running",
+            })
+            .select("id")
+            .single();
+          conversationId = created!.id;
+        }
+
+        // Extract message content
+        let content = "";
+        let type: string = message.type || "text";
+        if (type === "text") {
+          content = message.text?.body || "";
+        } else if (type === "interactive") {
+          const btnReply = message.interactive?.button_reply;
+          const listReply = message.interactive?.list_reply;
+          content = btnReply?.title || listReply?.title || "";
+          type = "text";
+        }
+
+        // Insert inbound message
+        await supabase.from("messages").insert({
+          conversation_id: conversationId,
+          content,
+          type,
+          sender: "contact",
+          wa_message_id: message.id || null,
+          metadata: {
+            phone_number_id: phoneNumberId,
+            original_type: message.type,
+            interactive: message.interactive,
+          },
         });
+
+        await supabase
+          .from("conversations")
+          .update({ updated_at: new Date().toISOString() })
+          .eq("id", conversationId);
+
+        console.log("Meta WhatsApp inbound message saved", {
+          conversationId,
+          from: contactPhone,
+          type: message.type,
+          content,
+        });
+
+        // --- ORCHESTRATION ---
+        // If conversation is taken over by human operator, do nothing
+        if (conversationStatus === "human") {
+          continue;
+        }
+
+        // If AI is already enabled, respond with AI coach
+        if (existing?.ai_enabled && conversationStatus === "ai") {
+          try {
+            const aiResponse = await generateCoachResponse(
+              supabase,
+              conversationId,
+              content
+            );
+            const result = await sendMetaWhatsAppTextMessage({
+              to: contactPhone,
+              body: aiResponse,
+            });
+            await supabase.from("messages").insert({
+              conversation_id: conversationId,
+              content: aiResponse,
+              type: "text",
+              sender: "bot",
+              wa_message_id: result.messageId,
+            });
+          } catch (error) {
+            console.error("AI coach error:", error);
+          }
+          continue;
+        }
+
+        // Try to match a flow trigger
+        const match = await findMatchingFlow(supabase, content, isNewContact);
+
+        if (match) {
+          // Execute the matched flow
+          console.log("Flow matched:", match.flow.name);
+          await executeFlow(
+            supabase,
+            conversationId,
+            contactPhone,
+            match.flow,
+            match.triggerNode
+          );
+          // After executeFlow, status is either 'paused' (waiting reply) or 'ai' (flow done)
+          continue;
+        }
+
+        // No flow matched → go straight to AI coach
+        await supabase
+          .from("conversations")
+          .update({ status: "ai", ai_enabled: true, updated_at: new Date().toISOString() })
+          .eq("id", conversationId);
+
+        try {
+          const aiResponse = await generateCoachResponse(
+            supabase,
+            conversationId,
+            content
+          );
+          const result = await sendMetaWhatsAppTextMessage({
+            to: contactPhone,
+            body: aiResponse,
+          });
+          await supabase.from("messages").insert({
+            conversation_id: conversationId,
+            content: aiResponse,
+            type: "text",
+            sender: "bot",
+            wa_message_id: result.messageId,
+          });
+        } catch (error) {
+          console.error("AI coach error:", error);
+        }
       }
 
       for (const status of value.statuses || []) {
         console.log("Meta WhatsApp status update", {
-          ...getMetaWebhookSummary(request.url),
-          object: payload.object,
-          field: change.field,
-          entryId: entry.id,
           messageId: status.id,
           status: status.status,
           recipientId: status.recipient_id,
-          timestamp: status.timestamp,
-          errors: status.errors,
-          phoneNumberId: value.metadata?.phone_number_id,
         });
       }
     }
