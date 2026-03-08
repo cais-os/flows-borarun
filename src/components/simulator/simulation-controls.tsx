@@ -24,6 +24,7 @@ export function SimulationControls() {
   const addConversation = useSimulatorStore((s) => s.addConversation);
   const addMessage = useSimulatorStore((s) => s.addMessage);
   const setCurrentNode = useSimulatorStore((s) => s.setCurrentNode);
+  const setPendingNodeIds = useSimulatorStore((s) => s.setPendingNodeIds);
   const updateConversationStatus = useSimulatorStore(
     (s) => s.updateConversationStatus
   );
@@ -48,6 +49,8 @@ export function SimulationControls() {
       messages: [],
       status: "running",
       currentNodeId: null,
+      pendingNodeIds: [],
+      flowVariables: {},
     };
 
     addConversation(conversation);
@@ -57,8 +60,9 @@ export function SimulationControls() {
     await runSimulation(nodes, edges, {
       onMessage: (msg) => addMessage(convId, msg),
       onNodeChange: (nodeId) => setCurrentNode(convId, nodeId),
-      onWaitForReply: (nodeId) => {
+      onPause: ({ nodeId, pendingNodeIds }) => {
         setCurrentNode(convId, nodeId);
+        setPendingNodeIds(convId, pendingNodeIds);
         updateConversationStatus(convId, "paused");
       },
       onComplete: () => {
@@ -72,6 +76,13 @@ export function SimulationControls() {
         if (!hasActive) setSimulationStatus("completed");
       },
       shouldStop: () => stopRef.current,
+      getFlowVariables: () => {
+        const store = useSimulatorStore.getState();
+        return (
+          store.conversations.find((conversation) => conversation.id === convId)
+            ?.flowVariables || {}
+        );
+      },
       isHumanMode: () => {
         const store = useSimulatorStore.getState();
         const conv = store.conversations.find((c) => c.id === convId);
@@ -85,6 +96,7 @@ export function SimulationControls() {
     addConversation,
     addMessage,
     setCurrentNode,
+    setPendingNodeIds,
     updateConversationStatus,
     setSimulationStatus,
   ]);

@@ -26,9 +26,15 @@ interface SimulatorActions {
     status: Conversation["status"]
   ) => void;
   setCurrentNode: (conversationId: string, nodeId: string | null) => void;
+  setPendingNodeIds: (conversationId: string, nodeIds: string[]) => void;
+  setFlowVariables: (
+    conversationId: string,
+    flowVariables: Record<string, string>
+  ) => void;
   takeOverConversation: (conversationId: string) => void;
   returnToBot: (conversationId: string) => void;
   sendHumanMessage: (conversationId: string, text: string) => void;
+  sendContactMessage: (conversationId: string, text: string) => void;
   resetSimulation: () => void;
 }
 
@@ -75,6 +81,20 @@ export const useSimulatorStore = create<SimulatorState & SimulatorActions>(
         ),
       })),
 
+    setPendingNodeIds: (conversationId, nodeIds) =>
+      set((s) => ({
+        conversations: s.conversations.map((c) =>
+          c.id === conversationId ? { ...c, pendingNodeIds: nodeIds } : c
+        ),
+      })),
+
+    setFlowVariables: (conversationId, flowVariables) =>
+      set((s) => ({
+        conversations: s.conversations.map((c) =>
+          c.id === conversationId ? { ...c, flowVariables } : c
+        ),
+      })),
+
     takeOverConversation: (conversationId) => {
       const { addMessage } = get();
       set((s) => ({
@@ -114,6 +134,17 @@ export const useSimulatorStore = create<SimulatorState & SimulatorActions>(
         content: text,
         type: "text",
         sender: "human",
+        timestamp: new Date(),
+      });
+    },
+
+    sendContactMessage: (conversationId, text) => {
+      const { addMessage } = get();
+      addMessage(conversationId, {
+        id: `contact-${Date.now()}`,
+        content: text,
+        type: "text",
+        sender: "contact",
         timestamp: new Date(),
       });
     },

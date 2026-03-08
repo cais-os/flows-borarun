@@ -9,6 +9,7 @@ import { useSimulatorStore } from "@/hooks/use-simulator-store";
 import {
   continueSimulation,
   findNextNodesForReplyButton,
+  resolveWaitForReplyInSimulation,
 } from "@/lib/simulation-engine";
 import type { WhatsAppReplyButton } from "@/types/node-data";
 import type { Conversation } from "@/types/simulator";
@@ -23,8 +24,11 @@ export function ChatPanel({ conversation }: ChatPanelProps) {
   const takeOver = useSimulatorStore((s) => s.takeOverConversation);
   const returnBot = useSimulatorStore((s) => s.returnToBot);
   const sendHuman = useSimulatorStore((s) => s.sendHumanMessage);
+  const sendContactMessage = useSimulatorStore((s) => s.sendContactMessage);
   const addMessage = useSimulatorStore((s) => s.addMessage);
   const setCurrentNode = useSimulatorStore((s) => s.setCurrentNode);
+  const setPendingNodeIds = useSimulatorStore((s) => s.setPendingNodeIds);
+  const setFlowVariables = useSimulatorStore((s) => s.setFlowVariables);
   const updateConversationStatus = useSimulatorStore(
     (s) => s.updateConversationStatus
   );
@@ -36,6 +40,11 @@ export function ChatPanel({ conversation }: ChatPanelProps) {
   const isHumanMode = conversation.status === "human";
   const isCompleted = conversation.status === "completed";
   const isAwaitingReply = conversation.status === "paused";
+  const currentNode = nodes.find((node) => node.id === conversation.currentNodeId);
+  const isWaitingForCapture =
+    isAwaitingReply && currentNode?.data.type === "waitForReply";
+  const isWaitingForButtons =
+    isAwaitingReply && currentNode?.data.type === "sendMessage";
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -58,14 +67,16 @@ export function ChatPanel({ conversation }: ChatPanelProps) {
       timestamp: new Date(),
     });
     updateConversationStatus(conversation.id, "running");
+    setPendingNodeIds(conversation.id, []);
 
     const nextNodes = findNextNodesForReplyButton(nodeId, button.id, edges, nodes);
 
     await continueSimulation(nextNodes, nodes, edges, {
       onMessage: (message) => addMessage(conversation.id, message),
       onNodeChange: (nextNodeId) => setCurrentNode(conversation.id, nextNodeId),
-      onWaitForReply: (waitingNodeId) => {
+      onPause: ({ nodeId: waitingNodeId, pendingNodeIds }) => {
         setCurrentNode(conversation.id, waitingNodeId);
+        setPendingNodeIds(conversation.id, pendingNodeIds);
         updateConversationStatus(conversation.id, "paused");
       },
       onComplete: () => {
@@ -85,6 +96,87 @@ export function ChatPanel({ conversation }: ChatPanelProps) {
           (item) => item.id === conversation.id
         );
         return currentConversation?.status === "human";
+      },
+      getFlowVariables: () => {
+        const store = useSimulatorStore.getState();
+        return (
+          store.conversations.find((item) => item.id === conversation.id)
+            ?.flowVariables || {}
+        );
+      },
+    });
+  };
+
+  const handleCapturedReplySend = async (text: string) => {
+    if (!conversation.currentNodeId || !isWaitingForCapture) return;
+
+    sendContactMessage(conversation.id, text);
+
+    const result = resolveWaitForReplyInSimulation({
+      currentNodeId: conversation.currentNodeId,
+      userAnswer: text,
+      pendingNodeIds: conversation.pendingNodeIds,
+      flowVariables: conversation.flowVariables,
+      nodes,
+      edges,
+    });
+
+    if (result.message) {
+      addMessage(conversation.id, result.message);
+    }
+
+    if (result.status === "waiting") {
+      return;
+    }
+
+    setFlowVariables(conversation.id, result.flowVariables);
+    setPendingNodeIds(conversation.id, []);
+    updateConversationStatus(conversation.id, "running");
+
+    if (result.nextNodes.length === 0) {
+      updateConversationStatus(conversation.id, "completed");
+      const store = useSimulatorStore.getState();
+      const hasActive = store.conversations.some(
+        (item) =>
+          item.id !== conversation.id &&
+          (item.status === "running" || item.status === "paused")
+      );
+      if (!hasActive) setSimulationStatus("completed");
+      return;
+    }
+
+    await continueSimulation(result.nextNodes, nodes, edges, {
+      onMessage: (message) => addMessage(conversation.id, message),
+      onNodeChange: (nextNodeId) => setCurrentNode(conversation.id, nextNodeId),
+      onPause: ({ nodeId: waitingNodeId, pendingNodeIds }) => {
+        setCurrentNode(conversation.id, waitingNodeId);
+        setPendingNodeIds(conversation.id, pendingNodeIds);
+        updateConversationStatus(conversation.id, "paused");
+      },
+      onComplete: () => {
+        updateConversationStatus(conversation.id, "completed");
+        const store = useSimulatorStore.getState();
+        const hasActive = store.conversations.some(
+          (item) =>
+            item.id !== conversation.id &&
+            (item.status === "running" || item.status === "paused")
+        );
+        if (!hasActive) setSimulationStatus("completed");
+      },
+      shouldStop: () => false,
+      isHumanMode: () => {
+        const store = useSimulatorStore.getState();
+        const currentConversation = store.conversations.find(
+          (item) => item.id === conversation.id
+        );
+        return currentConversation?.status === "human";
+      },
+      getFlowVariables: () => {
+        const store = useSimulatorStore.getState();
+        return (
+          store.conversations.find((item) => item.id === conversation.id)
+            ?.flowVariables || {}
+        );
       },
     });
   };
@@ -164,17 +256,26 @@ export function ChatPanel({ conversation }: ChatPanelProps) {
       </div>
 
       <ChatInput
-        disabled={!isHumanMode}
+        disabled={!(isHumanMode || isWaitingForCapture)}
         placeholder={
           isHumanMode
             ? "Digite uma mensagem..."
             : isCompleted
               ? "Conversa finalizada"
-              : isAwaitingReply
-                ? "Clique em um botao acima para continuar"
+              : isWaitingForCapture
+                ? "Digite a resposta do contato para continuar o flow"
+                : isWaitingForButtons
+                  ? "Clique em um botao acima para continuar"
                 : "Assuma a conversa para digitar"
         }
-        onSend={(text) => sendHuman(conversation.id, text)}
+        onSend={(text) => {
+          if (isHumanMode) {
+            sendHuman(conversation.id, text);
+            return;
+          }
+
+          void handleCapturedReplySend(text);
+        }}
       />
     </div>
   );

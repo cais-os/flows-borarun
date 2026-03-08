@@ -1,15 +1,44 @@
 import type { Node, Edge } from "@xyflow/react";
-import type { NodeData, SendMessageNodeData, TemplateImageNodeData, RandomizerNodeData } from "@/types/node-data";
+import type {
+  NodeData,
+  SendMessageNodeData,
+  TemplateImageNodeData,
+  RandomizerNodeData,
+  WaitForReplyNodeData,
+} from "@/types/node-data";
 import type { ChatMessage } from "@/types/simulator";
-import { hasWhatsAppReplyButtons } from "./whatsapp";
+import {
+  getSendMessageInteractiveOptions,
+  getSendMessageInteractiveType,
+  hasWhatsAppInteractiveOptions,
+} from "./whatsapp";
+import {
+  buildNoMatchResponseMessage,
+  getMatchedWaitRoute,
+  normalizeWaitForReplyNodeData,
+  summarizeCapturedValueLocally,
+} from "./wait-for-reply";
+
+interface PauseState {
+  nodeId: string;
+  pendingNodeIds: string[];
+}
 
 interface SimulationCallbacks {
   onMessage: (message: ChatMessage) => void;
   onNodeChange: (nodeId: string) => void;
   onComplete: () => void;
-  onWaitForReply?: (nodeId: string) => void;
+  onPause?: (state: PauseState) => void;
   shouldStop: () => boolean;
   isHumanMode: () => boolean;
+  getFlowVariables: () => Record<string, string>;
+}
+
+interface ResumeWaitNodeResult {
+  status: "waiting" | "ready";
+  nextNodes: Node<NodeData>[];
+  flowVariables: Record<string, string>;
+  message?: ChatMessage;
 }
 
 function delay(ms: number): Promise<void> {
@@ -26,8 +55,18 @@ function pickRandomPath(splits: RandomizerNodeData["splits"]): string {
   return splits[splits.length - 1].id;
 }
 
+function interpolateVariables(
+  text: string,
+  variables: Record<string, string>
+): string {
+  return text.replace(
+    /\{\{(\w+)\}\}/g,
+    (_, key) => variables[key] || `{{${key}}}`
+  );
+}
+
 function findTriggerNode(nodes: Node<NodeData>[]): Node<NodeData> | undefined {
-  return nodes.find((n) => (n.data as NodeData).type === "trigger");
+  return nodes.find((node) => (node.data as NodeData).type === "trigger");
 }
 
 function findNextNodes(
@@ -37,11 +76,48 @@ function findNextNodes(
   sourceHandle?: string
 ): Node<NodeData>[] {
   const outEdges = edges.filter(
-    (e) => e.source === nodeId && (!sourceHandle || e.sourceHandle === sourceHandle)
+    (edge) =>
+      edge.source === nodeId &&
+      (!sourceHandle || edge.sourceHandle === sourceHandle)
   );
+
   return outEdges
-    .map((e) => nodes.find((n) => n.id === e.target))
+    .map((edge) => nodes.find((node) => node.id === edge.target))
     .filter(Boolean) as Node<NodeData>[];
+}
+
+function findNextNodesForHandleOrLegacy(
+  nodeId: string,
+  edges: Edge[],
+  nodes: Node<NodeData>[],
+  sourceHandle?: string
+): Node<NodeData>[] {
+  if (sourceHandle) {
+    const handled = findNextNodes(nodeId, edges, nodes, sourceHandle);
+    if (handled.length > 0) return handled;
+
+    const hasHandledEdges = edges.some(
+      (edge) => edge.source === nodeId && !!edge.sourceHandle
+    );
+    if (hasHandledEdges) return [];
+  }
+
+  return findNextNodes(nodeId, edges, nodes);
+}
+
+function mergeQueues(groups: Node<NodeData>[][]): Node<NodeData>[] {
+  const seenIds = new Set<string>();
+  const merged: Node<NodeData>[] = [];
+
+  for (const group of groups) {
+    for (const node of group) {
+      if (seenIds.has(node.id)) continue;
+      seenIds.add(node.id);
+      merged.push(node);
+    }
+  }
+
+  return merged;
 }
 
 export function findNextNodesForReplyButton(
@@ -50,37 +126,59 @@ export function findNextNodesForReplyButton(
   edges: Edge[],
   nodes: Node<NodeData>[]
 ): Node<NodeData>[] {
-  return findNextNodes(nodeId, edges, nodes, buttonId);
+  return findNextNodesForHandleOrLegacy(nodeId, edges, nodes, buttonId);
 }
 
-function nodeToMessage(node: Node<NodeData>): ChatMessage | null {
+function createMessageId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function nodeToMessage(
+  node: Node<NodeData>,
+  variables: Record<string, string>
+): ChatMessage | null {
   const data = node.data as NodeData;
 
   if (data.type === "sendMessage") {
-    const d = data as SendMessageNodeData;
+    const sendData = data as SendMessageNodeData;
+    const interactiveType = getSendMessageInteractiveType(sendData);
+    const interactiveOptions = getSendMessageInteractiveOptions(sendData);
     return {
-      id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      content: d.textContent || d.templateName || d.fileName || "Mensagem configurada",
-      type: d.messageType === "template" ? "template" : d.messageType,
+      id: createMessageId("msg"),
+      content: interpolateVariables(
+        sendData.textContent ||
+          sendData.templateName ||
+          sendData.fileName ||
+          "Mensagem configurada",
+        variables
+      ),
+      type: sendData.messageType === "template" ? "template" : sendData.messageType,
       sender: "bot",
-      mediaUrl: d.mediaUrl,
-      fileName: d.fileName,
-      templateName: d.templateName,
+      mediaUrl: sendData.mediaUrl,
+      fileName: sendData.fileName,
+      templateName: sendData.templateName,
       nodeId: node.id,
-      replyButtons: hasWhatsAppReplyButtons(d) ? d.replyButtons : undefined,
+      replyButtons:
+        interactiveType !== "none"
+          ? interactiveOptions.map((option) => ({
+              id: option.id,
+              title: option.title,
+            }))
+          : undefined,
+      interactiveType: interactiveType === "none" ? undefined : interactiveType,
       timestamp: new Date(),
     };
   }
 
   if (data.type === "templateImage") {
-    const d = data as TemplateImageNodeData;
+    const templateData = data as TemplateImageNodeData;
     return {
-      id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      content: d.templateName || "Template com imagem",
+      id: createMessageId("msg"),
+      content: templateData.templateName || "Template com imagem",
       type: "template",
       sender: "bot",
-      mediaUrl: d.headerImageUrl,
-      templateName: d.templateName,
+      mediaUrl: templateData.headerImageUrl,
+      templateName: templateData.templateName,
       nodeId: node.id,
       timestamp: new Date(),
     };
@@ -100,7 +198,6 @@ async function processSimulationQueue(
   while (queue.length > 0) {
     if (callbacks.shouldStop()) return;
 
-    // Wait while in human mode
     while (callbacks.isHumanMode()) {
       await delay(500);
       if (callbacks.shouldStop()) return;
@@ -113,59 +210,162 @@ async function processSimulationQueue(
     await delay(800);
 
     if (data.type === "trigger") {
-      // Just move to next nodes
-      const next = findNextNodes(current.id, edges, nodes);
-      queue.push(...next);
+      queue.push(...findNextNodes(current.id, edges, nodes));
       continue;
     }
 
     if (data.type === "randomizer") {
-      const rd = data as RandomizerNodeData;
-      const chosenSplitId = pickRandomPath(rd.splits);
-      const chosenSplit = rd.splits.find((s) => s.id === chosenSplitId);
+      const randomizerData = data as RandomizerNodeData;
+      const chosenSplitId = pickRandomPath(randomizerData.splits);
+      const chosenSplit = randomizerData.splits.find(
+        (split) => split.id === chosenSplitId
+      );
 
       callbacks.onMessage({
-        id: `sys-${Date.now()}`,
+        id: createMessageId("sys"),
         content: `Teste A/B: sorteou "${chosenSplit?.label || chosenSplitId}" (${chosenSplit?.percentage}%)`,
         type: "system",
         sender: "system",
         timestamp: new Date(),
       });
 
-      const next = findNextNodes(current.id, edges, nodes, chosenSplitId);
-      queue.push(...next);
+      queue.push(...findNextNodes(current.id, edges, nodes, chosenSplitId));
       await delay(500);
       continue;
     }
 
-    // sendMessage or templateImage
-    const message = nodeToMessage(current);
+    if (data.type === "waitForReply") {
+      const waitData = normalizeWaitForReplyNodeData(
+        data as WaitForReplyNodeData
+      );
+
+      if (waitData.promptMessage) {
+        callbacks.onMessage({
+          id: createMessageId("msg"),
+          content: interpolateVariables(
+            waitData.promptMessage,
+            callbacks.getFlowVariables()
+          ),
+          type: "text",
+          sender: "bot",
+          nodeId: current.id,
+          timestamp: new Date(),
+        });
+      }
+
+      callbacks.onPause?.({
+        nodeId: current.id,
+        pendingNodeIds: queue.map((node) => node.id),
+      });
+      return;
+    }
+
+    const message = nodeToMessage(current, callbacks.getFlowVariables());
     if (message) {
       callbacks.onMessage(message);
 
       if (
         data.type === "sendMessage" &&
-        hasWhatsAppReplyButtons(data as SendMessageNodeData)
+        hasWhatsAppInteractiveOptions(data as SendMessageNodeData)
       ) {
-        callbacks.onWaitForReply?.(current.id);
+        callbacks.onPause?.({
+          nodeId: current.id,
+          pendingNodeIds: queue.map((node) => node.id),
+        });
         return;
       }
 
       await delay(1000 + Math.random() * 500);
     }
 
-    const next = findNextNodes(current.id, edges, nodes);
-    queue.push(...next);
+    queue.push(...findNextNodes(current.id, edges, nodes));
   }
 
   callbacks.onMessage({
-    id: `sys-${Date.now()}`,
+    id: createMessageId("sys"),
     content: "Conversa concluida",
     type: "system",
     sender: "system",
     timestamp: new Date(),
   });
   callbacks.onComplete();
+}
+
+function buildSimulationCapturedValue(
+  data: WaitForReplyNodeData,
+  userAnswer: string
+): string {
+  if ((data.captureMode || "full") === "summary") {
+    return summarizeCapturedValueLocally(userAnswer);
+  }
+
+  return userAnswer.trim();
+}
+
+export function resolveWaitForReplyInSimulation(params: {
+  currentNodeId: string;
+  userAnswer: string;
+  pendingNodeIds: string[];
+  flowVariables: Record<string, string>;
+  nodes: Node<NodeData>[];
+  edges: Edge[];
+}): ResumeWaitNodeResult {
+  const currentNode = params.nodes.find((node) => node.id === params.currentNodeId);
+  if (!currentNode || currentNode.data.type !== "waitForReply") {
+    return {
+      status: "ready",
+      nextNodes: [],
+      flowVariables: params.flowVariables,
+    };
+  }
+
+  const rawData = currentNode.data as WaitForReplyNodeData;
+  const data = normalizeWaitForReplyNodeData(rawData);
+  const matchedRoute = getMatchedWaitRoute(data, params.userAnswer);
+
+  if (rawData.routes && rawData.routes.length > 0 && !matchedRoute) {
+    const noMatchMessage = buildNoMatchResponseMessage(data);
+    return {
+      status: "waiting",
+      nextNodes: [],
+      flowVariables: params.flowVariables,
+      message: noMatchMessage
+        ? {
+            id: createMessageId("msg"),
+            content: interpolateVariables(noMatchMessage, params.flowVariables),
+            type: "text",
+            sender: "bot",
+            nodeId: currentNode.id,
+            timestamp: new Date(),
+          }
+        : undefined,
+    };
+  }
+
+  const nextVariables = { ...params.flowVariables };
+  if (data.variableName) {
+    nextVariables[data.variableName] = buildSimulationCapturedValue(
+      data,
+      params.userAnswer
+    );
+  }
+
+  const nextFromCurrent = findNextNodesForHandleOrLegacy(
+    currentNode.id,
+    params.edges,
+    params.nodes,
+    matchedRoute?.id
+  );
+
+  const pendingNodes = params.pendingNodeIds
+    .map((id) => params.nodes.find((node) => node.id === id))
+    .filter(Boolean) as Node<NodeData>[];
+
+  return {
+    status: "ready",
+    nextNodes: mergeQueues([nextFromCurrent, pendingNodes]),
+    flowVariables: nextVariables,
+  };
 }
 
 export async function runSimulation(
@@ -176,7 +376,7 @@ export async function runSimulation(
   const trigger = findTriggerNode(nodes);
   if (!trigger) {
     callbacks.onMessage({
-      id: `sys-${Date.now()}`,
+      id: createMessageId("sys"),
       content: "Nenhum no Trigger encontrado no flow",
       type: "system",
       sender: "system",
@@ -187,7 +387,7 @@ export async function runSimulation(
   }
 
   callbacks.onMessage({
-    id: `sys-${Date.now()}`,
+    id: createMessageId("sys"),
     content: "Conversa iniciada",
     type: "system",
     sender: "system",

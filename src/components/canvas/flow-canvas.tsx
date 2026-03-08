@@ -14,33 +14,58 @@ import "@xyflow/react/dist/style.css";
 import { useFlowStore } from "@/hooks/use-flow-store";
 import { NODE_TYPES } from "@/types/flow";
 import { createDefaultSplits } from "@/lib/constants";
+import { createDefaultWaitRoutes } from "@/lib/wait-for-reply";
 
 import { TriggerNode } from "@/components/nodes/trigger-node";
 import { SendMessageNode } from "@/components/nodes/send-message-node";
 import { TemplateImageNode } from "@/components/nodes/template-image-node";
 import { RandomizerNode } from "@/components/nodes/randomizer-node";
+import { WaitForReplyNode } from "@/components/nodes/wait-for-reply-node";
+import { GeneratePdfNode } from "@/components/nodes/generate-pdf-node";
 
-import type { TriggerNodeData, SendMessageNodeData, TemplateImageNodeData, RandomizerNodeData } from "@/types/node-data";
+import type { TriggerNodeData, SendMessageNodeData, TemplateImageNodeData, RandomizerNodeData, WaitForReplyNodeData, GeneratePdfNodeData } from "@/types/node-data";
 
 const nodeTypes = {
   [NODE_TYPES.TRIGGER]: TriggerNode,
   [NODE_TYPES.SEND_MESSAGE]: SendMessageNode,
   [NODE_TYPES.TEMPLATE_IMAGE]: TemplateImageNode,
   [NODE_TYPES.RANDOMIZER]: RandomizerNode,
+  [NODE_TYPES.WAIT_FOR_REPLY]: WaitForReplyNode,
+  [NODE_TYPES.GENERATE_PDF]: GeneratePdfNode,
 };
 
-function getDefaultData(type: string) {
+export function getDefaultData(type: string) {
   switch (type) {
     case NODE_TYPES.TRIGGER:
       return { type: "trigger", label: "Trigger", triggerType: "manual" } satisfies TriggerNodeData;
     case NODE_TYPES.SEND_MESSAGE:
-      return { type: "sendMessage", label: "Enviar Mensagem", messageType: "text" } satisfies SendMessageNodeData;
+      return {
+        type: "sendMessage",
+        label: "Enviar Mensagem",
+        messageType: "text",
+        interactiveType: "none",
+      } satisfies SendMessageNodeData;
     case NODE_TYPES.TEMPLATE_IMAGE:
       return { type: "templateImage", label: "Template com Imagem" } satisfies TemplateImageNodeData;
     case NODE_TYPES.RANDOMIZER:
       return { type: "randomizer", label: "Teste A/B", splits: createDefaultSplits() } satisfies RandomizerNodeData;
+    case NODE_TYPES.WAIT_FOR_REPLY:
+      return {
+        type: "waitForReply",
+        label: "Capturar Resposta",
+        variableName: "",
+        captureMode: "full",
+        routes: createDefaultWaitRoutes(),
+      } satisfies WaitForReplyNodeData;
+    case NODE_TYPES.GENERATE_PDF:
+      return { type: "generatePdf", label: "Gerar PDF", templateId: "" } satisfies GeneratePdfNodeData;
     default:
-      return { type: "sendMessage", label: "Enviar Mensagem", messageType: "text" } satisfies SendMessageNodeData;
+      return {
+        type: "sendMessage",
+        label: "Enviar Mensagem",
+        messageType: "text",
+        interactiveType: "none",
+      } satisfies SendMessageNodeData;
   }
 }
 

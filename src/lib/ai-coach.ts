@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-const BASE_SYSTEM_PROMPT = `Você é o treinador de corrida virtual da BoraRun. Seu nome é Coach BoraRun.
+const FALLBACK_SYSTEM_PROMPT = `Você é o treinador de corrida virtual da BoraRun. Seu nome é Coach BoraRun.
 
 Suas diretrizes:
 - Você é especialista em corrida de rua, trail running, maratonas, meias-maratonas e corrida para iniciantes
@@ -13,15 +13,45 @@ Suas diretrizes:
 - Ajude a montar planilhas de treino personalizadas quando solicitado
 - Pergunte sobre o nível do corredor (iniciante, intermediário, avançado), objetivos e histórico de lesões antes de prescrever treinos
 - Mantenha respostas concisas (ideal para WhatsApp) — use no máximo 3-4 parágrafos curtos
-- Use emojis com moderação para manter o tom amigável (🏃‍♂️, 💪, ✅, etc)
+- Use emojis com moderação para manter o tom amigável
 - Nunca dê diagnósticos médicos — sempre recomende procurar um profissional de saúde quando necessário
 - Lembre-se do contexto da conversa para dar respostas coerentes
 
 REGRA IMPORTANTE sobre assuntos fora do tema:
 - Se o usuário falar sobre algo que NÃO seja relacionado a corrida, exercício físico, saúde esportiva ou a BoraRun, responda brevemente com contexto e redirecione de forma natural e simpática para o universo da corrida
-- Exemplo: se perguntar sobre futebol, diga algo como "Futebol é legal demais! Mas aqui minha especialidade é corrida 🏃‍♂️ Que tal a gente focar no seu treino? Me conta: você já corre ou quer começar?"
 - Nunca ignore a pessoa — sempre acolha o que ela disse antes de redirecionar
 - Se ela insistir em assuntos fora do tema, seja gentil mas firme: "Entendo! Mas como treinador de corrida, posso te ajudar melhor com treinos, metas de corrida e dicas pra evoluir. Bora lá?"`;
+
+type AiGuidelines = {
+  system_prompt: string;
+  model: string;
+  temperature: number;
+  max_tokens: number;
+};
+
+async function fetchAiGuidelines(supabase: SupabaseClient): Promise<AiGuidelines> {
+  const { data } = await supabase
+    .from("ai_guidelines")
+    .select("system_prompt, model, temperature, max_tokens")
+    .eq("key", "ai_coach")
+    .single();
+
+  if (data?.system_prompt) {
+    return {
+      system_prompt: data.system_prompt,
+      model: data.model || "gpt-4o-mini",
+      temperature: data.temperature ?? 0.7,
+      max_tokens: data.max_tokens ?? 500,
+    };
+  }
+
+  return {
+    system_prompt: FALLBACK_SYSTEM_PROMPT,
+    model: "gpt-4o-mini",
+    temperature: 0.7,
+    max_tokens: 500,
+  };
+}
 
 interface DbMessage {
   content: string;
@@ -62,9 +92,13 @@ export async function generateCoachResponse(
   conversationId: string,
   userMessage: string
 ): Promise<string> {
-  // Build system prompt with flow context
-  const flowContext = await buildFlowContext(supabase);
-  const systemPrompt = BASE_SYSTEM_PROMPT + flowContext;
+  // Fetch AI guidelines and flow context in parallel
+  const [guidelines, flowContext] = await Promise.all([
+    fetchAiGuidelines(supabase),
+    buildFlowContext(supabase),
+  ]);
+
+  const systemPrompt = guidelines.system_prompt + flowContext;
 
   // Fetch conversation history for context (last 20 messages)
   const { data: history } = await supabase
@@ -92,10 +126,10 @@ export async function generateCoachResponse(
   messages.push({ role: "user", content: userMessage });
 
   const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: guidelines.model,
     messages,
-    max_tokens: 500,
-    temperature: 0.7,
+    max_tokens: guidelines.max_tokens,
+    temperature: guidelines.temperature,
   });
 
   return completion.choices[0]?.message?.content || "Desculpe, não consegui gerar uma resposta. Pode repetir?";

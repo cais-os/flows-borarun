@@ -17,6 +17,8 @@ export const NODE_TYPES = {
   SEND_MESSAGE: "sendMessage",
   TEMPLATE_IMAGE: "templateImage",
   RANDOMIZER: "randomizer",
+  WAIT_FOR_REPLY: "waitForReply",
+  GENERATE_PDF: "generatePdf",
 } as const;
 
 export type NodeType = (typeof NODE_TYPES)[keyof typeof NODE_TYPES];

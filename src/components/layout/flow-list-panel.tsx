@@ -207,7 +207,7 @@ export function FlowListPanel({
   );
 
   const toggleFlowActive = useCallback(
-    (flow: Flow) => {
+    async (flow: Flow) => {
       const updatedFlow = normalizeFlow({
         ...flow,
         isActive: !flow.isActive,
@@ -219,6 +219,24 @@ export function FlowListPanel({
 
       if (flow.id === flowId) {
         setFlowActive(updatedFlow.isActive ?? false, true);
+      }
+
+      // Persist to Supabase
+      if (!flow.id.startsWith("local-")) {
+        try {
+          await fetch(`/api/flows/${flow.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: updatedFlow.name,
+              is_active: updatedFlow.isActive,
+              nodes: updatedFlow.nodes,
+              edges: updatedFlow.edges,
+            }),
+          });
+        } catch (err) {
+          console.error("Failed to sync is_active:", err);
+        }
       }
     },
     [flowId, setFlowActive]

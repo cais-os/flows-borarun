@@ -1,13 +1,16 @@
 import { NextResponse } from "next/server";
 import {
   getMetaConfig,
+  markMessageAsRead,
   sendMetaWhatsAppTextMessage,
+  sendTypingIndicator,
   validateMetaWebhookSignature,
   validateMetaWebhookVerifyToken,
 } from "@/lib/meta";
 import { createServerClient } from "@/lib/supabase/server";
-import { findMatchingFlow, executeFlow } from "@/lib/flow-engine";
+import { findMatchingFlow, executeFlow, resumeFlow } from "@/lib/flow-engine";
 import { generateCoachResponse } from "@/lib/ai-coach";
+import { classifyFlowIntent } from "@/lib/intent-classifier";
 
 type MetaWebhookChangeValue = {
   messaging_product?: string;
@@ -114,11 +117,11 @@ export async function POST(request: Request) {
         let isNewContact = false;
         const { data: existing } = await supabase
           .from("conversations")
-          .select("id, status, ai_enabled, active_flow_id")
+          .select("id, status, ai_enabled, active_flow_id, current_node_id")
           .eq("contact_phone", contactPhone)
           .single();
 
-        let conversationStatus = existing?.status || "running";
+        const conversationStatus = existing?.status || "running";
 
         if (existing) {
           conversationId = existing.id;
@@ -168,6 +171,11 @@ export async function POST(request: Request) {
           .update({ updated_at: new Date().toISOString() })
           .eq("id", conversationId);
 
+        // Mark message as read (blue check marks)
+        if (message.id) {
+          markMessageAsRead(message.id).catch(() => {});
+        }
+
         console.log("Meta WhatsApp inbound message saved", {
           conversationId,
           from: contactPhone,
@@ -181,60 +189,151 @@ export async function POST(request: Request) {
           continue;
         }
 
-        // If AI is already enabled, respond with AI coach
-        if (existing?.ai_enabled && conversationStatus === "ai") {
-          try {
-            const aiResponse = await generateCoachResponse(
+        try {
+          // 1. Flow is paused waiting for user reply
+          if (
+            conversationStatus === "paused" &&
+            existing?.active_flow_id &&
+            existing?.current_node_id
+          ) {
+            const selectedHandleId =
+              message.interactive?.button_reply?.id ||
+              message.interactive?.list_reply?.id ||
+              null;
+
+            // Get the current paused node to decide how the flow resumes
+            const { data: flowData } = await supabase
+              .from("flows")
+              .select("nodes")
+              .eq("id", existing.active_flow_id)
+              .single();
+
+            let promptMessage = "";
+            let currentNodeType = "";
+            let hasExplicitRoutes = false;
+            if (flowData?.nodes) {
+              const nodes = flowData.nodes as Array<{
+                id: string;
+                data: {
+                  type?: string;
+                  promptMessage?: string;
+                  routes?: unknown[];
+                };
+              }>;
+              const currentNode = nodes.find((n) => n.id === existing.current_node_id);
+              promptMessage = currentNode?.data?.promptMessage || "";
+              currentNodeType = currentNode?.data?.type || "";
+              hasExplicitRoutes =
+                Array.isArray(currentNode?.data?.routes) &&
+                currentNode.data.routes.length > 0;
+            }
+
+            if (currentNodeType === "sendMessage") {
+              await resumeFlow(supabase, conversationId, contactPhone, content, {
+                selectedHandleId,
+                inboundMessageId: message.id,
+              });
+              continue;
+            }
+
+            if (hasExplicitRoutes) {
+              await resumeFlow(supabase, conversationId, contactPhone, content, {
+                inboundMessageId: message.id,
+              });
+              continue;
+            }
+
+            // Classify: is user answering the flow question or asking something off-topic?
+            const intent = promptMessage
+              ? await classifyFlowIntent(promptMessage, content)
+              : "ANSWER";
+
+            if (intent === "ANSWER") {
+              console.log("Flow resumed with answer:", content);
+              await resumeFlow(supabase, conversationId, contactPhone, content, {
+                inboundMessageId: message.id,
+              });
+            } else {
+              // OFF_TOPIC: AI responds to the question, then re-sends the flow prompt
+              console.log("Off-topic during paused flow, AI responding");
+              const aiResponse = await generateCoachResponse(
+                supabase,
+                conversationId,
+                content
+              );
+              if (message.id) await sendTypingIndicator(message.id).catch(() => {});
+              const aiResult = await sendMetaWhatsAppTextMessage({
+                to: contactPhone,
+                body: aiResponse,
+              });
+              await supabase.from("messages").insert({
+                conversation_id: conversationId,
+                content: aiResponse,
+                type: "text",
+                sender: "bot",
+                wa_message_id: aiResult.messageId,
+              });
+
+              // Re-send the flow prompt so user knows the flow is still waiting
+              if (promptMessage) {
+                const { data: convVars } = await supabase
+                  .from("conversations")
+                  .select("flow_variables")
+                  .eq("id", conversationId)
+                  .single();
+                const vars = (convVars?.flow_variables as Record<string, string>) || {};
+                const interpolated = promptMessage.replace(
+                  /\{\{(\w+)\}\}/g,
+                  (_, key: string) => vars[key] || `{{${key}}}`
+                );
+
+                if (message.id) await sendTypingIndicator(message.id).catch(() => {});
+                const promptResult = await sendMetaWhatsAppTextMessage({
+                  to: contactPhone,
+                  body: interpolated,
+                });
+                await supabase.from("messages").insert({
+                  conversation_id: conversationId,
+                  content: interpolated,
+                  type: "text",
+                  sender: "bot",
+                  wa_message_id: promptResult.messageId,
+                });
+              }
+            }
+            continue;
+          }
+
+          // 2. Check flow triggers (even if AI is active)
+          const match = await findMatchingFlow(supabase, content, isNewContact);
+
+          if (match) {
+            console.log("Flow matched:", match.flow.name);
+            await executeFlow(
               supabase,
               conversationId,
-              content
+              contactPhone,
+              match.flow,
+              match.triggerNode,
+              message.id
             );
-            const result = await sendMetaWhatsAppTextMessage({
-              to: contactPhone,
-              body: aiResponse,
-            });
-            await supabase.from("messages").insert({
-              conversation_id: conversationId,
-              content: aiResponse,
-              type: "text",
-              sender: "bot",
-              wa_message_id: result.messageId,
-            });
-          } catch (error) {
-            console.error("AI coach error:", error);
+            continue;
           }
-          continue;
-        }
 
-        // Try to match a flow trigger
-        const match = await findMatchingFlow(supabase, content, isNewContact);
+          // 3. No flow matched → respond with AI coach
+          if (!existing || !existing.ai_enabled) {
+            await supabase
+              .from("conversations")
+              .update({ status: "ai", ai_enabled: true, updated_at: new Date().toISOString() })
+              .eq("id", conversationId);
+          }
 
-        if (match) {
-          // Execute the matched flow
-          console.log("Flow matched:", match.flow.name);
-          await executeFlow(
-            supabase,
-            conversationId,
-            contactPhone,
-            match.flow,
-            match.triggerNode
-          );
-          // After executeFlow, status is either 'paused' (waiting reply) or 'ai' (flow done)
-          continue;
-        }
-
-        // No flow matched → go straight to AI coach
-        await supabase
-          .from("conversations")
-          .update({ status: "ai", ai_enabled: true, updated_at: new Date().toISOString() })
-          .eq("id", conversationId);
-
-        try {
           const aiResponse = await generateCoachResponse(
             supabase,
             conversationId,
             content
           );
+          if (message.id) await sendTypingIndicator(message.id).catch(() => {});
           const result = await sendMetaWhatsAppTextMessage({
             to: contactPhone,
             body: aiResponse,
@@ -247,7 +346,7 @@ export async function POST(request: Request) {
             wa_message_id: result.messageId,
           });
         } catch (error) {
-          console.error("AI coach error:", error);
+          console.error("Orchestration error:", error);
         }
       }
 

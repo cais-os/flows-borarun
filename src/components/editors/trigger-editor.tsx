@@ -57,14 +57,37 @@ export function TriggerEditor({ nodeId, data }: TriggerEditorProps) {
       </div>
 
       {data.triggerType === "keyword" && (
-        <div className="space-y-2">
-          <Label>Palavra-chave</Label>
-          <Input
-            value={data.keyword || ""}
-            onChange={(e) => update({ keyword: e.target.value })}
-            placeholder="Ex: oi, promo, oferta..."
-          />
-        </div>
+        <>
+          <div className="space-y-2">
+            <Label>Correspondencia</Label>
+            <Select
+              value={data.keywordMatch || "contains"}
+              onValueChange={(v) =>
+                update({
+                  keywordMatch: v as TriggerNodeData["keywordMatch"],
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="contains">Contem</SelectItem>
+                <SelectItem value="notContains">Nao contem</SelectItem>
+                <SelectItem value="exact">Exatamente</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Palavra-chave</Label>
+            <Input
+              value={data.keyword || ""}
+              onChange={(e) => update({ keyword: e.target.value })}
+              placeholder="Ex: oi, promo, oferta..."
+            />
+          </div>
+        </>
       )}
     </div>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode } from "react";
+import { type ReactNode, type Ref } from "react";
 import { Handle, Position } from "@xyflow/react";
 import { X } from "lucide-react";
 import { useFlowStore } from "@/hooks/use-flow-store";
@@ -13,8 +13,9 @@ interface NodeWrapperProps {
   children: ReactNode;
   showTargetHandle?: boolean;
   showSourceHandle?: boolean;
-  sourceHandles?: { id: string; label: string; position?: number }[];
+  sourceHandles?: { id: string; label: string; position?: string | number }[];
   selected?: boolean;
+  containerRef?: Ref<HTMLDivElement>;
 }
 
 export function NodeWrapper({
@@ -27,11 +28,13 @@ export function NodeWrapper({
   showSourceHandle = true,
   sourceHandles,
   selected,
+  containerRef,
 }: NodeWrapperProps) {
   const deleteNode = useFlowStore((s) => s.deleteNode);
 
   return (
     <div
+      ref={containerRef}
       className={`group relative min-w-[176px] max-w-[220px] rounded-md border bg-white shadow-sm transition-shadow ${
         selected ? "shadow-md ring-2 ring-primary/20" : ""
       }`}
@@ -77,7 +80,9 @@ export function NodeWrapper({
               className="!h-2.5 !w-2.5 !border-2 !border-white"
               style={{
                 backgroundColor: color,
-                top: `${((index + 1) / (sourceHandles.length + 1)) * 100}%`,
+                top:
+                  handle.position ??
+                  `${((index + 1) / (sourceHandles.length + 1)) * 100}%`,
               }}
             />
           ))

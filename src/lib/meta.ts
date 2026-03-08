@@ -1,4 +1,9 @@
 import { createHmac, timingSafeEqual } from "crypto";
+import type { WhatsAppListItem, WhatsAppReplyButton } from "@/types/node-data";
+import {
+  buildWhatsAppListPayload,
+  buildWhatsAppReplyButtonsPayload,
+} from "@/lib/whatsapp";
 
 type MetaConfig = {
   systemToken: string;
@@ -192,6 +197,191 @@ export async function sendMetaWhatsAppTextMessage(
     messageId: result.messages?.[0]?.id || null,
     contact: result.contacts?.[0] || null,
   };
+}
+
+export async function sendMetaWhatsAppInteractiveButtonsMessage(params: {
+  to: string;
+  body: string;
+  replyButtons: WhatsAppReplyButton[];
+}) {
+  const { config } = getMetaConfig();
+
+  const result = await metaGraphRequest<{
+    messages?: Array<{ id: string }>;
+    contacts?: Array<{ input?: string; wa_id?: string }>;
+  }>(`${config.phoneNumberId}/messages`, {
+    method: "POST",
+    body: {
+      recipient_type: "individual",
+      to: params.to,
+      ...buildWhatsAppReplyButtonsPayload(params.body, params.replyButtons),
+    },
+  });
+
+  return {
+    messageId: result.messages?.[0]?.id || null,
+    contact: result.contacts?.[0] || null,
+  };
+}
+
+export async function sendMetaWhatsAppInteractiveListMessage(params: {
+  to: string;
+  body: string;
+  buttonText: string;
+  sectionTitle?: string;
+  items: WhatsAppListItem[];
+}) {
+  const { config } = getMetaConfig();
+
+  const result = await metaGraphRequest<{
+    messages?: Array<{ id: string }>;
+    contacts?: Array<{ input?: string; wa_id?: string }>;
+  }>(`${config.phoneNumberId}/messages`, {
+    method: "POST",
+    body: {
+      recipient_type: "individual",
+      to: params.to,
+      ...buildWhatsAppListPayload({
+        bodyText: params.body,
+        buttonText: params.buttonText,
+        sectionTitle: params.sectionTitle,
+        items: params.items,
+      }),
+    },
+  });
+
+  return {
+    messageId: result.messages?.[0]?.id || null,
+    contact: result.contacts?.[0] || null,
+  };
+}
+
+export async function sendMetaWhatsAppDocumentMessage(params: {
+  to: string;
+  documentUrl: string;
+  fileName?: string;
+}) {
+  const { config } = getMetaConfig();
+
+  const result = await metaGraphRequest<{
+    messages?: Array<{ id: string }>;
+    contacts?: Array<{ input?: string; wa_id?: string }>;
+  }>(`${config.phoneNumberId}/messages`, {
+    method: "POST",
+    body: {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: params.to,
+      type: "document",
+      document: {
+        link: params.documentUrl,
+        filename: params.fileName || "document.pdf",
+      },
+    },
+  });
+
+  return {
+    messageId: result.messages?.[0]?.id || null,
+    contact: result.contacts?.[0] || null,
+  };
+}
+
+export async function sendMetaWhatsAppAudioMessage(params: {
+  to: string;
+  audioUrl: string;
+}) {
+  const { config } = getMetaConfig();
+
+  const result = await metaGraphRequest<{
+    messages?: Array<{ id: string }>;
+    contacts?: Array<{ input?: string; wa_id?: string }>;
+  }>(`${config.phoneNumberId}/messages`, {
+    method: "POST",
+    body: {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: params.to,
+      type: "audio",
+      audio: {
+        link: params.audioUrl,
+      },
+    },
+  });
+
+  return {
+    messageId: result.messages?.[0]?.id || null,
+    contact: result.contacts?.[0] || null,
+  };
+}
+
+export async function sendMetaWhatsAppTemplateMessage(params: {
+  to: string;
+  templateName: string;
+  language?: string;
+  components?: Array<{
+    type: string;
+    parameters: Array<{
+      type: string;
+      text?: string;
+      image?: { link: string };
+    }>;
+  }>;
+}) {
+  const { config } = getMetaConfig();
+
+  const templateBody: Record<string, unknown> = {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to: params.to,
+    type: "template",
+    template: {
+      name: params.templateName,
+      language: { code: params.language || "pt_BR" },
+      ...(params.components && { components: params.components }),
+    },
+  };
+
+  const result = await metaGraphRequest<{
+    messages?: Array<{ id: string }>;
+    contacts?: Array<{ input?: string; wa_id?: string }>;
+  }>(`${config.phoneNumberId}/messages`, {
+    method: "POST",
+    body: templateBody,
+  });
+
+  return {
+    messageId: result.messages?.[0]?.id || null,
+    contact: result.contacts?.[0] || null,
+  };
+}
+
+export async function markMessageAsRead(messageId: string) {
+  const { config } = getMetaConfig();
+
+  return metaGraphRequest(`${config.phoneNumberId}/messages`, {
+    method: "POST",
+    body: {
+      messaging_product: "whatsapp",
+      status: "read",
+      message_id: messageId,
+    },
+  });
+}
+
+export async function sendTypingIndicator(messageId: string) {
+  const { config } = getMetaConfig();
+
+  return metaGraphRequest(`${config.phoneNumberId}/messages`, {
+    method: "POST",
+    body: {
+      messaging_product: "whatsapp",
+      status: "read",
+      message_id: messageId,
+      typing_indicator: {
+        type: "text",
+      },
+    },
+  });
 }
 
 export async function fetchMetaMessageTemplates() {

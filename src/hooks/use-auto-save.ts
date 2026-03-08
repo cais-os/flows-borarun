@@ -83,6 +83,7 @@ export function useAutoSave() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             name: snapshot.flowName,
+            is_active: snapshot.flowIsActive,
             nodes: snapshot.nodes,
             edges: snapshot.edges,
           }),

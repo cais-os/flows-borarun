@@ -22,6 +22,16 @@ export const NODE_CONFIG = {
     color: "#F97316",
     description: "Divide o trafego aleatoriamente entre caminhos",
   },
+  [NODE_TYPES.WAIT_FOR_REPLY]: {
+    label: "Capturar Resposta",
+    color: "#EC4899",
+    description: "Pausa o flow, salva a resposta e segue pela regra que der match",
+  },
+  [NODE_TYPES.GENERATE_PDF]: {
+    label: "Gerar PDF",
+    color: "#EF4444",
+    description: "Gera um PDF personalizado com IA e envia pelo WhatsApp",
+  },
 } as const;
 
 export const DEFAULT_SPLITS = [

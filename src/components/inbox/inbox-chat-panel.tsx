@@ -1,11 +1,19 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Headset, RotateCcw, Send } from "lucide-react";
+import { Headset, RotateCcw, Send, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/lib/supabase/client";
+import { createClient } from "@/lib/supabase/client";
+
+const supabase = createClient();
 import type { DbConversation, DbMessage } from "@/hooks/use-conversations";
+
+type Shortcut = {
+  id: string;
+  trigger: string;
+  content: string;
+};
 
 function MessageBubble({ message }: { message: DbMessage }) {
   const isContact = message.sender === "contact";
@@ -53,12 +61,54 @@ export function InboxChatPanel({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [filteredShortcuts, setFilteredShortcuts] = useState<Shortcut[]>([]);
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const shortcutsRef = useRef<Shortcut[]>([]);
 
   const isHuman = conversation.status === "human";
+
+  // Load shortcuts once
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/shortcuts")
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to fetch shortcuts");
+        return res.json();
+      })
+      .then((data: Shortcut[]) => {
+        if (!cancelled) {
+          shortcutsRef.current = data;
+        }
+      })
+      .catch((err) => console.error("Shortcuts fetch error:", err));
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [conversation.messages.length]);
+
+  const handleTextChange = (value: string) => {
+    setText(value);
+
+    if (value.startsWith("/")) {
+      const query = value.slice(1).toLowerCase();
+      const matches = shortcutsRef.current.filter((s) =>
+        s.trigger.toLowerCase().includes(query)
+      );
+      setFilteredShortcuts(matches);
+      setShowShortcuts(matches.length > 0);
+      setSelectedIndex(0);
+    } else {
+      setShowShortcuts(false);
+    }
+  };
+
+  const selectShortcut = (shortcut: Shortcut) => {
+    setText(shortcut.content);
+    setShowShortcuts(false);
+  };
 
   const handleTakeOver = async () => {
     await supabase
@@ -72,6 +122,28 @@ export function InboxChatPanel({
       type: "system",
       sender: "system",
     });
+  };
+
+  const handleClearConversation = async () => {
+    if (!confirm("Limpar todas as mensagens desta conversa?")) return;
+
+    await supabase
+      .from("messages")
+      .delete()
+      .eq("conversation_id", conversation.id);
+
+    await supabase
+      .from("conversations")
+      .update({
+        status: "running",
+        ai_enabled: false,
+        active_flow_id: null,
+        current_node_id: null,
+        flow_node_queue: null,
+        flow_variables: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", conversation.id);
   };
 
   const handleReturnToBot = async () => {
@@ -94,6 +166,7 @@ export function InboxChatPanel({
 
     setSending(true);
     setText("");
+    setShowShortcuts(false);
 
     try {
       const res = await fetch("/api/meta/send-reply", {
@@ -117,6 +190,35 @@ export function InboxChatPanel({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (showShortcuts) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedIndex((prev) =>
+          prev < filteredShortcuts.length - 1 ? prev + 1 : 0
+        );
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedIndex((prev) =>
+          prev > 0 ? prev - 1 : filteredShortcuts.length - 1
+        );
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        if (filteredShortcuts[selectedIndex]) {
+          selectShortcut(filteredShortcuts[selectedIndex]);
+        }
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setShowShortcuts(false);
+        return;
+      }
+    }
+
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       void handleSend();
@@ -152,6 +254,16 @@ export function InboxChatPanel({
           >
             {statusLabels[conversation.status] || conversation.status}
           </Badge>
+
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 gap-1 text-xs text-white hover:bg-white/10"
+            onClick={() => void handleClearConversation()}
+          >
+            <Trash2 size={12} />
+            Limpar
+          </Button>
 
           {isHuman ? (
             <Button
@@ -192,16 +304,39 @@ export function InboxChatPanel({
       </div>
 
       {/* Input */}
-      <div className="px-3 py-2 bg-[#f0f0f0] border-t border-gray-200">
+      <div className="relative px-3 py-2 bg-[#f0f0f0] border-t border-gray-200">
+        {/* Shortcuts dropdown */}
+        {showShortcuts && (
+          <div className="absolute bottom-full left-3 right-3 mb-1 max-h-48 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+            {filteredShortcuts.map((shortcut, index) => (
+              <button
+                key={shortcut.id}
+                type="button"
+                onClick={() => selectShortcut(shortcut)}
+                className={`flex w-full items-start gap-2 px-3 py-2 text-left text-sm transition-colors ${
+                  index === selectedIndex ? "bg-gray-100" : "hover:bg-gray-50"
+                }`}
+              >
+                <span className="shrink-0 font-medium text-gray-700">
+                  /{shortcut.trigger}
+                </span>
+                <span className="truncate text-gray-400">
+                  {shortcut.content}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="flex items-end gap-2">
           <textarea
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => handleTextChange(e.target.value)}
             onKeyDown={handleKeyDown}
             disabled={!isHuman}
             placeholder={
               isHuman
-                ? "Digite uma mensagem..."
+                ? 'Digite "/" para atalhos ou uma mensagem...'
                 : "Clique em 'Assumir' para responder"
             }
             rows={1}

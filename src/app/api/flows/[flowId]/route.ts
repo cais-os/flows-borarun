@@ -34,6 +34,7 @@ export async function PUT(
     .update({
       name: body.name,
       description: body.description,
+      is_active: body.is_active ?? false,
       nodes: body.nodes,
       edges: body.edges,
       updated_at: new Date().toISOString(),

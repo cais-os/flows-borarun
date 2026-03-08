@@ -13,6 +13,7 @@ import {
 } from "@xyflow/react";
 import { createDefaultSplits } from "@/lib/constants";
 import type { NodeData } from "@/types/node-data";
+import { normalizeWaitForReplyFlow } from "@/lib/wait-for-reply";
 
 interface FlowState {
   flowId: string | null;
@@ -71,6 +72,19 @@ function normalizeLoadedNodes(nodes: Node<NodeData>[]): Node<NodeData>[] {
   });
 }
 
+function normalizeLoadedFlow(
+  nodes: Node<NodeData>[],
+  edges: Edge[]
+): { nodes: Node<NodeData>[]; edges: Edge[] } {
+  const normalizedNodes = normalizeLoadedNodes(nodes);
+  const normalizedFlow = normalizeWaitForReplyFlow(normalizedNodes, edges);
+
+  return {
+    nodes: normalizedFlow.nodes as Node<NodeData>[],
+    edges: normalizedFlow.edges as Edge[],
+  };
+}
+
 export const useFlowStore = create<FlowState & FlowActions>((set, get) => ({
   flowId: null,
   flowName: "Novo Flow",
@@ -103,16 +117,19 @@ export const useFlowStore = create<FlowState & FlowActions>((set, get) => ({
 
   setSelectedNodeId: (id) => set({ selectedNodeId: id }),
 
-  setFlow: (flowId, name, nodes, edges, isActive = false) =>
+  setFlow: (flowId, name, nodes, edges, isActive = false) => {
+    const normalized = normalizeLoadedFlow(nodes, edges);
+
     set({
       flowId,
       flowName: name,
       flowIsActive: isActive,
-      nodes: normalizeLoadedNodes(nodes),
-      edges,
+      nodes: normalized.nodes,
+      edges: normalized.edges,
       isDirty: false,
       selectedNodeId: null,
-    }),
+    });
+  },
 
   clearFlow: () =>
     set({

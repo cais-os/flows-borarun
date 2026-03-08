@@ -7,6 +7,8 @@ export interface Conversation {
   messages: ChatMessage[];
   status: "running" | "paused" | "completed" | "human";
   currentNodeId: string | null;
+  pendingNodeIds: string[];
+  flowVariables: Record<string, string>;
   abTestPath?: string;
 }
 
@@ -20,9 +22,10 @@ export interface ChatMessage {
   templateName?: string;
   nodeId?: string;
   replyButtons?: WhatsAppReplyButton[];
+  interactiveType?: "buttons" | "list";
   timestamp: Date;
 }
 
 export type SimulationStatus = "idle" | "running" | "paused" | "completed";
 
-export type ActiveTab = "flows" | "conversations";
+export type ActiveTab = "flows" | "conversations" | "campanhas";

@@ -2,13 +2,19 @@ export type NodeData =
   | TriggerNodeData
   | SendMessageNodeData
   | TemplateImageNodeData
-  | RandomizerNodeData;
+  | RandomizerNodeData
+  | WaitForReplyNodeData
+  | GeneratePdfNodeData;
+
+export type CaptureMode = "full" | "summary";
+export type ReplyMatchType = "contains" | "exact" | "startsWith" | "any";
 
 export type TriggerNodeData = {
   type: "trigger";
   label: string;
   triggerType: "keyword" | "newContact" | "manual";
   keyword?: string;
+  keywordMatch?: "contains" | "notContains" | "exact";
   [key: string]: unknown;
 };
 
@@ -21,7 +27,12 @@ export type SendMessageNodeData = {
   templateName?: string;
   mediaUrl?: string;
   fileName?: string;
+  typingSeconds?: number;
+  interactiveType?: "none" | "buttons" | "list";
   replyButtons?: WhatsAppReplyButton[];
+  listButtonText?: string;
+  listSectionTitle?: string;
+  listItems?: WhatsAppListItem[];
   [key: string]: unknown;
 };
 
@@ -42,6 +53,27 @@ export type RandomizerNodeData = {
   [key: string]: unknown;
 };
 
+export type WaitForReplyNodeData = {
+  type: "waitForReply";
+  label: string;
+  variableName: string;
+  promptMessage?: string;
+  captureMode?: CaptureMode;
+  aiInstructions?: string;
+  routes?: WaitForReplyRoute[];
+  noMatchMessage?: string;
+  [key: string]: unknown;
+};
+
+export type GeneratePdfNodeData = {
+  type: "generatePdf";
+  label: string;
+  templateId: string;
+  aiPrompt?: string;
+  fileName?: string;
+  [key: string]: unknown;
+};
+
 export interface RandomizerSplit {
   id: string;
   label: string;
@@ -51,4 +83,17 @@ export interface RandomizerSplit {
 export interface WhatsAppReplyButton {
   id: string;
   title: string;
+}
+
+export interface WhatsAppListItem {
+  id: string;
+  title: string;
+  description?: string;
+}
+
+export interface WaitForReplyRoute {
+  id: string;
+  label: string;
+  matchType: ReplyMatchType;
+  value?: string;
 }

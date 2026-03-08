@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { supabase } from "@/lib/supabase/client";
+import { createClient } from "@/lib/supabase/client";
+
+const supabase = createClient();
 
 export interface DbMessage {
   id: string;
@@ -95,11 +97,12 @@ export function useConversations() {
         (payload) => {
           const newMsg = payload.new as DbMessage;
           setConversations((prev) =>
-            prev.map((c) =>
-              c.id === newMsg.conversation_id
-                ? { ...c, messages: [...c.messages, newMsg] }
-                : c
-            )
+            prev.map((c) => {
+              if (c.id !== newMsg.conversation_id) return c;
+              // Deduplicate — avoid adding if already present
+              if (c.messages.some((m) => m.id === newMsg.id)) return c;
+              return { ...c, messages: [...c.messages, newMsg] };
+            })
           );
         }
       )

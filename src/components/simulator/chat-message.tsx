@@ -93,6 +93,11 @@ export function ChatMessage({
 
         {message.replyButtons && message.replyButtons.length > 0 && (
           <div className="mt-2 space-y-1.5">
+            {message.interactiveType === "list" && (
+              <div className="rounded-md border border-purple-200 bg-purple-50 px-2 py-1 text-[10px] font-medium text-purple-700">
+                Lista interativa
+              </div>
+            )}
             {message.replyButtons.map((button) => (
               <Button
                 key={button.id}

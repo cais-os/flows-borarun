@@ -1,6 +1,8 @@
 "use client";
 
-import { MessageCircle, PenTool } from "lucide-react";
+import { LogOut, Megaphone, MessageCircle, PenTool } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import { useFlowStore } from "@/hooks/use-flow-store";
 import { useSimulatorStore } from "@/hooks/use-simulator-store";
 import {
@@ -18,12 +20,21 @@ interface FlowToolbarProps {
 const navItems: { id: ActiveTab; label: string; icon: React.ReactNode }[] = [
   { id: "flows", label: "Flows", icon: <PenTool size={20} /> },
   { id: "conversations", label: "Conversas", icon: <MessageCircle size={20} /> },
+  { id: "campanhas", label: "Campanhas", icon: <Megaphone size={20} /> },
 ];
 
 export function FlowToolbar({ onSelectTab }: FlowToolbarProps) {
+  const router = useRouter();
   const isDirty = useFlowStore((s) => s.isDirty);
   const activeTab = useSimulatorStore((s) => s.activeTab);
   const setActiveTab = useSimulatorStore((s) => s.setActiveTab);
+
+  const handleLogout = async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/");
+    router.refresh();
+  };
 
   const handleTabClick = (tab: ActiveTab) => {
     if (onSelectTab) {
@@ -63,6 +74,18 @@ export function FlowToolbar({ onSelectTab }: FlowToolbarProps) {
           </Tooltip>
         ))}
       </div>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            onClick={() => void handleLogout()}
+            className="flex h-11 w-11 items-center justify-center rounded-2xl text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
+          >
+            <LogOut size={20} />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="right">Sair</TooltipContent>
+      </Tooltip>
     </aside>
   );
 }

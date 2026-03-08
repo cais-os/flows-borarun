@@ -1,18 +1,24 @@
 "use client";
 
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { X, Check } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { useFlowStore } from "@/hooks/use-flow-store";
 import { NODE_CONFIG } from "@/lib/constants";
 import { TriggerEditor } from "./trigger-editor";
 import { SendMessageEditor } from "./send-message-editor";
 import { TemplateImageEditor } from "./template-image-editor";
 import { RandomizerEditor } from "./randomizer-editor";
-import type { NodeData, TriggerNodeData, SendMessageNodeData, TemplateImageNodeData, RandomizerNodeData } from "@/types/node-data";
+import { WaitForReplyEditor } from "./wait-for-reply-editor";
+import { GeneratePdfEditor } from "./generate-pdf-editor";
+import type {
+  NodeData,
+  TriggerNodeData,
+  SendMessageNodeData,
+  TemplateImageNodeData,
+  RandomizerNodeData,
+  WaitForReplyNodeData,
+  GeneratePdfNodeData,
+} from "@/types/node-data";
 
 export function NodeEditorPanel() {
   const selectedNodeId = useFlowStore((s) => s.selectedNodeId);
@@ -22,58 +28,107 @@ export function NodeEditorPanel() {
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
   const nodeData = selectedNode?.data as NodeData | undefined;
 
-  const nodeType = nodeData?.type;
+  if (!selectedNodeId || !nodeData) return null;
+
+  const nodeType = nodeData.type;
   const config = nodeType
     ? NODE_CONFIG[nodeType as keyof typeof NODE_CONFIG]
     : null;
 
+  const close = () => setSelectedNodeId(null);
+
   return (
-    <Sheet
-      open={!!selectedNodeId}
-      onOpenChange={(open) => {
-        if (!open) setSelectedNodeId(null);
-      }}
-    >
-      <SheetContent className="w-[380px] sm:w-[380px] overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle className="flex items-center gap-2">
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[2px]"
+        onClick={close}
+      />
+
+      {/* Panel */}
+      <div className="fixed right-0 top-0 z-50 flex h-full w-[380px] flex-col border-l border-slate-200 bg-white shadow-2xl animate-in slide-in-from-right duration-200">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <div className="flex items-center gap-3">
             {config && (
               <div
-                className="w-3 h-3 rounded-full"
-                style={{ backgroundColor: config.color }}
-              />
+                className="flex h-8 w-8 items-center justify-center rounded-lg"
+                style={{ backgroundColor: `${config.color}15` }}
+              >
+                <div
+                  className="h-2.5 w-2.5 rounded-full"
+                  style={{ backgroundColor: config.color }}
+                />
+              </div>
             )}
-            {config?.label || "Editar no"}
-          </SheetTitle>
-        </SheetHeader>
+            <div>
+              <h3 className="text-sm font-semibold text-slate-800">
+                {config?.label || "Editar nó"}
+              </h3>
+              {config?.description && (
+                <p className="text-xs text-slate-400">{config.description}</p>
+              )}
+            </div>
+          </div>
+          <button
+            onClick={close}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+          >
+            <X size={18} />
+          </button>
+        </div>
 
-        <div className="mt-6">
-          {selectedNodeId && nodeData?.type === "trigger" && (
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto px-5 py-5">
+          {nodeData.type === "trigger" && (
             <TriggerEditor
               nodeId={selectedNodeId}
               data={nodeData as TriggerNodeData}
             />
           )}
-          {selectedNodeId && nodeData?.type === "sendMessage" && (
+          {nodeData.type === "sendMessage" && (
             <SendMessageEditor
               nodeId={selectedNodeId}
               data={nodeData as SendMessageNodeData}
             />
           )}
-          {selectedNodeId && nodeData?.type === "templateImage" && (
+          {nodeData.type === "templateImage" && (
             <TemplateImageEditor
               nodeId={selectedNodeId}
               data={nodeData as TemplateImageNodeData}
             />
           )}
-          {selectedNodeId && nodeData?.type === "randomizer" && (
+          {nodeData.type === "randomizer" && (
             <RandomizerEditor
               nodeId={selectedNodeId}
               data={nodeData as RandomizerNodeData}
             />
           )}
+          {nodeData.type === "waitForReply" && (
+            <WaitForReplyEditor
+              nodeId={selectedNodeId}
+              data={nodeData as WaitForReplyNodeData}
+            />
+          )}
+          {nodeData.type === "generatePdf" && (
+            <GeneratePdfEditor
+              nodeId={selectedNodeId}
+              data={nodeData as GeneratePdfNodeData}
+            />
+          )}
         </div>
-      </SheetContent>
-    </Sheet>
+
+        {/* Footer */}
+        <div className="border-t border-slate-100 px-5 py-4">
+          <Button
+            onClick={close}
+            className="w-full gap-2 rounded-xl bg-slate-900 hover:bg-slate-800"
+          >
+            <Check size={16} />
+            Concluir
+          </Button>
+        </div>
+      </div>
+    </>
   );
 }
