@@ -12,7 +12,7 @@ import {
   addEdge,
 } from "@xyflow/react";
 import { createDefaultSplits } from "@/lib/constants";
-import { NODE_TYPES } from "@/types/flow";
+import { NODE_TYPES, type FlowNode, type FlowEdge } from "@/types/flow";
 import type { NodeData, SendMessageNodeData } from "@/types/node-data";
 import { normalizeWaitForReplyFlow } from "@/lib/wait-for-reply";
 
@@ -107,7 +107,7 @@ function normalizeLoadedFlow(
   edges: Edge[]
 ): { nodes: Node<NodeData>[]; edges: Edge[] } {
   const normalizedNodes = normalizeLoadedNodes(nodes);
-  const normalizedFlow = normalizeWaitForReplyFlow(normalizedNodes, edges);
+  const normalizedFlow = normalizeWaitForReplyFlow(normalizedNodes as FlowNode[], edges as FlowEdge[]);
 
   return {
     nodes: normalizedFlow.nodes as Node<NodeData>[],
