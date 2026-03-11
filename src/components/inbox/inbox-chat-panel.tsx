@@ -1,10 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Headset, RotateCcw, Send, Trash2 } from "lucide-react";
+import {
+  Headset,
+  RotateCcw,
+  Send,
+  Trash2,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
+import { ConversationTagsManager } from "./conversation-tags-manager";
 
 const supabase = createClient();
 import type { DbConversation, DbMessage } from "@/hooks/use-conversations";
@@ -41,6 +47,9 @@ function MessageBubble({ message }: { message: DbMessage }) {
             {message.sender === "human" ? "Operador" : "Bot"}
           </p>
         )}
+        {message.type === "video" && message.media_url && (
+          <video controls className="mb-2 max-h-64 w-full rounded" src={message.media_url} />
+        )}
         <p className="whitespace-pre-wrap break-words">{message.content}</p>
         <p className="text-[10px] text-gray-400 text-right mt-1">
           {new Date(message.created_at).toLocaleTimeString("pt-BR", {
@@ -55,8 +64,12 @@ function MessageBubble({ message }: { message: DbMessage }) {
 
 export function InboxChatPanel({
   conversation,
+  onConversationUpdated,
+  tagsVersion,
 }: {
   conversation: DbConversation;
+  onConversationUpdated: () => Promise<void>;
+  tagsVersion: number;
 }) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [text, setText] = useState("");
@@ -134,15 +147,7 @@ export function InboxChatPanel({
 
     await supabase
       .from("conversations")
-      .update({
-        status: "running",
-        ai_enabled: false,
-        active_flow_id: null,
-        current_node_id: null,
-        flow_node_queue: null,
-        flow_variables: null,
-        updated_at: new Date().toISOString(),
-      })
+      .delete()
       .eq("id", conversation.id);
   };
 
@@ -288,6 +293,12 @@ export function InboxChatPanel({
           )}
         </div>
       </div>
+
+      <ConversationTagsManager
+        conversation={conversation}
+        onUpdated={onConversationUpdated}
+        refreshKey={tagsVersion}
+      />
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4">

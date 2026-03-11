@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { createSupabaseServer } from "@/lib/supabase/server";
+import { getCurrentOrganizationContext } from "@/lib/organization";
 
 export async function GET(request: Request) {
-  const supabase = createServerClient();
+  const context = await getCurrentOrganizationContext();
+  const supabase = await createSupabaseServer();
   const url = new URL(request.url);
   const key = url.searchParams.get("key");
 
@@ -10,8 +12,9 @@ export async function GET(request: Request) {
     const { data, error } = await supabase
       .from("ai_guidelines")
       .select("*")
+      .eq("organization_id", context.organizationId)
       .eq("key", key)
-      .single();
+      .maybeSingle();
 
     if (error && error.code !== "PGRST116") {
       return NextResponse.json({ error: error.message }, { status: 500 });
@@ -23,6 +26,7 @@ export async function GET(request: Request) {
   const { data, error } = await supabase
     .from("ai_guidelines")
     .select("*")
+    .eq("organization_id", context.organizationId)
     .order("key", { ascending: true });
 
   if (error) {
@@ -33,7 +37,8 @@ export async function GET(request: Request) {
 }
 
 export async function PUT(request: Request) {
-  const supabase = createServerClient();
+  const context = await getCurrentOrganizationContext();
+  const supabase = await createSupabaseServer();
   const body = await request.json();
 
   if (!body.key) {
@@ -43,8 +48,9 @@ export async function PUT(request: Request) {
   const { data: existing } = await supabase
     .from("ai_guidelines")
     .select("id")
+    .eq("organization_id", context.organizationId)
     .eq("key", body.key)
-    .single();
+    .maybeSingle();
 
   if (existing) {
     const { data, error } = await supabase
@@ -56,6 +62,7 @@ export async function PUT(request: Request) {
         max_tokens: body.max_tokens,
         updated_at: new Date().toISOString(),
       })
+      .eq("organization_id", context.organizationId)
       .eq("id", existing.id)
       .select()
       .single();
@@ -69,6 +76,7 @@ export async function PUT(request: Request) {
   const { data, error } = await supabase
     .from("ai_guidelines")
     .insert({
+      organization_id: context.organizationId,
       key: body.key,
       system_prompt: body.system_prompt,
       model: body.model,

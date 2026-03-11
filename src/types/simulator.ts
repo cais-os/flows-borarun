@@ -15,7 +15,7 @@ export interface Conversation {
 export interface ChatMessage {
   id: string;
   content: string;
-  type: "text" | "image" | "file" | "audio" | "template" | "system";
+  type: "text" | "image" | "file" | "audio" | "video" | "template" | "system";
   sender: "bot" | "contact" | "human" | "system";
   mediaUrl?: string;
   fileName?: string;
@@ -28,4 +28,10 @@ export interface ChatMessage {
 
 export type SimulationStatus = "idle" | "running" | "paused" | "completed";
 
-export type ActiveTab = "flows" | "conversations" | "campanhas";
+export type ActiveTab =
+  | "flows"
+  | "conversations"
+  | "campanhas"
+  | "integrations"
+  | "analytics"
+  | "settings";

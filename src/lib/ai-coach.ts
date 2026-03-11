@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { buildStravaCoachContext } from "@/lib/strava";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -29,12 +30,16 @@ type AiGuidelines = {
   max_tokens: number;
 };
 
-async function fetchAiGuidelines(supabase: SupabaseClient): Promise<AiGuidelines> {
+async function fetchAiGuidelines(
+  supabase: SupabaseClient,
+  organizationId: string
+): Promise<AiGuidelines> {
   const { data } = await supabase
     .from("ai_guidelines")
     .select("system_prompt, model, temperature, max_tokens")
+    .eq("organization_id", organizationId)
     .eq("key", "ai_coach")
-    .single();
+    .maybeSingle();
 
   if (data?.system_prompt) {
     return {
@@ -60,10 +65,14 @@ interface DbMessage {
   created_at: string;
 }
 
-async function buildFlowContext(supabase: SupabaseClient): Promise<string> {
+async function buildFlowContext(
+  supabase: SupabaseClient,
+  organizationId: string
+): Promise<string> {
   const { data: flows } = await supabase
     .from("flows")
     .select("name, nodes")
+    .eq("organization_id", organizationId)
     .eq("is_active", true);
 
   if (!flows || flows.length === 0) return "";
@@ -87,18 +96,53 @@ Exemplo: "A propósito, se quiser saber sobre [tema], é só digitar '[palavra-c
 Não force — só mencione quando for relevante para o que o usuário está falando.`;
 }
 
+async function buildCompanyContext(
+  supabase: SupabaseClient,
+  organizationId: string
+): Promise<string> {
+  const { data } = await supabase
+    .from("ai_guidelines")
+    .select("system_prompt")
+    .eq("organization_id", organizationId)
+    .eq("key", "company_info")
+    .maybeSingle();
+
+  if (!data?.system_prompt) return "";
+
+  try {
+    const info = JSON.parse(data.system_prompt);
+    const lines: string[] = [];
+    if (info.name) lines.push(`Nome: ${info.name}`);
+    if (info.site) lines.push(`Site: ${info.site}`);
+    if (info.instagram) lines.push(`Instagram: ${info.instagram}`);
+    if (info.phone) lines.push(`Telefone/WhatsApp: ${info.phone}`);
+    if (info.email) lines.push(`E-mail: ${info.email}`);
+    if (info.description) lines.push(`Sobre: ${info.description}`);
+    if (info.extra) lines.push(`Informações extras: ${info.extra}`);
+
+    if (lines.length === 0) return "";
+
+    return `\n\nINFORMAÇÕES DA EMPRESA:\n${lines.join("\n")}\nUse essas informações para responder perguntas sobre a empresa, contato, site, redes sociais, etc.`;
+  } catch {
+    return "";
+  }
+}
+
 export async function generateCoachResponse(
   supabase: SupabaseClient,
   conversationId: string,
-  userMessage: string
+  userMessage: string,
+  organizationId: string
 ): Promise<string> {
-  // Fetch AI guidelines and flow context in parallel
-  const [guidelines, flowContext] = await Promise.all([
-    fetchAiGuidelines(supabase),
-    buildFlowContext(supabase),
+  // Fetch AI guidelines and the dynamic context in parallel.
+  const [guidelines, flowContext, stravaContext, companyContext] = await Promise.all([
+    fetchAiGuidelines(supabase, organizationId),
+    buildFlowContext(supabase, organizationId),
+    buildStravaCoachContext(supabase, conversationId),
+    buildCompanyContext(supabase, organizationId),
   ]);
 
-  const systemPrompt = guidelines.system_prompt + flowContext;
+  const systemPrompt = guidelines.system_prompt + flowContext + stravaContext + companyContext;
 
   // Fetch conversation history for context (last 20 messages)
   const { data: history } = await supabase

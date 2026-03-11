@@ -61,6 +61,24 @@ function ConversationItem({
           {lastMessage.content}
         </p>
       )}
+      {conversation.tags.length > 0 && (
+        <div className="ml-10 mt-1 flex flex-wrap gap-1">
+          {conversation.tags.slice(0, 2).map((tag) => (
+            <Badge
+              key={tag.id}
+              variant="secondary"
+              className="px-1.5 py-0 text-[9px] font-medium"
+            >
+              {tag.name}
+            </Badge>
+          ))}
+          {conversation.tags.length > 2 && (
+            <Badge variant="secondary" className="px-1.5 py-0 text-[9px] font-medium">
+              +{conversation.tags.length - 2}
+            </Badge>
+          )}
+        </div>
+      )}
       <div className="flex items-center justify-between ml-10 mt-1">
         <Badge variant="outline" className="text-[9px] px-1.5 py-0">
           {statusLabels[conversation.status]}

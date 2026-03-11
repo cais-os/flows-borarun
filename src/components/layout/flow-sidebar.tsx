@@ -1,10 +1,20 @@
 "use client";
 
 import { type DragEvent } from "react";
-import { Zap, MessageSquare, ImageIcon, Shuffle, MessageCircleQuestion } from "lucide-react";
+import {
+  Zap,
+  MessageSquare,
+  Tag,
+  Shuffle,
+  MessageCircleQuestion,
+  FileText,
+  Timer,
+  Flag,
+  Link,
+} from "lucide-react";
 import { NODE_TYPES } from "@/types/flow";
 import { NODE_CONFIG } from "@/lib/constants";
-import { getDefaultData } from "@/components/canvas/flow-canvas";
+import { createNodeId, getDefaultData } from "@/components/canvas/flow-canvas";
 import { useFlowStore } from "@/hooks/use-flow-store";
 import {
   Tooltip,
@@ -24,9 +34,9 @@ const nodeItems = [
     ...NODE_CONFIG[NODE_TYPES.SEND_MESSAGE],
   },
   {
-    type: NODE_TYPES.TEMPLATE_IMAGE,
-    icon: <ImageIcon size={20} />,
-    ...NODE_CONFIG[NODE_TYPES.TEMPLATE_IMAGE],
+    type: NODE_TYPES.TAG_CONVERSATION,
+    icon: <Tag size={20} />,
+    ...NODE_CONFIG[NODE_TYPES.TAG_CONVERSATION],
   },
   {
     type: NODE_TYPES.RANDOMIZER,
@@ -37,6 +47,26 @@ const nodeItems = [
     type: NODE_TYPES.WAIT_FOR_REPLY,
     icon: <MessageCircleQuestion size={20} />,
     ...NODE_CONFIG[NODE_TYPES.WAIT_FOR_REPLY],
+  },
+  {
+    type: NODE_TYPES.GENERATE_PDF,
+    icon: <FileText size={20} />,
+    ...NODE_CONFIG[NODE_TYPES.GENERATE_PDF],
+  },
+  {
+    type: NODE_TYPES.WAIT_TIMER,
+    icon: <Timer size={20} />,
+    ...NODE_CONFIG[NODE_TYPES.WAIT_TIMER],
+  },
+  {
+    type: NODE_TYPES.FINISH_FLOW,
+    icon: <Flag size={20} />,
+    ...NODE_CONFIG[NODE_TYPES.FINISH_FLOW],
+  },
+  {
+    type: NODE_TYPES.STRAVA_CONNECT,
+    icon: <Link size={20} />,
+    ...NODE_CONFIG[NODE_TYPES.STRAVA_CONNECT],
   },
 ];
 
@@ -59,7 +89,7 @@ export function FlowSidebar() {
       : 250;
 
     addNode({
-      id: `${type}-${Date.now()}`,
+      id: createNodeId(type),
       type,
       position: { x: centerX, y: maxY },
       data: getDefaultData(type),

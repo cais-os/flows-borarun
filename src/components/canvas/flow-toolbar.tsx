@@ -1,6 +1,14 @@
 "use client";
 
-import { LogOut, Megaphone, MessageCircle, PenTool } from "lucide-react";
+import {
+  BarChart3,
+  LogOut,
+  Megaphone,
+  MessageCircle,
+  PenTool,
+  Plug,
+  Settings,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useFlowStore } from "@/hooks/use-flow-store";
@@ -18,9 +26,11 @@ interface FlowToolbarProps {
 }
 
 const navItems: { id: ActiveTab; label: string; icon: React.ReactNode }[] = [
-  { id: "flows", label: "Flows", icon: <PenTool size={20} /> },
   { id: "conversations", label: "Conversas", icon: <MessageCircle size={20} /> },
+  { id: "flows", label: "Flows", icon: <PenTool size={20} /> },
   { id: "campanhas", label: "Campanhas", icon: <Megaphone size={20} /> },
+  { id: "integrations", label: "Integracoes", icon: <Plug size={20} /> },
+  { id: "analytics", label: "Analytics", icon: <BarChart3 size={20} /> },
 ];
 
 export function FlowToolbar({ onSelectTab }: FlowToolbarProps) {
@@ -46,12 +56,8 @@ export function FlowToolbar({ onSelectTab }: FlowToolbarProps) {
   };
 
   return (
-    <aside className="flex w-16 shrink-0 flex-col items-center gap-3 border-r border-slate-200 bg-white/90 py-4 backdrop-blur">
-      <div className="flex size-10 items-center justify-center rounded-2xl bg-slate-900 text-sm font-semibold text-white shadow-sm">
-        BR
-      </div>
-
-      <div className="flex flex-col items-center gap-1 flex-1">
+    <aside className="flex w-16 shrink-0 flex-col items-center border-r border-slate-200 bg-white/90 py-4 backdrop-blur">
+      <div className="flex flex-1 flex-col items-center gap-1">
         {navItems.map((item) => (
           <Tooltip key={item.id}>
             <TooltipTrigger asChild>
@@ -75,17 +81,38 @@ export function FlowToolbar({ onSelectTab }: FlowToolbarProps) {
         ))}
       </div>
 
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            onClick={() => void handleLogout()}
-            className="flex h-11 w-11 items-center justify-center rounded-2xl text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
-          >
-            <LogOut size={20} />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="right">Sair</TooltipContent>
-      </Tooltip>
+      <div className="flex flex-col items-center gap-1">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={() => handleTabClick("settings")}
+              className={cn(
+                "flex h-11 w-11 items-center justify-center rounded-2xl transition-colors",
+                activeTab === "settings"
+                  ? "bg-slate-900 text-white"
+                  : "text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              )}
+              aria-label="Configuracoes"
+            >
+              <Settings size={20} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right">Configuracoes</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => void handleLogout()}
+              className="flex h-11 w-11 items-center justify-center rounded-2xl text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
+            >
+              <LogOut size={20} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right">Sair</TooltipContent>
+        </Tooltip>
+      </div>
     </aside>
   );
 }

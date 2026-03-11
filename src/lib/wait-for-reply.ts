@@ -63,6 +63,7 @@ export function normalizeWaitForReplyNodeData(
     ...data,
     label: data.label || "Capturar Resposta",
     captureMode: (data.captureMode as CaptureMode | undefined) || "full",
+    variableDescription: data.variableDescription || "",
     routes: ensureAnyRoutesLast(routes),
     aiInstructions: data.aiInstructions || "",
     noMatchMessage: data.noMatchMessage || "",

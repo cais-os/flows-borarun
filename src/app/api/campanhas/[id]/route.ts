@@ -1,15 +1,18 @@
 import { NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { createSupabaseServer } from "@/lib/supabase/server";
+import { getCurrentOrganizationContext } from "@/lib/organization";
 
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const supabase = createServerClient();
+  const context = await getCurrentOrganizationContext();
+  const supabase = await createSupabaseServer();
   const { data, error } = await supabase
     .from("campaigns")
     .select("*")
+    .eq("organization_id", context.organizationId)
     .eq("id", id)
     .single();
 
@@ -25,7 +28,8 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const supabase = createServerClient();
+  const context = await getCurrentOrganizationContext();
+  const supabase = await createSupabaseServer();
   const body = await request.json();
 
   const { data, error } = await supabase
@@ -43,6 +47,7 @@ export async function PUT(
       scheduled_at: body.scheduled_at,
       updated_at: new Date().toISOString(),
     })
+    .eq("organization_id", context.organizationId)
     .eq("id", id)
     .select()
     .single();
@@ -59,8 +64,13 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const supabase = createServerClient();
-  const { error } = await supabase.from("campaigns").delete().eq("id", id);
+  const context = await getCurrentOrganizationContext();
+  const supabase = await createSupabaseServer();
+  const { error } = await supabase
+    .from("campaigns")
+    .delete()
+    .eq("organization_id", context.organizationId)
+    .eq("id", id);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

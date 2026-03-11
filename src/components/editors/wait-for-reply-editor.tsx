@@ -134,6 +134,22 @@ export function WaitForReplyEditor({
       </div>
 
       <div className="space-y-2">
+        <Label>Descricao da variavel (opcional)</Label>
+        <Input
+          value={normalized.variableDescription || ""}
+          onChange={(event) =>
+            update({
+              variableDescription: event.target.value,
+            })
+          }
+          placeholder="Ex: Objetivo principal do corredor para os proximos 3 meses"
+        />
+        <p className="text-xs text-gray-500">
+          Ajuda a identificar melhor o que essa resposta representa no flow.
+        </p>
+      </div>
+
+      <div className="space-y-2">
         <Label>Como salvar a resposta</Label>
         <select
           value={normalized.captureMode || "full"}

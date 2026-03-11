@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
-import { sendMetaWhatsAppTemplateMessage } from "@/lib/meta";
+import { createSupabaseServer } from "@/lib/supabase/server";
+import { getCurrentOrganizationContext } from "@/lib/organization";
+import { getMetaConfigFromSettings, sendMetaWhatsAppTemplateMessage } from "@/lib/meta";
 
 interface Recipient {
   phone: string;
@@ -13,11 +14,14 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const supabase = createServerClient();
+  const context = await getCurrentOrganizationContext();
+  const { config: metaConfig } = getMetaConfigFromSettings(context.settings);
+  const supabase = await createSupabaseServer();
 
   const { data: campaign, error } = await supabase
     .from("campaigns")
     .select("*")
+    .eq("organization_id", context.organizationId)
     .eq("id", id)
     .single();
 
@@ -70,7 +74,7 @@ export async function POST(
         templateName: campaign.template_name,
         language: campaign.template_language || "pt_BR",
         components: components.length > 0 ? components : undefined,
-      });
+      }, metaConfig);
 
       sentCount++;
     } catch (err) {
@@ -80,10 +84,11 @@ export async function POST(
 
     // Update progress every 5 messages
     if ((sentCount + failedCount) % 5 === 0) {
-      await supabase
-        .from("campaigns")
-        .update({ sent_count: sentCount, failed_count: failedCount })
-        .eq("id", id);
+    await supabase
+      .from("campaigns")
+      .update({ sent_count: sentCount, failed_count: failedCount })
+      .eq("organization_id", context.organizationId)
+      .eq("id", id);
     }
   }
 
@@ -97,6 +102,7 @@ export async function POST(
       sent_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
+    .eq("organization_id", context.organizationId)
     .eq("id", id);
 
   return NextResponse.json({ sent: sentCount, failed: failedCount });

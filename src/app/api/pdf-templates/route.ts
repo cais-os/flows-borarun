@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { createSupabaseServer } from "@/lib/supabase/server";
+import { getCurrentOrganizationContext } from "@/lib/organization";
 
 export async function GET() {
-  const supabase = createServerClient();
+  const context = await getCurrentOrganizationContext();
+  const supabase = await createSupabaseServer();
   const { data, error } = await supabase
     .from("pdf_templates")
     .select("*")
+    .eq("organization_id", context.organizationId)
     .order("name", { ascending: true });
 
   if (error) {
@@ -16,12 +19,14 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const supabase = createServerClient();
+  const context = await getCurrentOrganizationContext();
+  const supabase = await createSupabaseServer();
   const body = await request.json();
 
   const { data, error } = await supabase
     .from("pdf_templates")
     .insert({
+      organization_id: context.organizationId,
       name: body.name,
       html_content: body.html_content,
     })

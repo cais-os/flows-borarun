@@ -10,6 +10,9 @@ import { FlowToolbar } from "@/components/canvas/flow-toolbar";
 import { NodeEditorPanel } from "@/components/editors/node-editor-panel";
 import { InboxView } from "@/components/inbox/inbox-view";
 import { CampanhasView } from "@/components/campanhas/campanhas-view";
+import { IntegrationsView } from "@/components/integrations/integrations-view";
+import { AnalyticsView } from "@/components/analytics/analytics-view";
+import { SettingsView } from "@/components/settings/settings-view";
 import { useFlowStore } from "@/hooks/use-flow-store";
 import { useAutoSave } from "@/hooks/use-auto-save";
 import { useSimulatorStore } from "@/hooks/use-simulator-store";
@@ -97,6 +100,12 @@ function FlowBuilderContent() {
         <InboxView />
       ) : activeTab === "campanhas" ? (
         <CampanhasView />
+      ) : activeTab === "integrations" ? (
+        <IntegrationsView />
+      ) : activeTab === "analytics" ? (
+        <AnalyticsView />
+      ) : activeTab === "settings" ? (
+        <SettingsView />
       ) : null}
     </div>
   );

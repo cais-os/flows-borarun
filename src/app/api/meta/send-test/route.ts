@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
-import { getMetaConfig, sendMetaWhatsAppTextMessage } from "@/lib/meta";
+import { getCurrentOrganizationContext } from "@/lib/organization";
+import {
+  getMetaConfigFromSettings,
+  sendMetaWhatsAppTextMessage,
+} from "@/lib/meta";
 
 export async function POST(request: Request) {
-  const { configured, missing } = getMetaConfig();
+  const context = await getCurrentOrganizationContext();
+  const { configured, missing, config } = getMetaConfigFromSettings(
+    context.settings
+  );
 
   if (!configured) {
     return NextResponse.json(
@@ -27,7 +34,7 @@ export async function POST(request: Request) {
     const result = await sendMetaWhatsAppTextMessage({
       to: body.to,
       body: body.body,
-    });
+    }, config);
 
     return NextResponse.json(result);
   } catch (error) {

@@ -12,7 +12,8 @@ import {
   addEdge,
 } from "@xyflow/react";
 import { createDefaultSplits } from "@/lib/constants";
-import type { NodeData } from "@/types/node-data";
+import { NODE_TYPES } from "@/types/flow";
+import type { NodeData, SendMessageNodeData } from "@/types/node-data";
 import { normalizeWaitForReplyFlow } from "@/lib/wait-for-reply";
 
 interface FlowState {
@@ -46,8 +47,37 @@ interface FlowActions {
   setClean: () => void;
 }
 
+type LegacyTemplateImageNodeData = {
+  type: "templateImage";
+  label?: string;
+  templateId?: string;
+  templateName?: string;
+  headerImageUrl?: string;
+  bodyVariables?: Record<string, string>;
+};
+
 function normalizeLoadedNodes(nodes: Node<NodeData>[]): Node<NodeData>[] {
   return nodes.map((node) => {
+    if ((node.data as { type?: string }).type === "templateImage") {
+      const legacyData = node.data as unknown as LegacyTemplateImageNodeData;
+
+      return {
+        ...node,
+        type: NODE_TYPES.SEND_MESSAGE,
+        data: {
+          type: "sendMessage",
+          label: legacyData.label || "Enviar Mensagem",
+          messageType: "template",
+          templateId: legacyData.templateId,
+          templateName: legacyData.templateName,
+          interactiveType: "none",
+          mediaUrl: legacyData.headerImageUrl,
+          legacyTemplateImageHeaderUrl: legacyData.headerImageUrl,
+          legacyTemplateImageBodyVariables: legacyData.bodyVariables,
+        } satisfies SendMessageNodeData,
+      };
+    }
+
     if (node.data.type !== "randomizer") return node;
 
     const splits = node.data.splits;

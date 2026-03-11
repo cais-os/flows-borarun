@@ -6,18 +6,28 @@ import { useFlowStore } from "@/hooks/use-flow-store";
 import { NODE_CONFIG } from "@/lib/constants";
 import { TriggerEditor } from "./trigger-editor";
 import { SendMessageEditor } from "./send-message-editor";
-import { TemplateImageEditor } from "./template-image-editor";
+import { TagConversationEditor } from "./tag-conversation-editor";
 import { RandomizerEditor } from "./randomizer-editor";
 import { WaitForReplyEditor } from "./wait-for-reply-editor";
 import { GeneratePdfEditor } from "./generate-pdf-editor";
+import { WaitTimerEditor } from "./wait-timer-editor";
+import { FinishFlowEditor } from "./finish-flow-editor";
+import { AiCollectorEditor } from "./ai-collector-editor";
+import { StravaConnectEditor } from "./strava-connect-editor";
+import { PaymentEditor } from "./payment-editor";
 import type {
   NodeData,
   TriggerNodeData,
   SendMessageNodeData,
-  TemplateImageNodeData,
+  TagConversationNodeData,
   RandomizerNodeData,
   WaitForReplyNodeData,
   GeneratePdfNodeData,
+  WaitTimerNodeData,
+  FinishFlowNodeData,
+  AiCollectorNodeData,
+  StravaConnectNodeData,
+  PaymentNodeData,
 } from "@/types/node-data";
 
 export function NodeEditorPanel() {
@@ -92,10 +102,10 @@ export function NodeEditorPanel() {
               data={nodeData as SendMessageNodeData}
             />
           )}
-          {nodeData.type === "templateImage" && (
-            <TemplateImageEditor
+          {nodeData.type === "tagConversation" && (
+            <TagConversationEditor
               nodeId={selectedNodeId}
-              data={nodeData as TemplateImageNodeData}
+              data={nodeData as TagConversationNodeData}
             />
           )}
           {nodeData.type === "randomizer" && (
@@ -114,6 +124,36 @@ export function NodeEditorPanel() {
             <GeneratePdfEditor
               nodeId={selectedNodeId}
               data={nodeData as GeneratePdfNodeData}
+            />
+          )}
+          {nodeData.type === "waitTimer" && (
+            <WaitTimerEditor
+              nodeId={selectedNodeId}
+              data={nodeData as WaitTimerNodeData}
+            />
+          )}
+          {nodeData.type === "finishFlow" && (
+            <FinishFlowEditor
+              nodeId={selectedNodeId}
+              data={nodeData as FinishFlowNodeData}
+            />
+          )}
+          {nodeData.type === "aiCollector" && (
+            <AiCollectorEditor
+              nodeId={selectedNodeId}
+              data={nodeData as AiCollectorNodeData}
+            />
+          )}
+          {nodeData.type === "stravaConnect" && (
+            <StravaConnectEditor
+              nodeId={selectedNodeId}
+              data={nodeData as StravaConnectNodeData}
+            />
+          )}
+          {nodeData.type === "payment" && (
+            <PaymentEditor
+              nodeId={selectedNodeId}
+              data={nodeData as PaymentNodeData}
             />
           )}
         </div>

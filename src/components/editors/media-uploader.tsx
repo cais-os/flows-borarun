@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useRef, type DragEvent, useState } from "react";
-import { Upload, X, FileText, Image, Mic } from "lucide-react";
+import { Upload, X, FileText, Image, Mic, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface MediaUploaderProps {
   accept: string;
-  type: "image" | "file" | "audio";
+  type: "image" | "file" | "audio" | "video";
   value?: string;
   fileName?: string;
   onChange: (url: string, fileName: string) => void;
@@ -17,12 +17,14 @@ const typeIcons = {
   image: <Image size={20} />,
   file: <FileText size={20} />,
   audio: <Mic size={20} />,
+  video: <Video size={20} />,
 };
 
 const typeLabels = {
   image: "imagem",
   file: "arquivo",
   audio: "audio",
+  video: "video",
 };
 
 export function MediaUploader({
@@ -80,6 +82,9 @@ export function MediaUploader({
         )}
         {type === "audio" && (
           <audio controls className="mt-2 w-full" src={value} />
+        )}
+        {type === "video" && (
+          <video controls className="mt-2 max-h-48 w-full rounded" src={value} />
         )}
       </div>
     );

@@ -8,7 +8,9 @@ import {
   ImageIcon,
   FileText,
   Mic,
+  Video,
   LayoutTemplate,
+  Sparkles,
 } from "lucide-react";
 import { NodeWrapper } from "./node-wrapper";
 import { NODE_CONFIG } from "@/lib/constants";
@@ -25,6 +27,8 @@ const messageIcons = {
   image: <ImageIcon size={14} />,
   file: <FileText size={14} />,
   audio: <Mic size={14} />,
+  video: <Video size={14} />,
+  ai: <Sparkles size={14} />,
 };
 
 const messageLabels = {
@@ -33,6 +37,8 @@ const messageLabels = {
   image: "Imagem",
   file: "Arquivo",
   audio: "Audio",
+  video: "Video",
+  ai: "IA",
 };
 
 export function SendMessageNode({ id, data, selected }: NodeProps) {
@@ -168,6 +174,25 @@ export function SendMessageNode({ id, data, selected }: NodeProps) {
         </p>
       )}
 
+      {nodeData.messageType === "ai" && nodeData.aiPrompt && (
+        <p className="line-clamp-2 whitespace-pre-wrap text-purple-700 italic">
+          {nodeData.aiPrompt}
+        </p>
+      )}
+
+      {nodeData.messageType === "audio" &&
+        nodeData.audioSource === "dynamic" &&
+        nodeData.audioScript && (
+          <>
+            <div className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">
+              Audio dinamico
+            </div>
+            <p className="line-clamp-2 whitespace-pre-wrap text-emerald-700 italic text-[10px]">
+              {nodeData.audioScript}
+            </p>
+          </>
+        )}
+
       {interactiveType !== "none" && (
         <div className="mt-1.5 space-y-1">
           <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400">
@@ -196,9 +221,19 @@ export function SendMessageNode({ id, data, selected }: NodeProps) {
         </div>
       )}
 
-      {(nodeData.messageType === "image" ||
-        nodeData.messageType === "file" ||
-        nodeData.messageType === "audio") &&
+      {nodeData.messageType === "image" &&
+        nodeData.imageSource === "ai_generate" &&
+        nodeData.imagePrompt && (
+          <p className="line-clamp-2 whitespace-pre-wrap text-purple-700 italic text-[10px]">
+            {nodeData.imagePrompt}
+          </p>
+        )}
+
+      {(nodeData.messageType === "file" ||
+        nodeData.messageType === "audio" ||
+        nodeData.messageType === "video" ||
+        (nodeData.messageType === "image" &&
+          nodeData.imageSource !== "ai_generate")) &&
         nodeData.mediaUrl && (
           <div className="rounded bg-gray-50 px-1.5 py-0.5 text-gray-600 truncate">
             {nodeData.fileName || "Arquivo anexado"}
@@ -207,7 +242,9 @@ export function SendMessageNode({ id, data, selected }: NodeProps) {
 
       {!nodeData.textContent &&
         !nodeData.templateName &&
-        !nodeData.mediaUrl && (
+        !nodeData.mediaUrl &&
+        !nodeData.aiPrompt &&
+        !nodeData.imagePrompt && (
           <p className="text-gray-400 italic">Clique para configurar</p>
         )}
     </NodeWrapper>

@@ -90,7 +90,7 @@ export function FlowListSidebar({ onBeforeFlowChange }: FlowListSidebarProps) {
     void fetchFlows();
   }, [fetchFlows]);
 
-  // Keep list in sync with store changes
+  // Keep list in sync with store changes (including local→remote ID promotion)
   useEffect(() => {
     if (!flowId) return;
 
@@ -104,8 +104,15 @@ export function FlowListSidebar({ onBeforeFlowChange }: FlowListSidebarProps) {
     });
 
     setFlows((prev) => {
-      if (!prev.some((flow) => flow.id === flowId)) return prev;
-      return upsertFlowInCollection(prev, currentSnapshot);
+      // Remove stale local-* entries whose name matches (promoted to remote)
+      const cleaned = !flowId.startsWith("local-")
+        ? prev.filter(
+            (flow) =>
+              !flow.id.startsWith("local-") || flow.name !== flowName
+          )
+        : prev;
+
+      return upsertFlowInCollection(cleaned, currentSnapshot);
     });
 
     upsertLocalFlow(currentSnapshot);

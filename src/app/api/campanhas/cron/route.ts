@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
-import { sendMetaWhatsAppTemplateMessage } from "@/lib/meta";
+import {
+  getOrganizationSettingsById,
+} from "@/lib/organization";
+import {
+  getMetaConfigFromSettings,
+  sendMetaWhatsAppTemplateMessage,
+} from "@/lib/meta";
 
 interface Recipient {
   phone: string;
@@ -38,6 +44,10 @@ export async function GET(request: Request) {
 
   for (const campaign of campaigns) {
     if (!campaign.template_name) continue;
+    const settings = await getOrganizationSettingsById(
+      campaign.organization_id as string
+    );
+    const { config: metaConfig } = getMetaConfigFromSettings(settings);
 
     const recipients = (campaign.recipients || []) as Recipient[];
     if (recipients.length === 0) continue;
@@ -74,7 +84,7 @@ export async function GET(request: Request) {
           templateName: campaign.template_name,
           language: campaign.template_language || "pt_BR",
           components: components.length > 0 ? components : undefined,
-        });
+        }, metaConfig);
 
         sentCount++;
       } catch (err) {

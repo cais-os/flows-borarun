@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
-import { fetchMetaHealth, getMetaConfig } from "@/lib/meta";
+import { getCurrentOrganizationContext } from "@/lib/organization";
+import { fetchMetaHealth, getMetaConfigFromSettings } from "@/lib/meta";
 
 export async function GET() {
-  const { configured, missing } = getMetaConfig();
+  const context = await getCurrentOrganizationContext();
+  const { configured, missing, config } = getMetaConfigFromSettings(
+    context.settings
+  );
 
   if (!configured) {
     return NextResponse.json(
@@ -15,7 +19,7 @@ export async function GET() {
   }
 
   try {
-    const health = await fetchMetaHealth();
+    const health = await fetchMetaHealth(config);
     return NextResponse.json(health);
   } catch (error) {
     return NextResponse.json(

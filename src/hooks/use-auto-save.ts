@@ -3,7 +3,11 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { useFlowStore } from "./use-flow-store";
 import type { Flow } from "@/types/flow";
-import { normalizeFlow, upsertLocalFlow } from "@/lib/flow-persistence";
+import {
+  deleteLocalFlow,
+  normalizeFlow,
+  upsertLocalFlow,
+} from "@/lib/flow-persistence";
 
 type SaveTarget = "local" | "remote" | null;
 type SaveStatus = "idle" | "saving" | "saved" | "error";
@@ -66,6 +70,54 @@ export function useAutoSave() {
       );
 
       if (snapshot.flowId.startsWith("local-")) {
+        // Try to promote local flow to Supabase
+        try {
+          const promoteRes = await fetch("/api/flows", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: snapshot.flowName,
+              nodes: snapshot.nodes,
+              edges: snapshot.edges,
+              is_active: snapshot.flowIsActive,
+            }),
+          });
+
+          if (promoteRes.ok) {
+            const remoteFlow = normalizeFlow(
+              (await promoteRes.json()) as Flow
+            );
+            // Remove old local entry and save with remote ID
+            deleteLocalFlow(snapshot.flowId);
+            upsertLocalFlow(remoteFlow);
+
+            // Swap ID in the store if this flow is still active
+            const store = useFlowStore.getState();
+            if (store.flowId === snapshot.flowId) {
+              store.setFlow(
+                remoteFlow.id,
+                remoteFlow.name,
+                remoteFlow.nodes,
+                remoteFlow.edges,
+                remoteFlow.isActive
+              );
+            }
+
+            if (markClean && useFlowStore.getState().flowId === remoteFlow.id) {
+              setClean();
+            }
+
+            setLastSavedAt(remoteFlow.updated_at);
+            setSaveTarget("remote");
+            setSaveStatus("saved");
+            setIsSaving(false);
+            return remoteFlow;
+          }
+        } catch {
+          // Promotion failed — fall through to local-only save
+        }
+
+        // Local-only fallback
         if (markClean && useFlowStore.getState().flowId === snapshot.flowId) {
           setClean();
         }
@@ -73,6 +125,7 @@ export function useAutoSave() {
         setLastSavedAt(localFlow.updated_at);
         setSaveTarget("local");
         setSaveStatus("saved");
+        setSaveError("Sem conexao com o servidor; salvo apenas no navegador.");
         setIsSaving(false);
         return localFlow;
       }

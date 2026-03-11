@@ -1,19 +1,28 @@
 "use client";
 
 import { useState } from "react";
-import { BookOpen, MessageCircle, Loader2, Zap } from "lucide-react";
+import { BookOpen, Loader2, MessageCircle, Tags, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useConversations } from "@/hooks/use-conversations";
 import { InboxConversationList } from "./inbox-conversation-list";
 import { InboxChatPanel } from "./inbox-chat-panel";
 import { ShortcutsManager } from "./shortcuts-manager";
 import { GuidelinesManager } from "./guidelines-manager";
+import { TagsManager } from "./tags-manager";
 
 export function InboxView() {
-  const { conversations, selectedId, setSelectedId, selectedConversation, loading } =
-    useConversations();
+  const {
+    conversations,
+    selectedId,
+    setSelectedId,
+    selectedConversation,
+    loading,
+    refetch,
+  } = useConversations();
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const [showTags, setShowTags] = useState(false);
   const [showGuidelines, setShowGuidelines] = useState(false);
+  const [tagsVersion, setTagsVersion] = useState(0);
 
   if (loading) {
     return (
@@ -26,7 +35,7 @@ export function InboxView() {
   return (
     <div className="flex flex-1 overflow-hidden">
       <div className="w-72 border-r bg-white flex flex-col">
-        <div className="flex items-center justify-between px-4 py-3 border-b">
+        <div className="px-4 py-3 border-b space-y-2">
           <div>
             <h2 className="text-sm font-semibold text-gray-700">Conversas WhatsApp</h2>
             <p className="text-xs text-gray-400">{conversations.length} conversa(s)</p>
@@ -40,6 +49,15 @@ export function InboxView() {
             >
               <Zap size={14} />
               Atalhos
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 gap-1 text-xs text-gray-500"
+              onClick={() => setShowTags(true)}
+            >
+              <Tags size={14} />
+              Tags
             </Button>
             <Button
               size="sm"
@@ -60,7 +78,11 @@ export function InboxView() {
       </div>
 
       {selectedConversation ? (
-        <InboxChatPanel conversation={selectedConversation} />
+        <InboxChatPanel
+          conversation={selectedConversation}
+          onConversationUpdated={refetch}
+          tagsVersion={tagsVersion}
+        />
       ) : (
         <div className="flex-1 flex items-center justify-center bg-[#e5ddd5]">
           <div className="text-center text-gray-500">
@@ -76,6 +98,16 @@ export function InboxView() {
 
       {showShortcuts && (
         <ShortcutsManager onClose={() => setShowShortcuts(false)} />
+      )}
+
+      {showTags && (
+        <TagsManager
+          onClose={() => setShowTags(false)}
+          onTagsChanged={() => {
+            void refetch();
+            setTagsVersion((current) => current + 1);
+          }}
+        />
       )}
 
       {showGuidelines && (

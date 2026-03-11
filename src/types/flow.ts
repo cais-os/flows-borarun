@@ -15,10 +15,15 @@ export interface Flow {
 export const NODE_TYPES = {
   TRIGGER: "trigger",
   SEND_MESSAGE: "sendMessage",
-  TEMPLATE_IMAGE: "templateImage",
+  TAG_CONVERSATION: "tagConversation",
   RANDOMIZER: "randomizer",
   WAIT_FOR_REPLY: "waitForReply",
   GENERATE_PDF: "generatePdf",
+  WAIT_TIMER: "waitTimer",
+  FINISH_FLOW: "finishFlow",
+  AI_COLLECTOR: "aiCollector",
+  STRAVA_CONNECT: "stravaConnect",
+  PAYMENT: "payment",
 } as const;
 
 export type NodeType = (typeof NODE_TYPES)[keyof typeof NODE_TYPES];

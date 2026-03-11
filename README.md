@@ -34,6 +34,29 @@ META_WEBHOOK_VERIFY_TOKEN=...
 META_GRAPH_API_VERSION=v23.0
 ```
 
+## Strava Setup
+
+Set these variables in `.env.local`:
+
+```bash
+STRAVA_CLIENT_ID=...
+STRAVA_CLIENT_SECRET=...
+NEXT_PUBLIC_APP_URL=https://seu-dominio.com
+STRAVA_SCOPES=read,activity:read_all
+```
+
+In the Strava app configuration, register this callback URL:
+
+```bash
+https://seu-dominio.com/api/strava/callback
+```
+
+Before using the integration, apply the SQL migration in:
+
+```bash
+apps/web/supabase/migrations/20260309_strava_integration.sql
+```
+
 Available endpoints:
 
 - `GET /api/meta/health`: checks if Meta credentials are configured and valid
@@ -42,6 +65,12 @@ Available endpoints:
 - `POST /api/meta/subscribe`: subscribes the app to the configured WABA
 - `GET /api/meta/webhook`: webhook verification endpoint for Meta
 - `POST /api/meta/webhook`: inbound WhatsApp webhook endpoint for messages and statuses
+- `GET /api/strava/health`: checks if Strava credentials are configured
+- `GET /api/strava/connect?conversationId=...`: starts Strava OAuth for a conversation
+- `GET /api/strava/callback`: receives the Strava OAuth callback
+- `GET /api/strava/status?conversationId=...`: returns Strava status and recent activities
+- `POST /api/strava/sync`: forces a sync for the selected conversation
+- `POST /api/strava/send-link`: sends the Strava connect link to the athlete on WhatsApp
 
 ## Learn More
 

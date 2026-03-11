@@ -1,7 +1,19 @@
 "use client";
 
 import { type DragEvent } from "react";
-import { Zap, MessageSquare, ImageIcon, Shuffle, MessageCircleQuestion, FileText } from "lucide-react";
+import {
+  Zap,
+  MessageSquare,
+  Tag,
+  Shuffle,
+  MessageCircleQuestion,
+  FileText,
+  Timer,
+  Flag,
+  Bot,
+  Link,
+  CreditCard,
+} from "lucide-react";
 import { NODE_TYPES } from "@/types/flow";
 import { NODE_CONFIG } from "@/lib/constants";
 import { getDefaultData } from "@/components/canvas/flow-canvas";
@@ -11,6 +23,7 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from "@/components/ui/tooltip";
+import { createNodeId } from "@/components/canvas/flow-canvas";
 
 const nodeItems = [
   {
@@ -24,9 +37,9 @@ const nodeItems = [
     ...NODE_CONFIG[NODE_TYPES.SEND_MESSAGE],
   },
   {
-    type: NODE_TYPES.TEMPLATE_IMAGE,
-    icon: <ImageIcon size={16} />,
-    ...NODE_CONFIG[NODE_TYPES.TEMPLATE_IMAGE],
+    type: NODE_TYPES.TAG_CONVERSATION,
+    icon: <Tag size={16} />,
+    ...NODE_CONFIG[NODE_TYPES.TAG_CONVERSATION],
   },
   {
     type: NODE_TYPES.RANDOMIZER,
@@ -42,6 +55,31 @@ const nodeItems = [
     type: NODE_TYPES.GENERATE_PDF,
     icon: <FileText size={16} />,
     ...NODE_CONFIG[NODE_TYPES.GENERATE_PDF],
+  },
+  {
+    type: NODE_TYPES.WAIT_TIMER,
+    icon: <Timer size={16} />,
+    ...NODE_CONFIG[NODE_TYPES.WAIT_TIMER],
+  },
+  {
+    type: NODE_TYPES.FINISH_FLOW,
+    icon: <Flag size={16} />,
+    ...NODE_CONFIG[NODE_TYPES.FINISH_FLOW],
+  },
+  {
+    type: NODE_TYPES.AI_COLLECTOR,
+    icon: <Bot size={16} />,
+    ...NODE_CONFIG[NODE_TYPES.AI_COLLECTOR],
+  },
+  {
+    type: NODE_TYPES.STRAVA_CONNECT,
+    icon: <Link size={16} />,
+    ...NODE_CONFIG[NODE_TYPES.STRAVA_CONNECT],
+  },
+  {
+    type: NODE_TYPES.PAYMENT,
+    icon: <CreditCard size={16} />,
+    ...NODE_CONFIG[NODE_TYPES.PAYMENT],
   },
 ];
 
@@ -63,7 +101,7 @@ export function FlowNodeToolbar() {
       : 250;
 
     addNode({
-      id: `${type}-${Date.now()}`,
+      id: createNodeId(type),
       type,
       position: { x: centerX, y: maxY },
       data: getDefaultData(type),

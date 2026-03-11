@@ -3,6 +3,10 @@
     {
       "path": "/api/campanhas/cron",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/timers",
+      "schedule": "* * * * *"
     }
   ]
 }

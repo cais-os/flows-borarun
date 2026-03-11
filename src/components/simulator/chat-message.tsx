@@ -83,6 +83,10 @@ export function ChatMessage({
           <audio controls className="mb-1 max-w-full" src={message.mediaUrl} />
         )}
 
+        {message.type === "video" && message.mediaUrl && (
+          <video controls className="mb-1 max-w-full rounded" src={message.mediaUrl} />
+        )}
+
         {message.type === "file" && message.fileName && (
           <div className="flex items-center gap-1.5 mb-1 text-sm text-blue-600">
             📎 {message.fileName}

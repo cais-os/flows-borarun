@@ -18,21 +18,47 @@ import { createDefaultWaitRoutes } from "@/lib/wait-for-reply";
 
 import { TriggerNode } from "@/components/nodes/trigger-node";
 import { SendMessageNode } from "@/components/nodes/send-message-node";
-import { TemplateImageNode } from "@/components/nodes/template-image-node";
+import { TagConversationNode } from "@/components/nodes/tag-conversation-node";
 import { RandomizerNode } from "@/components/nodes/randomizer-node";
 import { WaitForReplyNode } from "@/components/nodes/wait-for-reply-node";
 import { GeneratePdfNode } from "@/components/nodes/generate-pdf-node";
+import { WaitTimerNode } from "@/components/nodes/wait-timer-node";
+import { FinishFlowNode } from "@/components/nodes/finish-flow-node";
+import { AiCollectorNode } from "@/components/nodes/ai-collector-node";
+import { StravaConnectNode } from "@/components/nodes/strava-connect-node";
+import { PaymentNode } from "@/components/nodes/payment-node";
 
-import type { TriggerNodeData, SendMessageNodeData, TemplateImageNodeData, RandomizerNodeData, WaitForReplyNodeData, GeneratePdfNodeData } from "@/types/node-data";
+import type {
+  TriggerNodeData,
+  SendMessageNodeData,
+  TagConversationNodeData,
+  RandomizerNodeData,
+  WaitForReplyNodeData,
+  GeneratePdfNodeData,
+  WaitTimerNodeData,
+  FinishFlowNodeData,
+  AiCollectorNodeData,
+  StravaConnectNodeData,
+  PaymentNodeData,
+} from "@/types/node-data";
 
 const nodeTypes = {
   [NODE_TYPES.TRIGGER]: TriggerNode,
   [NODE_TYPES.SEND_MESSAGE]: SendMessageNode,
-  [NODE_TYPES.TEMPLATE_IMAGE]: TemplateImageNode,
+  [NODE_TYPES.TAG_CONVERSATION]: TagConversationNode,
   [NODE_TYPES.RANDOMIZER]: RandomizerNode,
   [NODE_TYPES.WAIT_FOR_REPLY]: WaitForReplyNode,
   [NODE_TYPES.GENERATE_PDF]: GeneratePdfNode,
+  [NODE_TYPES.WAIT_TIMER]: WaitTimerNode,
+  [NODE_TYPES.FINISH_FLOW]: FinishFlowNode,
+  [NODE_TYPES.AI_COLLECTOR]: AiCollectorNode,
+  [NODE_TYPES.STRAVA_CONNECT]: StravaConnectNode,
+  [NODE_TYPES.PAYMENT]: PaymentNode,
 };
+
+export function createNodeId(type: string) {
+  return `${type}-${Date.now()}`;
+}
 
 export function getDefaultData(type: string) {
   switch (type) {
@@ -45,8 +71,12 @@ export function getDefaultData(type: string) {
         messageType: "text",
         interactiveType: "none",
       } satisfies SendMessageNodeData;
-    case NODE_TYPES.TEMPLATE_IMAGE:
-      return { type: "templateImage", label: "Template com Imagem" } satisfies TemplateImageNodeData;
+    case NODE_TYPES.TAG_CONVERSATION:
+      return {
+        type: "tagConversation",
+        label: "Taguear",
+        tagId: "",
+      } satisfies TagConversationNodeData;
     case NODE_TYPES.RANDOMIZER:
       return { type: "randomizer", label: "Teste A/B", splits: createDefaultSplits() } satisfies RandomizerNodeData;
     case NODE_TYPES.WAIT_FOR_REPLY:
@@ -59,6 +89,33 @@ export function getDefaultData(type: string) {
       } satisfies WaitForReplyNodeData;
     case NODE_TYPES.GENERATE_PDF:
       return { type: "generatePdf", label: "Gerar PDF", templateId: "" } satisfies GeneratePdfNodeData;
+    case NODE_TYPES.WAIT_TIMER:
+      return { type: "waitTimer", label: "Temporizador", timeoutMinutes: 45 } satisfies WaitTimerNodeData;
+    case NODE_TYPES.FINISH_FLOW:
+      return { type: "finishFlow", label: "Finalizar Flow" } satisfies FinishFlowNodeData;
+    case NODE_TYPES.AI_COLLECTOR:
+      return {
+        type: "aiCollector",
+        label: "Coletor IA",
+        fields: [],
+        initialPrompt: "",
+        typingSeconds: 0,
+        followUpTemplate: "Ainda preciso das seguintes informacoes: {{missing_fields}}. Pode me informar?",
+        maxAttempts: 5,
+      } satisfies AiCollectorNodeData;
+    case NODE_TYPES.STRAVA_CONNECT:
+      return {
+        type: "stravaConnect",
+        label: "Conectar Strava",
+      } satisfies StravaConnectNodeData;
+    case NODE_TYPES.PAYMENT:
+      return {
+        type: "payment",
+        label: "Pagamento",
+        planName: "",
+        amount: 0,
+        durationDays: 30,
+      } satisfies PaymentNodeData;
     default:
       return {
         type: "sendMessage",
@@ -100,7 +157,7 @@ export function FlowCanvas() {
       });
 
       const newNode = {
-        id: `${type}-${Date.now()}`,
+        id: createNodeId(type),
         type,
         position,
         data: getDefaultData(type),

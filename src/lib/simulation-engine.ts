@@ -2,7 +2,7 @@ import type { Node, Edge } from "@xyflow/react";
 import type {
   NodeData,
   SendMessageNodeData,
-  TemplateImageNodeData,
+  TagConversationNodeData,
   RandomizerNodeData,
   WaitForReplyNodeData,
 } from "@/types/node-data";
@@ -145,14 +145,16 @@ function nodeToMessage(
     const interactiveOptions = getSendMessageInteractiveOptions(sendData);
     return {
       id: createMessageId("msg"),
-      content: interpolateVariables(
-        sendData.textContent ||
-          sendData.templateName ||
-          sendData.fileName ||
-          "Mensagem configurada",
-        variables
-      ),
-      type: sendData.messageType === "template" ? "template" : sendData.messageType,
+      content: sendData.messageType === "ai"
+        ? `[IA] ${interpolateVariables(sendData.aiPrompt || "Prompt nao configurado", variables)}`
+        : interpolateVariables(
+            sendData.textContent ||
+              sendData.templateName ||
+              sendData.fileName ||
+              "Mensagem configurada",
+            variables
+          ),
+      type: sendData.messageType === "template" ? "template" : sendData.messageType === "ai" ? "text" : sendData.messageType,
       sender: "bot",
       mediaUrl: sendData.mediaUrl,
       fileName: sendData.fileName,
@@ -166,20 +168,6 @@ function nodeToMessage(
             }))
           : undefined,
       interactiveType: interactiveType === "none" ? undefined : interactiveType,
-      timestamp: new Date(),
-    };
-  }
-
-  if (data.type === "templateImage") {
-    const templateData = data as TemplateImageNodeData;
-    return {
-      id: createMessageId("msg"),
-      content: templateData.templateName || "Template com imagem",
-      type: "template",
-      sender: "bot",
-      mediaUrl: templateData.headerImageUrl,
-      templateName: templateData.templateName,
-      nodeId: node.id,
       timestamp: new Date(),
     };
   }
@@ -258,6 +246,34 @@ async function processSimulationQueue(
         pendingNodeIds: queue.map((node) => node.id),
       });
       return;
+    }
+
+    if (data.type === "finishFlow") {
+      callbacks.onMessage({
+        id: createMessageId("sys"),
+        content: `${data.label || "Finalizar Flow"} executado`,
+        type: "system",
+        sender: "system",
+        timestamp: new Date(),
+      });
+      callbacks.onComplete();
+      return;
+    }
+
+    if (data.type === "tagConversation") {
+      const tagData = data as TagConversationNodeData;
+      callbacks.onMessage({
+        id: createMessageId("sys"),
+        content: tagData.tagName
+          ? `Tag aplicada: ${tagData.tagName}`
+          : "No Taguear executado sem tag selecionada",
+        type: "system",
+        sender: "system",
+        timestamp: new Date(),
+      });
+      queue.push(...findNextNodes(current.id, edges, nodes));
+      await delay(350);
+      continue;
     }
 
     const message = nodeToMessage(current, callbacks.getFlowVariables());

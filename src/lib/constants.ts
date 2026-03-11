@@ -12,10 +12,10 @@ export const NODE_CONFIG = {
     color: "#25D366",
     description: "Envia texto, template, imagem, arquivo ou audio",
   },
-  [NODE_TYPES.TEMPLATE_IMAGE]: {
-    label: "Template com Imagem",
-    color: "#3B82F6",
-    description: "Template do WhatsApp com imagem de header",
+  [NODE_TYPES.TAG_CONVERSATION]: {
+    label: "Taguear",
+    color: "#0EA5E9",
+    description: "Adiciona uma tag existente ao cliente atual",
   },
   [NODE_TYPES.RANDOMIZER]: {
     label: "Teste A/B",
@@ -31,6 +31,31 @@ export const NODE_CONFIG = {
     label: "Gerar PDF",
     color: "#EF4444",
     description: "Gera um PDF personalizado com IA e envia pelo WhatsApp",
+  },
+  [NODE_TYPES.WAIT_TIMER]: {
+    label: "Temporizador",
+    color: "#F59E0B",
+    description: "Espera X minutos pela resposta. Segue por 'respondeu' ou 'não respondeu'",
+  },
+  [NODE_TYPES.FINISH_FLOW]: {
+    label: "Finalizar Flow",
+    color: "#0F766E",
+    description: "Encerra o flow e marca a conversa como finalizada",
+  },
+  [NODE_TYPES.AI_COLLECTOR]: {
+    label: "Coletor IA",
+    color: "#6366F1",
+    description: "Coleta informacoes estruturadas do usuario com IA",
+  },
+  [NODE_TYPES.STRAVA_CONNECT]: {
+    label: "Conectar Strava",
+    color: "#FC4C02",
+    description: "Envia o link de conexao do Strava para o usuario",
+  },
+  [NODE_TYPES.PAYMENT]: {
+    label: "Pagamento",
+    color: "#00B1EA",
+    description: "Envia um link de pagamento do Mercado Pago",
   },
 } as const;
 

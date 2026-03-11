@@ -40,7 +40,8 @@ export function upsertFlowInCollection(
   flows: Flow[],
   draft: FlowDraft
 ): Flow[] {
-  const existing = flows.find((flow) => flow.id === draft.id);
+  const existingIndex = flows.findIndex((flow) => flow.id === draft.id);
+  const existing = existingIndex >= 0 ? flows[existingIndex] : undefined;
   const merged = normalizeFlow({
     ...existing,
     ...draft,
@@ -48,10 +49,15 @@ export function upsertFlowInCollection(
     updated_at: draft.updated_at || existing?.updated_at,
   });
 
-  return sortFlows([
-    merged,
-    ...flows.filter((flow) => flow.id !== draft.id),
-  ]);
+  if (existingIndex >= 0) {
+    // Update in place — preserve position
+    const updated = [...flows];
+    updated[existingIndex] = merged;
+    return updated;
+  }
+
+  // New flow — add to the beginning
+  return [merged, ...flows];
 }
 
 export function createLocalFlow(draft: Partial<Flow> = {}): Flow {
@@ -156,6 +162,20 @@ function describeTrigger(data: TriggerNodeData): string {
 
   if (data.triggerType === "newContact") {
     return "Novo contato";
+  }
+
+  if (data.triggerType === "tag") {
+    const scopeLabel = data.audienceScope === "newOnly" ? " (so novos)" : "";
+    return data.tagName?.trim()
+      ? `Tag: ${data.tagName.trim()}${scopeLabel}`
+      : `Tem tag${scopeLabel}`;
+  }
+
+  if (data.triggerType === "subscriptionPlan") {
+    const scopeLabel = data.audienceScope === "newOnly" ? " (so novos)" : "";
+    return data.subscriptionPlan
+      ? `Subscription: ${data.subscriptionPlan}${scopeLabel}`
+      : `Subscription${scopeLabel}`;
   }
 
   return "Manual";

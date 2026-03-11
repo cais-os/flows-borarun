@@ -1,11 +1,12 @@
 import { createHmac, timingSafeEqual } from "crypto";
+import type { OrganizationSettings } from "@/lib/organization";
 import type { WhatsAppListItem, WhatsAppReplyButton } from "@/types/node-data";
 import {
   buildWhatsAppListPayload,
   buildWhatsAppReplyButtonsPayload,
 } from "@/lib/whatsapp";
 
-type MetaConfig = {
+export type MetaConfig = {
   systemToken: string;
   appId: string;
   appSecret: string;
@@ -38,6 +39,12 @@ function isMissingValue(value: string | undefined) {
   return PLACEHOLDER_PREFIXES.some((prefix) => normalized.startsWith(prefix));
 }
 
+function createMetaError(message: string, details?: unknown) {
+  return new Error(
+    details ? `${message}: ${JSON.stringify(details)}` : message
+  );
+}
+
 function buildGraphUrl(
   config: MetaConfig,
   path: string,
@@ -58,23 +65,7 @@ function buildGraphUrl(
   return url;
 }
 
-function createMetaError(message: string, details?: unknown) {
-  return new Error(
-    details ? `${message}: ${JSON.stringify(details)}` : message
-  );
-}
-
-export function getMetaConfig() {
-  const config: MetaConfig = {
-    systemToken: process.env.META_SYSTEM_TOKEN || "",
-    appId: process.env.META_APP_ID || "",
-    appSecret: process.env.META_APP_SECRET || "",
-    phoneNumberId: process.env.META_PHONE_NUMBER_ID || "",
-    wabaId: process.env.META_WABA_ID || "",
-    webhookVerifyToken: process.env.META_WEBHOOK_VERIFY_TOKEN || "",
-    graphApiVersion: process.env.META_GRAPH_API_VERSION || "v23.0",
-  };
-
+function createMetaConfigResult(config: MetaConfig) {
   const missing: string[] = [];
 
   if (isMissingValue(config.systemToken)) missing.push("META_SYSTEM_TOKEN");
@@ -93,11 +84,56 @@ export function getMetaConfig() {
   };
 }
 
+function hasOrganizationMetaOverrides(settings?: OrganizationSettings | null) {
+  if (!settings) return false;
+
+  // Only consider it a full override when the essential credentials are set.
+  // Having only meta_phone_number_id (used for org resolution) should NOT
+  // trigger an override — otherwise the config would have empty tokens.
+  return Boolean(
+    settings.meta_system_token &&
+      settings.meta_app_secret
+  );
+}
+
+export function getMetaConfig() {
+  return createMetaConfigResult({
+    systemToken: process.env.META_SYSTEM_TOKEN || "",
+    appId: process.env.META_APP_ID || "",
+    appSecret: process.env.META_APP_SECRET || "",
+    phoneNumberId: process.env.META_PHONE_NUMBER_ID || "",
+    wabaId: process.env.META_WABA_ID || "",
+    webhookVerifyToken: process.env.META_WEBHOOK_VERIFY_TOKEN || "",
+    graphApiVersion: process.env.META_GRAPH_API_VERSION || "v23.0",
+  });
+}
+
+export function getMetaConfigFromSettings(settings?: OrganizationSettings | null) {
+  if (!hasOrganizationMetaOverrides(settings)) {
+    return getMetaConfig();
+  }
+
+  return createMetaConfigResult({
+    systemToken: settings?.meta_system_token || "",
+    appId: settings?.meta_app_id || "",
+    appSecret: settings?.meta_app_secret || "",
+    phoneNumberId: settings?.meta_phone_number_id || "",
+    wabaId: settings?.meta_waba_id || "",
+    webhookVerifyToken: settings?.meta_webhook_verify_token || "",
+    graphApiVersion: settings?.meta_graph_api_version || "v23.0",
+  });
+}
+
+function getResolvedMetaConfig(configOverride?: MetaConfig) {
+  return configOverride ? createMetaConfigResult(configOverride) : getMetaConfig();
+}
+
 export async function metaGraphRequest<T>(
   path: string,
-  init: MetaRequestInit = {}
+  init: MetaRequestInit = {},
+  configOverride?: MetaConfig
 ): Promise<T> {
-  const { configured, missing, config } = getMetaConfig();
+  const { configured, missing, config } = getResolvedMetaConfig(configOverride);
 
   if (!configured) {
     throw createMetaError(`Meta config missing: ${missing.join(", ")}`);
@@ -127,8 +163,8 @@ export async function metaGraphRequest<T>(
   return data as T;
 }
 
-export async function fetchMetaHealth() {
-  const { configured, missing, config } = getMetaConfig();
+export async function fetchMetaHealth(configOverride?: MetaConfig) {
+  const { configured, missing, config } = getResolvedMetaConfig(configOverride);
 
   if (!configured) {
     return {
@@ -144,22 +180,30 @@ export async function fetchMetaHealth() {
       display_phone_number?: string;
       quality_rating?: string;
       code_verification_status?: string;
-    }>(config.phoneNumberId, {
-      searchParams: {
-        fields:
-          "id,verified_name,display_phone_number,quality_rating,code_verification_status",
+    }>(
+      config.phoneNumberId,
+      {
+        searchParams: {
+          fields:
+            "id,verified_name,display_phone_number,quality_rating,code_verification_status",
+        },
       },
-    }),
+      config
+    ),
     metaGraphRequest<{
       id: string;
       name?: string;
       timezone_id?: string;
       currency?: string;
-    }>(config.wabaId, {
-      searchParams: {
-        fields: "id,name,timezone_id,currency",
+    }>(
+      config.wabaId,
+      {
+        searchParams: {
+          fields: "id,name,timezone_id,currency",
+        },
       },
-    }),
+      config
+    ),
   ]);
 
   return {
@@ -172,26 +216,31 @@ export async function fetchMetaHealth() {
 }
 
 export async function sendMetaWhatsAppTextMessage(
-  params: SendMetaWhatsAppMessageParams
+  params: SendMetaWhatsAppMessageParams,
+  configOverride?: MetaConfig
 ) {
-  const { config } = getMetaConfig();
+  const { config } = getResolvedMetaConfig(configOverride);
 
   const result = await metaGraphRequest<{
     messages?: Array<{ id: string }>;
     contacts?: Array<{ input?: string; wa_id?: string }>;
-  }>(`${config.phoneNumberId}/messages`, {
-    method: "POST",
-    body: {
-      messaging_product: "whatsapp",
-      recipient_type: "individual",
-      to: params.to,
-      type: "text",
-      text: {
-        preview_url: params.previewUrl ?? false,
-        body: params.body,
+  }>(
+    `${config.phoneNumberId}/messages`,
+    {
+      method: "POST",
+      body: {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: params.to,
+        type: "text",
+        text: {
+          preview_url: params.previewUrl ?? false,
+          body: params.body,
+        },
       },
     },
-  });
+    config
+  );
 
   return {
     messageId: result.messages?.[0]?.id || null,
@@ -199,86 +248,31 @@ export async function sendMetaWhatsAppTextMessage(
   };
 }
 
-export async function sendMetaWhatsAppInteractiveButtonsMessage(params: {
-  to: string;
-  body: string;
-  replyButtons: WhatsAppReplyButton[];
-}) {
-  const { config } = getMetaConfig();
+export async function sendMetaWhatsAppInteractiveButtonsMessage(
+  params: {
+    to: string;
+    body: string;
+    replyButtons: WhatsAppReplyButton[];
+  },
+  configOverride?: MetaConfig
+) {
+  const { config } = getResolvedMetaConfig(configOverride);
 
   const result = await metaGraphRequest<{
     messages?: Array<{ id: string }>;
     contacts?: Array<{ input?: string; wa_id?: string }>;
-  }>(`${config.phoneNumberId}/messages`, {
-    method: "POST",
-    body: {
-      recipient_type: "individual",
-      to: params.to,
-      ...buildWhatsAppReplyButtonsPayload(params.body, params.replyButtons),
-    },
-  });
-
-  return {
-    messageId: result.messages?.[0]?.id || null,
-    contact: result.contacts?.[0] || null,
-  };
-}
-
-export async function sendMetaWhatsAppInteractiveListMessage(params: {
-  to: string;
-  body: string;
-  buttonText: string;
-  sectionTitle?: string;
-  items: WhatsAppListItem[];
-}) {
-  const { config } = getMetaConfig();
-
-  const result = await metaGraphRequest<{
-    messages?: Array<{ id: string }>;
-    contacts?: Array<{ input?: string; wa_id?: string }>;
-  }>(`${config.phoneNumberId}/messages`, {
-    method: "POST",
-    body: {
-      recipient_type: "individual",
-      to: params.to,
-      ...buildWhatsAppListPayload({
-        bodyText: params.body,
-        buttonText: params.buttonText,
-        sectionTitle: params.sectionTitle,
-        items: params.items,
-      }),
-    },
-  });
-
-  return {
-    messageId: result.messages?.[0]?.id || null,
-    contact: result.contacts?.[0] || null,
-  };
-}
-
-export async function sendMetaWhatsAppDocumentMessage(params: {
-  to: string;
-  documentUrl: string;
-  fileName?: string;
-}) {
-  const { config } = getMetaConfig();
-
-  const result = await metaGraphRequest<{
-    messages?: Array<{ id: string }>;
-    contacts?: Array<{ input?: string; wa_id?: string }>;
-  }>(`${config.phoneNumberId}/messages`, {
-    method: "POST",
-    body: {
-      messaging_product: "whatsapp",
-      recipient_type: "individual",
-      to: params.to,
-      type: "document",
-      document: {
-        link: params.documentUrl,
-        filename: params.fileName || "document.pdf",
+  }>(
+    `${config.phoneNumberId}/messages`,
+    {
+      method: "POST",
+      body: {
+        recipient_type: "individual",
+        to: params.to,
+        ...buildWhatsAppReplyButtonsPayload(params.body, params.replyButtons),
       },
     },
-  });
+    config
+  );
 
   return {
     messageId: result.messages?.[0]?.id || null,
@@ -286,27 +280,38 @@ export async function sendMetaWhatsAppDocumentMessage(params: {
   };
 }
 
-export async function sendMetaWhatsAppAudioMessage(params: {
-  to: string;
-  audioUrl: string;
-}) {
-  const { config } = getMetaConfig();
+export async function sendMetaWhatsAppInteractiveListMessage(
+  params: {
+    to: string;
+    body: string;
+    buttonText: string;
+    sectionTitle?: string;
+    items: WhatsAppListItem[];
+  },
+  configOverride?: MetaConfig
+) {
+  const { config } = getResolvedMetaConfig(configOverride);
 
   const result = await metaGraphRequest<{
     messages?: Array<{ id: string }>;
     contacts?: Array<{ input?: string; wa_id?: string }>;
-  }>(`${config.phoneNumberId}/messages`, {
-    method: "POST",
-    body: {
-      messaging_product: "whatsapp",
-      recipient_type: "individual",
-      to: params.to,
-      type: "audio",
-      audio: {
-        link: params.audioUrl,
+  }>(
+    `${config.phoneNumberId}/messages`,
+    {
+      method: "POST",
+      body: {
+        recipient_type: "individual",
+        to: params.to,
+        ...buildWhatsAppListPayload({
+          bodyText: params.body,
+          buttonText: params.buttonText,
+          sectionTitle: params.sectionTitle,
+          items: params.items,
+        }),
       },
     },
-  });
+    config
+  );
 
   return {
     messageId: result.messages?.[0]?.id || null,
@@ -314,20 +319,169 @@ export async function sendMetaWhatsAppAudioMessage(params: {
   };
 }
 
-export async function sendMetaWhatsAppTemplateMessage(params: {
-  to: string;
-  templateName: string;
-  language?: string;
-  components?: Array<{
-    type: string;
-    parameters: Array<{
+export async function sendMetaWhatsAppDocumentMessage(
+  params: {
+    to: string;
+    documentUrl: string;
+    fileName?: string;
+  },
+  configOverride?: MetaConfig
+) {
+  const { config } = getResolvedMetaConfig(configOverride);
+
+  const result = await metaGraphRequest<{
+    messages?: Array<{ id: string }>;
+    contacts?: Array<{ input?: string; wa_id?: string }>;
+  }>(
+    `${config.phoneNumberId}/messages`,
+    {
+      method: "POST",
+      body: {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: params.to,
+        type: "document",
+        document: {
+          link: params.documentUrl,
+          filename: params.fileName || "document.pdf",
+        },
+      },
+    },
+    config
+  );
+
+  return {
+    messageId: result.messages?.[0]?.id || null,
+    contact: result.contacts?.[0] || null,
+  };
+}
+
+export async function sendMetaWhatsAppAudioMessage(
+  params: {
+    to: string;
+    audioUrl: string;
+  },
+  configOverride?: MetaConfig
+) {
+  const { config } = getResolvedMetaConfig(configOverride);
+
+  const result = await metaGraphRequest<{
+    messages?: Array<{ id: string }>;
+    contacts?: Array<{ input?: string; wa_id?: string }>;
+  }>(
+    `${config.phoneNumberId}/messages`,
+    {
+      method: "POST",
+      body: {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: params.to,
+        type: "audio",
+        audio: {
+          link: params.audioUrl,
+        },
+      },
+    },
+    config
+  );
+
+  return {
+    messageId: result.messages?.[0]?.id || null,
+    contact: result.contacts?.[0] || null,
+  };
+}
+
+export async function sendMetaWhatsAppVideoMessage(
+  params: {
+    to: string;
+    videoUrl: string;
+    caption?: string;
+  },
+  configOverride?: MetaConfig
+) {
+  const { config } = getResolvedMetaConfig(configOverride);
+
+  const result = await metaGraphRequest<{
+    messages?: Array<{ id: string }>;
+    contacts?: Array<{ input?: string; wa_id?: string }>;
+  }>(
+    `${config.phoneNumberId}/messages`,
+    {
+      method: "POST",
+      body: {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: params.to,
+        type: "video",
+        video: {
+          link: params.videoUrl,
+          ...(params.caption ? { caption: params.caption } : {}),
+        },
+      },
+    },
+    config
+  );
+
+  return {
+    messageId: result.messages?.[0]?.id || null,
+    contact: result.contacts?.[0] || null,
+  };
+}
+
+export async function sendMetaWhatsAppImageMessage(
+  params: {
+    to: string;
+    imageUrl: string;
+    caption?: string;
+  },
+  configOverride?: MetaConfig
+) {
+  const { config } = getResolvedMetaConfig(configOverride);
+
+  const result = await metaGraphRequest<{
+    messages?: Array<{ id: string }>;
+    contacts?: Array<{ input?: string; wa_id?: string }>;
+  }>(
+    `${config.phoneNumberId}/messages`,
+    {
+      method: "POST",
+      body: {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: params.to,
+        type: "image",
+        image: {
+          link: params.imageUrl,
+          ...(params.caption ? { caption: params.caption } : {}),
+        },
+      },
+    },
+    config
+  );
+
+  return {
+    messageId: result.messages?.[0]?.id || null,
+    contact: result.contacts?.[0] || null,
+  };
+}
+
+export async function sendMetaWhatsAppTemplateMessage(
+  params: {
+    to: string;
+    templateName: string;
+    language?: string;
+    components?: Array<{
       type: string;
-      text?: string;
-      image?: { link: string };
+      parameters: Array<{
+        type: string;
+        text?: string;
+        image?: { link: string };
+      }>;
     }>;
-  }>;
-}) {
-  const { config } = getMetaConfig();
+  },
+  configOverride?: MetaConfig
+) {
+  const { config } = getResolvedMetaConfig(configOverride);
 
   const templateBody: Record<string, unknown> = {
     messaging_product: "whatsapp",
@@ -344,10 +498,14 @@ export async function sendMetaWhatsAppTemplateMessage(params: {
   const result = await metaGraphRequest<{
     messages?: Array<{ id: string }>;
     contacts?: Array<{ input?: string; wa_id?: string }>;
-  }>(`${config.phoneNumberId}/messages`, {
-    method: "POST",
-    body: templateBody,
-  });
+  }>(
+    `${config.phoneNumberId}/messages`,
+    {
+      method: "POST",
+      body: templateBody,
+    },
+    config
+  );
 
   return {
     messageId: result.messages?.[0]?.id || null,
@@ -355,37 +513,51 @@ export async function sendMetaWhatsAppTemplateMessage(params: {
   };
 }
 
-export async function markMessageAsRead(messageId: string) {
-  const { config } = getMetaConfig();
+export async function markMessageAsRead(
+  messageId: string,
+  configOverride?: MetaConfig
+) {
+  const { config } = getResolvedMetaConfig(configOverride);
 
-  return metaGraphRequest(`${config.phoneNumberId}/messages`, {
-    method: "POST",
-    body: {
-      messaging_product: "whatsapp",
-      status: "read",
-      message_id: messageId,
-    },
-  });
-}
-
-export async function sendTypingIndicator(messageId: string) {
-  const { config } = getMetaConfig();
-
-  return metaGraphRequest(`${config.phoneNumberId}/messages`, {
-    method: "POST",
-    body: {
-      messaging_product: "whatsapp",
-      status: "read",
-      message_id: messageId,
-      typing_indicator: {
-        type: "text",
+  return metaGraphRequest(
+    `${config.phoneNumberId}/messages`,
+    {
+      method: "POST",
+      body: {
+        messaging_product: "whatsapp",
+        status: "read",
+        message_id: messageId,
       },
     },
-  });
+    config
+  );
 }
 
-export async function fetchMetaMessageTemplates() {
-  const { config } = getMetaConfig();
+export async function sendTypingIndicator(
+  messageId: string,
+  configOverride?: MetaConfig
+) {
+  const { config } = getResolvedMetaConfig(configOverride);
+
+  return metaGraphRequest(
+    `${config.phoneNumberId}/messages`,
+    {
+      method: "POST",
+      body: {
+        messaging_product: "whatsapp",
+        status: "read",
+        message_id: messageId,
+        typing_indicator: {
+          type: "text",
+        },
+      },
+    },
+    config
+  );
+}
+
+export async function fetchMetaMessageTemplates(configOverride?: MetaConfig) {
+  const { config } = getResolvedMetaConfig(configOverride);
 
   const result = await metaGraphRequest<{
     data?: Array<{
@@ -396,12 +568,16 @@ export async function fetchMetaMessageTemplates() {
       language?: string;
       components?: unknown[];
     }>;
-  }>(`${config.wabaId}/message_templates`, {
-    searchParams: {
-      fields: "id,name,status,category,language,components",
-      limit: 100,
+  }>(
+    `${config.wabaId}/message_templates`,
+    {
+      searchParams: {
+        fields: "id,name,status,category,language,components",
+        limit: 100,
+      },
     },
-  });
+    config
+  );
 
   return (result.data || []).map((template) => ({
     id: template.id,
@@ -413,16 +589,24 @@ export async function fetchMetaMessageTemplates() {
   }));
 }
 
-export async function subscribeMetaAppToWaba() {
-  const { config } = getMetaConfig();
+export async function subscribeMetaAppToWaba(configOverride?: MetaConfig) {
+  const { config } = getResolvedMetaConfig(configOverride);
 
-  return metaGraphRequest<{ success?: boolean }>(`${config.wabaId}/subscribed_apps`, {
-    method: "POST",
-  });
+  return metaGraphRequest<{ success?: boolean }>(
+    `${config.wabaId}/subscribed_apps`,
+    {
+      method: "POST",
+    },
+    config
+  );
 }
 
-export function validateMetaWebhookSignature(signature: string | null, rawBody: string) {
-  const { configured, config } = getMetaConfig();
+export function validateMetaWebhookSignature(
+  signature: string | null,
+  rawBody: string,
+  configOverride?: MetaConfig
+) {
+  const { configured, config } = getResolvedMetaConfig(configOverride);
 
   if (!configured) return false;
   if (!signature) return false;
@@ -441,13 +625,46 @@ export function validateMetaWebhookSignature(signature: string | null, rawBody: 
   return timingSafeEqual(providedBuffer, expectedBuffer);
 }
 
-export function validateMetaWebhookVerifyToken(token: string | null) {
-  const { configured, config } = getMetaConfig();
+export function validateMetaWebhookVerifyToken(
+  token: string | null,
+  configOverride?: MetaConfig
+) {
+  const { configured, config } = getResolvedMetaConfig(configOverride);
 
   if (!configured) return false;
   if (!token) return false;
 
   return token === config.webhookVerifyToken;
+}
+
+export async function downloadMetaMedia(
+  mediaId: string,
+  configOverride?: MetaConfig
+): Promise<Buffer> {
+  const { configured, missing, config } = getResolvedMetaConfig(configOverride);
+
+  if (!configured) {
+    throw createMetaError(`Meta config missing: ${missing.join(", ")}`);
+  }
+
+  const mediaInfo = await metaGraphRequest<{ url: string }>(
+    mediaId,
+    {},
+    config
+  );
+
+  const response = await fetch(mediaInfo.url, {
+    headers: { Authorization: `Bearer ${config.systemToken}` },
+  });
+
+  if (!response.ok) {
+    throw createMetaError("Failed to download media from Meta", {
+      status: response.status,
+    });
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  return Buffer.from(arrayBuffer);
 }
 
 export function getMetaWebhookSummary(requestUrl: string) {

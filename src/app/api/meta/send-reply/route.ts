@@ -1,16 +1,13 @@
 import { NextResponse } from "next/server";
-import { getMetaConfig, sendMetaWhatsAppTextMessage } from "@/lib/meta";
-import { createServerClient } from "@/lib/supabase/server";
+import {
+  getConversationOrganizationContext,
+  getCurrentOrganizationContext,
+} from "@/lib/organization";
+import { sendMetaWhatsAppTextMessage, getMetaConfigFromSettings } from "@/lib/meta";
+import { createSupabaseServer } from "@/lib/supabase/server";
 
 export async function POST(request: Request) {
-  const { configured, missing } = getMetaConfig();
-
-  if (!configured) {
-    return NextResponse.json(
-      { error: "Meta Cloud API credentials not configured", missing },
-      { status: 400 }
-    );
-  }
+  const currentOrganization = await getCurrentOrganizationContext();
 
   const body = await request.json();
 
@@ -21,11 +18,12 @@ export async function POST(request: Request) {
     );
   }
 
-  const supabase = createServerClient();
+  const supabase = await createSupabaseServer();
 
   const { data: conversation } = await supabase
     .from("conversations")
     .select("contact_phone, status")
+    .eq("organization_id", currentOrganization.organizationId)
     .eq("id", body.conversationId)
     .single();
 
@@ -37,10 +35,27 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await sendMetaWhatsAppTextMessage({
-      to: conversation.contact_phone,
-      body: body.text,
-    });
+    const conversationContext = await getConversationOrganizationContext(
+      body.conversationId
+    );
+    const { configured, missing, config } = getMetaConfigFromSettings(
+      conversationContext.settings
+    );
+
+    if (!configured) {
+      return NextResponse.json(
+        { error: "Meta Cloud API credentials not configured", missing },
+        { status: 400 }
+      );
+    }
+
+    const result = await sendMetaWhatsAppTextMessage(
+      {
+        to: conversation.contact_phone,
+        body: body.text,
+      },
+      config
+    );
 
     await supabase.from("messages").insert({
       conversation_id: body.conversationId,

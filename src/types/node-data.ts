@@ -1,10 +1,15 @@
 export type NodeData =
   | TriggerNodeData
   | SendMessageNodeData
-  | TemplateImageNodeData
+  | TagConversationNodeData
   | RandomizerNodeData
   | WaitForReplyNodeData
-  | GeneratePdfNodeData;
+  | GeneratePdfNodeData
+  | WaitTimerNodeData
+  | FinishFlowNodeData
+  | AiCollectorNodeData
+  | StravaConnectNodeData
+  | PaymentNodeData;
 
 export type CaptureMode = "full" | "summary";
 export type ReplyMatchType = "contains" | "exact" | "startsWith" | "any";
@@ -12,21 +17,35 @@ export type ReplyMatchType = "contains" | "exact" | "startsWith" | "any";
 export type TriggerNodeData = {
   type: "trigger";
   label: string;
-  triggerType: "keyword" | "newContact" | "manual";
+  triggerType: "keyword" | "newContact" | "manual" | "tag" | "subscriptionPlan";
+  audienceScope?: "all" | "newOnly";
   keyword?: string;
   keywordMatch?: "contains" | "notContains" | "exact";
+  tagId?: string;
+  tagName?: string;
+  subscriptionPlan?: "free" | "premium";
   [key: string]: unknown;
 };
 
 export type SendMessageNodeData = {
   type: "sendMessage";
   label: string;
-  messageType: "text" | "template" | "image" | "file" | "audio";
+  messageType: "text" | "template" | "image" | "file" | "audio" | "video" | "ai";
   textContent?: string;
   templateId?: string;
   templateName?: string;
+  templateLanguage?: string;
   mediaUrl?: string;
   fileName?: string;
+  audioSource?: "upload" | "elevenlabs" | "library" | "dynamic";
+  audioAssetId?: string;
+  audioVoiceId?: string;
+  audioScript?: string;
+  imageSource?: "upload" | "ai_generate";
+  imagePrompt?: string;
+  imageCaption?: string;
+  videoCaption?: string;
+  aiPrompt?: string;
   typingSeconds?: number;
   interactiveType?: "none" | "buttons" | "list";
   replyButtons?: WhatsAppReplyButton[];
@@ -36,13 +55,11 @@ export type SendMessageNodeData = {
   [key: string]: unknown;
 };
 
-export type TemplateImageNodeData = {
-  type: "templateImage";
+export type TagConversationNodeData = {
+  type: "tagConversation";
   label: string;
-  templateId?: string;
-  templateName?: string;
-  headerImageUrl?: string;
-  bodyVariables?: Record<string, string>;
+  tagId?: string;
+  tagName?: string;
   [key: string]: unknown;
 };
 
@@ -57,6 +74,7 @@ export type WaitForReplyNodeData = {
   type: "waitForReply";
   label: string;
   variableName: string;
+  variableDescription?: string;
   promptMessage?: string;
   captureMode?: CaptureMode;
   aiInstructions?: string;
@@ -71,6 +89,19 @@ export type GeneratePdfNodeData = {
   templateId: string;
   aiPrompt?: string;
   fileName?: string;
+  [key: string]: unknown;
+};
+
+export type WaitTimerNodeData = {
+  type: "waitTimer";
+  label: string;
+  timeoutMinutes: number;
+  [key: string]: unknown;
+};
+
+export type FinishFlowNodeData = {
+  type: "finishFlow";
+  label: string;
   [key: string]: unknown;
 };
 
@@ -97,3 +128,46 @@ export interface WaitForReplyRoute {
   matchType: ReplyMatchType;
   value?: string;
 }
+
+export interface AiCollectorField {
+  id: string;
+  name: string;
+  description: string;
+  required: boolean;
+}
+
+export type StravaConnectNodeData = {
+  type: "stravaConnect";
+  label: string;
+  messageText?: string;
+  mediaUrl?: string;
+  mediaFileName?: string;
+  imageCaption?: string;
+  [key: string]: unknown;
+};
+
+export type PaymentNodeData = {
+  type: "payment";
+  label: string;
+  planName: string;
+  amount: number;
+  durationDays: number;
+  currency?: string;
+  messageText?: string;
+  mediaUrl?: string;
+  mediaFileName?: string;
+  [key: string]: unknown;
+};
+
+export type AiCollectorNodeData = {
+  type: "aiCollector";
+  label: string;
+  fields: AiCollectorField[];
+  initialPrompt: string;
+  typingSeconds?: number;
+  followUpTemplate: string;
+  completionMessage?: string;
+  maxAttempts: number;
+  aiExtractionPrompt?: string;
+  [key: string]: unknown;
+};

@@ -6,9 +6,13 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 function buildSummaryInstruction(data: WaitForReplyNodeData): string {
   const customInstructions = data.aiInstructions?.trim();
+  const variableDescription = data.variableDescription?.trim();
 
   return [
     "Voce extrai o valor principal da resposta do usuario para salvar como variavel de um flow de WhatsApp.",
+    variableDescription
+      ? `Descricao da variavel a capturar: ${variableDescription}.`
+      : "",
     "Retorne SOMENTE o dado puro, sem rotulos, sem prefixos e sem contexto extra.",
     "Exemplos: se o usuario responde 'Rodrigo', retorne 'Rodrigo'. Se responde 'quero correr 10km', retorne 'correr 10km'.",
     "Mantenha dados concretos como nomes, objetivos, distancias, prazos, numeros e restricoes.",

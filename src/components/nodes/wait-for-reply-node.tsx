@@ -66,6 +66,11 @@ export function WaitForReplyNode({ id, data, selected }: NodeProps) {
           {nodeData.promptMessage}
         </p>
       )}
+      {nodeData.variableDescription && (
+        <p className="mt-1 line-clamp-2 whitespace-pre-wrap text-[10px] text-pink-600">
+          {nodeData.variableDescription}
+        </p>
+      )}
       <div className="mt-2 space-y-1">
         <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400">
           {nodeData.captureMode === "summary" ? "Resumo com IA" : "Resposta completa"}

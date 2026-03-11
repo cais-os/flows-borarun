@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
-import { getMetaConfig, subscribeMetaAppToWaba } from "@/lib/meta";
+import { getCurrentOrganizationContext } from "@/lib/organization";
+import {
+  getMetaConfigFromSettings,
+  subscribeMetaAppToWaba,
+} from "@/lib/meta";
 
 export async function POST() {
-  const { configured, missing } = getMetaConfig();
+  const context = await getCurrentOrganizationContext();
+  const { configured, missing, config } = getMetaConfigFromSettings(
+    context.settings
+  );
 
   if (!configured) {
     return NextResponse.json(
@@ -15,7 +22,7 @@ export async function POST() {
   }
 
   try {
-    const result = await subscribeMetaAppToWaba();
+    const result = await subscribeMetaAppToWaba(config);
     return NextResponse.json(result);
   } catch (error) {
     return NextResponse.json(
