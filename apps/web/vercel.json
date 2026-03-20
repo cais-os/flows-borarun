@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/campanhas/cron",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/timers",
+      "schedule": "0 0 * * *"
+    }
+  ]
+}

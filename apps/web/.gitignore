@@ -40,9 +40,4 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# artifacts
-.playwright-mcp/
-.pnpm-store/
-.vscode/
-*.png
-.turbo/
+.vercel
