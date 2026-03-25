@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { chromium } from "playwright";
 import { renderPdfTemplateHtml } from "@/lib/pdf-template-renderer";
+import { PLANEJADOR_INICIAL_PROMPT } from "@/lib/prompts/planejador-inicial";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -8,45 +9,38 @@ const DEFAULT_INSTRUCTION = `Você é um treinador de corrida especialista. Com 
 
 const JSON_FORMAT_INSTRUCTION = `
 
-IMPORTANTE: Retorne APENAS um JSON válido (sem markdown, sem código, sem explicações) com esta estrutura:
-{
-  "titulo": "Plano de Treino Personalizado",
-  "subtitulo": "Descrição curta do plano",
-  "aluno": {
-    "resumo": "Resumo do perfil do aluno"
-  },
-  "semanas": [
-    {
-      "numero": 1,
-      "foco": "Foco da semana",
-      "dias": [
-        {
-          "dia": "Segunda",
-          "treino": "Descrição do treino",
-          "duracao": "30min",
-          "intensidade": "Leve"
-        }
-      ]
-    }
-  ],
-  "dicas": ["dica 1", "dica 2", "dica 3"],
-  "observacoes": "Observações gerais"
-}`;
+IMPORTANTE: Retorne APENAS um JSON válido (sem markdown, sem código, sem explicações) com EXATAMENTE 2 chaves raiz:
+1. "training_plan" — com as sub-chaves: perfil_atleta, logica_plano, semanas
+2. "coaching_summary" — com o resumo interno para o coach de acompanhamento`;
+
+export type GeneratePdfResult = {
+  pdf: Buffer;
+  planData: Record<string, unknown>;
+  coachingSummary: Record<string, unknown>;
+};
 
 export async function generatePdf(params: {
   templateHtml: string;
   flowVariables: Record<string, string>;
   aiPrompt?: string;
-}): Promise<{ pdf: Buffer; planData: Record<string, unknown> }> {
+  stravaContext?: string;
+}): Promise<GeneratePdfResult> {
   // 1. Generate structured plan from AI
   const variablesSummary = Object.entries(params.flowVariables)
     .map(([key, value]) => `${key}: ${value}`)
     .join("\n");
 
-  const instruction = (params.aiPrompt || DEFAULT_INSTRUCTION) + JSON_FORMAT_INSTRUCTION;
+  const usePlanejadorPrompt = !params.aiPrompt;
+  const instruction = usePlanejadorPrompt
+    ? PLANEJADOR_INICIAL_PROMPT + JSON_FORMAT_INSTRUCTION
+    : (params.aiPrompt || DEFAULT_INSTRUCTION) + JSON_FORMAT_INSTRUCTION;
+
+  const userContent = params.stravaContext
+    ? `Informações do aluno:\n${variablesSummary}\n\nDados do Strava:\n${params.stravaContext}`
+    : `Informações do aluno:\n${variablesSummary}`;
 
   const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: "gpt-5.4-mini",
     messages: [
       {
         role: "system",
@@ -54,23 +48,32 @@ export async function generatePdf(params: {
       },
       {
         role: "user",
-        content: `Informações do aluno:\n${variablesSummary}`,
+        content: userContent,
       },
     ],
-    temperature: 0.7,
+    response_format: { type: "json_object" },
   });
 
   const aiResponse = completion.choices[0]?.message?.content || "{}";
 
   // Parse JSON from AI response
-  let planData: Record<string, unknown>;
+  let parsed: Record<string, unknown>;
   try {
-    const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
-    planData = JSON.parse(jsonMatch ? jsonMatch[0] : aiResponse);
+    parsed = JSON.parse(aiResponse);
   } catch {
-    console.error("Failed to parse AI response as JSON:", aiResponse);
-    planData = { error: "Falha ao gerar plano", raw: aiResponse };
+    // Fallback: try to extract JSON from response
+    const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+    try {
+      parsed = JSON.parse(jsonMatch ? jsonMatch[0] : aiResponse);
+    } catch {
+      console.error("Failed to parse AI response as JSON:", aiResponse);
+      parsed = { error: "Falha ao gerar plano", raw: aiResponse };
+    }
   }
+
+  // Extract the two root keys
+  const planData = (parsed.training_plan as Record<string, unknown>) || parsed;
+  const coachingSummary = (parsed.coaching_summary as Record<string, unknown>) || {};
 
   // 2. Interpolate template with AI-generated data + flow variables
   const html = renderPdfTemplateHtml({
@@ -90,7 +93,7 @@ export async function generatePdf(params: {
       margin: { top: "0", bottom: "0", left: "0", right: "0" },
       printBackground: true,
     });
-    return { pdf: Buffer.from(pdfBuffer), planData };
+    return { pdf: Buffer.from(pdfBuffer), planData, coachingSummary };
   } finally {
     await browser.close();
   }

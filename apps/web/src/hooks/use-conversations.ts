@@ -32,6 +32,9 @@ export interface DbConversation {
   phone_number_id: string | null;
   status: "running" | "paused" | "completed" | "human" | "ai";
   current_node_id: string | null;
+  subscription_status: string | null;
+  subscription_plan: string | null;
+  subscription_expires_at: string | null;
   created_at: string;
   updated_at: string;
   messages: DbMessage[];

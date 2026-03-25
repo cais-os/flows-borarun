@@ -1,0 +1,489 @@
+{
+  "version": "7.3",
+  "data_api_version": "3.0",
+  "routing_model": {
+    "BOAS_VINDAS": ["DADOS_PESSOAIS"],
+    "DADOS_PESSOAIS": ["EXPERIENCIA"],
+    "EXPERIENCIA": ["CORREDOR", "ROTINA"],
+    "CORREDOR": ["ROTINA"],
+    "ROTINA": ["OBJETIVO"],
+    "OBJETIVO": ["OBJETIVO_DISTANCIA", "OBJETIVO_TEMPO", "CONFIRMACAO"],
+    "OBJETIVO_DISTANCIA": ["CONFIRMACAO"],
+    "OBJETIVO_TEMPO": ["CONFIRMACAO"]
+  },
+  "screens": [
+    {
+      "id": "BOAS_VINDAS",
+      "title": "Bora Run",
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Bem-vindo ao Bora Run!"
+          },
+          {
+            "type": "TextBody",
+            "text": "Vamos criar seu plano personalizado de corrida. Em poucos passos vamos conhecer seu perfil, experiencia e objetivos para montar o treino ideal para voce."
+          },
+          {
+            "type": "TextBody",
+            "text": "O questionario leva menos de 2 minutos."
+          },
+          {
+            "type": "Footer",
+            "label": "Comecar",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "DADOS_PESSOAIS",
+      "title": "Dados Pessoais",
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Seus dados"
+          },
+          {
+            "type": "TextInput",
+            "name": "idade",
+            "label": "Idade",
+            "input-type": "text",
+            "required": true,
+            "helper-text": "Ex: 30"
+          },
+          {
+            "type": "TextInput",
+            "name": "altura",
+            "label": "Altura (metros)",
+            "input-type": "text",
+            "required": true,
+            "helper-text": "Ex: 1.75"
+          },
+          {
+            "type": "TextInput",
+            "name": "peso",
+            "label": "Peso (kg)",
+            "input-type": "text",
+            "required": true,
+            "helper-text": "Ex: 70"
+          },
+          {
+            "type": "RadioButtonsGroup",
+            "name": "sexo",
+            "label": "Sexo",
+            "required": true,
+            "data-source": [
+              { "id": "masculino", "title": "Masculino" },
+              { "id": "feminino", "title": "Feminino" }
+            ]
+          },
+          {
+            "type": "Footer",
+            "label": "Continuar",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "idade": "${form.idade}",
+                "altura": "${form.altura}",
+                "peso": "${form.peso}",
+                "sexo": "${form.sexo}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "EXPERIENCIA",
+      "title": "Experiencia",
+      "data": {
+        "idade": { "type": "string", "__example__": "30" },
+        "altura": { "type": "string", "__example__": "1.75" },
+        "peso": { "type": "string", "__example__": "70" },
+        "sexo": { "type": "string", "__example__": "masculino" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Sua experiencia"
+          },
+          {
+            "type": "RadioButtonsGroup",
+            "name": "ja_corre",
+            "label": "Voce ja corre?",
+            "required": true,
+            "data-source": [
+              { "id": "sim", "title": "Sim, ja corro" },
+              { "id": "nao", "title": "Nao, ainda nao" }
+            ]
+          },
+          {
+            "type": "Footer",
+            "label": "Continuar",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "idade": "${data.idade}",
+                "altura": "${data.altura}",
+                "peso": "${data.peso}",
+                "sexo": "${data.sexo}",
+                "ja_corre": "${form.ja_corre}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "CORREDOR",
+      "title": "Detalhes da Corrida",
+      "data": {
+        "idade": { "type": "string", "__example__": "30" },
+        "altura": { "type": "string", "__example__": "1.75" },
+        "peso": { "type": "string", "__example__": "70" },
+        "sexo": { "type": "string", "__example__": "masculino" },
+        "ja_corre": { "type": "string", "__example__": "sim" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Sobre sua corrida"
+          },
+          {
+            "type": "TextInput",
+            "name": "distancia_confortavel",
+            "label": "Dist. confortavel (km)",
+            "input-type": "text",
+            "required": true,
+            "helper-text": "Distancia que corre de boa. Ex: 5"
+          },
+          {
+            "type": "TextInput",
+            "name": "tempo_distancia",
+            "label": "Tempo (minutos)",
+            "input-type": "text",
+            "required": true,
+            "helper-text": "Tempo nessa distancia. Ex: 30"
+          },
+          {
+            "type": "TextInput",
+            "name": "km_4_semanas",
+            "label": "Km ultimas 4 semanas",
+            "input-type": "text",
+            "required": true,
+            "helper-text": "Ex: 40"
+          },
+          {
+            "type": "Footer",
+            "label": "Continuar",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "idade": "${data.idade}",
+                "altura": "${data.altura}",
+                "peso": "${data.peso}",
+                "sexo": "${data.sexo}",
+                "ja_corre": "${data.ja_corre}",
+                "distancia_confortavel": "${form.distancia_confortavel}",
+                "tempo_distancia": "${form.tempo_distancia}",
+                "km_4_semanas": "${form.km_4_semanas}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "ROTINA",
+      "title": "Sua Rotina",
+      "data": {
+        "idade": { "type": "string", "__example__": "30" },
+        "altura": { "type": "string", "__example__": "1.75" },
+        "peso": { "type": "string", "__example__": "70" },
+        "sexo": { "type": "string", "__example__": "masculino" },
+        "ja_corre": { "type": "string", "__example__": "sim" },
+        "distancia_confortavel": { "type": "string", "__example__": "5" },
+        "tempo_distancia": { "type": "string", "__example__": "30" },
+        "km_4_semanas": { "type": "string", "__example__": "40" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Disponibilidade"
+          },
+          {
+            "type": "RadioButtonsGroup",
+            "name": "dias_semana",
+            "label": "Dias por semana",
+            "required": true,
+            "data-source": [
+              { "id": "1", "title": "1 dia" },
+              { "id": "2", "title": "2 dias" },
+              { "id": "3", "title": "3 dias" },
+              { "id": "4", "title": "4 dias" },
+              { "id": "5", "title": "5 dias" },
+              { "id": "6", "title": "6 dias" }
+            ]
+          },
+          {
+            "type": "Footer",
+            "label": "Continuar",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "idade": "${data.idade}",
+                "altura": "${data.altura}",
+                "peso": "${data.peso}",
+                "sexo": "${data.sexo}",
+                "ja_corre": "${data.ja_corre}",
+                "distancia_confortavel": "${data.distancia_confortavel}",
+                "tempo_distancia": "${data.tempo_distancia}",
+                "km_4_semanas": "${data.km_4_semanas}",
+                "dias_semana": "${form.dias_semana}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "OBJETIVO",
+      "title": "Seu Objetivo",
+      "data": {
+        "idade": { "type": "string", "__example__": "30" },
+        "altura": { "type": "string", "__example__": "1.75" },
+        "peso": { "type": "string", "__example__": "70" },
+        "sexo": { "type": "string", "__example__": "masculino" },
+        "ja_corre": { "type": "string", "__example__": "sim" },
+        "distancia_confortavel": { "type": "string", "__example__": "5" },
+        "tempo_distancia": { "type": "string", "__example__": "30" },
+        "km_4_semanas": { "type": "string", "__example__": "40" },
+        "dias_semana": { "type": "string", "__example__": "3" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Qual seu objetivo?"
+          },
+          {
+            "type": "Dropdown",
+            "name": "objetivo",
+            "label": "Objetivo do plano",
+            "required": true,
+            "data-source": [
+              { "id": "distancia_x", "title": "Correr uma distancia especifica" },
+              { "id": "melhorar_tempo", "title": "Melhorar meu tempo" },
+              { "id": "perder_peso", "title": "Perder peso" },
+              { "id": "comecar_zero", "title": "Comecar do zero" },
+              { "id": "disciplina", "title": "Ter mais disciplina" },
+              { "id": "saude", "title": "Saude e bem-estar" }
+            ]
+          },
+          {
+            "type": "Footer",
+            "label": "Continuar",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "idade": "${data.idade}",
+                "altura": "${data.altura}",
+                "peso": "${data.peso}",
+                "sexo": "${data.sexo}",
+                "ja_corre": "${data.ja_corre}",
+                "distancia_confortavel": "${data.distancia_confortavel}",
+                "tempo_distancia": "${data.tempo_distancia}",
+                "km_4_semanas": "${data.km_4_semanas}",
+                "dias_semana": "${data.dias_semana}",
+                "objetivo": "${form.objetivo}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "OBJETIVO_DISTANCIA",
+      "title": "Distancia Alvo",
+      "data": {
+        "idade": { "type": "string", "__example__": "30" },
+        "altura": { "type": "string", "__example__": "1.75" },
+        "peso": { "type": "string", "__example__": "70" },
+        "sexo": { "type": "string", "__example__": "masculino" },
+        "ja_corre": { "type": "string", "__example__": "sim" },
+        "distancia_confortavel": { "type": "string", "__example__": "5" },
+        "tempo_distancia": { "type": "string", "__example__": "30" },
+        "km_4_semanas": { "type": "string", "__example__": "40" },
+        "dias_semana": { "type": "string", "__example__": "3" },
+        "objetivo": { "type": "string", "__example__": "distancia_x" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Qual distancia quer alcancar?"
+          },
+          {
+            "type": "TextInput",
+            "name": "distancia_alvo",
+            "label": "Distancia alvo (km)",
+            "input-type": "text",
+            "required": true,
+            "helper-text": "Ex: 5, 10, 21, 42"
+          },
+          {
+            "type": "Footer",
+            "label": "Continuar",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "idade": "${data.idade}",
+                "altura": "${data.altura}",
+                "peso": "${data.peso}",
+                "sexo": "${data.sexo}",
+                "ja_corre": "${data.ja_corre}",
+                "distancia_confortavel": "${data.distancia_confortavel}",
+                "tempo_distancia": "${data.tempo_distancia}",
+                "km_4_semanas": "${data.km_4_semanas}",
+                "dias_semana": "${data.dias_semana}",
+                "objetivo": "${data.objetivo}",
+                "distancia_alvo": "${form.distancia_alvo}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "OBJETIVO_TEMPO",
+      "title": "Melhorar Tempo",
+      "data": {
+        "idade": { "type": "string", "__example__": "30" },
+        "altura": { "type": "string", "__example__": "1.75" },
+        "peso": { "type": "string", "__example__": "70" },
+        "sexo": { "type": "string", "__example__": "masculino" },
+        "ja_corre": { "type": "string", "__example__": "sim" },
+        "distancia_confortavel": { "type": "string", "__example__": "5" },
+        "tempo_distancia": { "type": "string", "__example__": "30" },
+        "km_4_semanas": { "type": "string", "__example__": "40" },
+        "dias_semana": { "type": "string", "__example__": "3" },
+        "objetivo": { "type": "string", "__example__": "melhorar_tempo" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Distancia e tempo alvo"
+          },
+          {
+            "type": "TextInput",
+            "name": "distancia_alvo",
+            "label": "Distancia (km)",
+            "input-type": "text",
+            "required": true,
+            "helper-text": "Ex: 10"
+          },
+          {
+            "type": "TextInput",
+            "name": "tempo_alvo",
+            "label": "Tempo alvo (min)",
+            "input-type": "text",
+            "required": true,
+            "helper-text": "Ex: 50"
+          },
+          {
+            "type": "Footer",
+            "label": "Continuar",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "idade": "${data.idade}",
+                "altura": "${data.altura}",
+                "peso": "${data.peso}",
+                "sexo": "${data.sexo}",
+                "ja_corre": "${data.ja_corre}",
+                "distancia_confortavel": "${data.distancia_confortavel}",
+                "tempo_distancia": "${data.tempo_distancia}",
+                "km_4_semanas": "${data.km_4_semanas}",
+                "dias_semana": "${data.dias_semana}",
+                "objetivo": "${data.objetivo}",
+                "distancia_alvo": "${form.distancia_alvo}",
+                "tempo_alvo": "${form.tempo_alvo}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "CONFIRMACAO",
+      "title": "Cadastro Completo",
+      "terminal": true,
+      "data": {
+        "idade": { "type": "string", "__example__": "30" },
+        "altura": { "type": "string", "__example__": "1.75" },
+        "peso": { "type": "string", "__example__": "70" },
+        "sexo": { "type": "string", "__example__": "masculino" },
+        "ja_corre": { "type": "string", "__example__": "sim" },
+        "distancia_confortavel": { "type": "string", "__example__": "5" },
+        "tempo_distancia": { "type": "string", "__example__": "30" },
+        "km_4_semanas": { "type": "string", "__example__": "40" },
+        "dias_semana": { "type": "string", "__example__": "3" },
+        "objetivo": { "type": "string", "__example__": "distancia_x" },
+        "distancia_alvo": { "type": "string", "__example__": "21" },
+        "tempo_alvo": { "type": "string", "__example__": "" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Tudo pronto!"
+          },
+          {
+            "type": "TextBody",
+            "text": "Suas informacoes foram registradas. Vamos montar seu plano personalizado de corrida com base no que voce nos contou."
+          },
+          {
+            "type": "Footer",
+            "label": "Finalizar",
+            "on-click-action": {
+              "name": "complete",
+              "payload": {
+                "idade": "${data.idade}",
+                "altura": "${data.altura}",
+                "peso": "${data.peso}",
+                "sexo": "${data.sexo}",
+                "ja_corre": "${data.ja_corre}",
+                "distancia_confortavel": "${data.distancia_confortavel}",
+                "tempo_distancia": "${data.tempo_distancia}",
+                "km_4_semanas": "${data.km_4_semanas}",
+                "dias_semana": "${data.dias_semana}",
+                "objetivo": "${data.objetivo}",
+                "distancia_alvo": "${data.distancia_alvo}",
+                "tempo_alvo": "${data.tempo_alvo}"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -91,6 +91,18 @@ export function PaymentEditor({ nodeId, data }: PaymentEditorProps) {
       </div>
 
       <div className="space-y-2">
+        <Label>Texto do botao (opcional)</Label>
+        <Input
+          value={data.ctaButtonText || ""}
+          onChange={(e) => update({ ctaButtonText: e.target.value })}
+          placeholder="Ex: Pagar agora"
+        />
+        <p className="text-xs text-slate-400">
+          Se preenchido, envia um botao clicavel em vez do link solto. O usuario clica e abre o checkout.
+        </p>
+      </div>
+
+      <div className="space-y-2">
         <Label>Mensagem personalizada</Label>
         <Textarea
           rows={5}

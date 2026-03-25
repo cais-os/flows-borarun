@@ -667,6 +667,62 @@ export async function downloadMetaMedia(
   return Buffer.from(arrayBuffer);
 }
 
+export async function sendMetaWhatsAppCtaUrlMessage(
+  params: {
+    to: string;
+    bodyText: string;
+    buttonText: string;
+    url: string;
+    headerText?: string;
+    footerText?: string;
+  },
+  configOverride?: MetaConfig
+) {
+  const { config } = getResolvedMetaConfig(configOverride);
+
+  const interactive: Record<string, unknown> = {
+    type: "cta_url",
+    body: { text: params.bodyText },
+    action: {
+      name: "cta_url",
+      parameters: {
+        display_text: params.buttonText,
+        url: params.url,
+      },
+    },
+  };
+
+  if (params.headerText) {
+    interactive.header = { type: "text", text: params.headerText };
+  }
+  if (params.footerText) {
+    interactive.footer = { text: params.footerText };
+  }
+
+  const result = await metaGraphRequest<{
+    messages?: Array<{ id: string }>;
+    contacts?: Array<{ input?: string; wa_id?: string }>;
+  }>(
+    `${config.phoneNumberId}/messages`,
+    {
+      method: "POST",
+      body: {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: params.to,
+        type: "interactive",
+        interactive,
+      },
+    },
+    config
+  );
+
+  return {
+    messageId: result.messages?.[0]?.id || null,
+    contact: result.contacts?.[0] || null,
+  };
+}
+
 export function getMetaWebhookSummary(requestUrl: string) {
   const url = new URL(requestUrl);
 
@@ -824,7 +880,9 @@ export async function sendMetaWhatsAppFlowMessage(
       flow_action: "navigate",
       flow_action_payload: {
         screen: params.screenId || "WELCOME_SCREEN",
-        data: params.flowData || {},
+        ...(params.flowData && Object.keys(params.flowData).length > 0
+          ? { data: params.flowData }
+          : {}),
       },
       ...(params.mode === "draft" ? { mode: "draft" } : {}),
     },

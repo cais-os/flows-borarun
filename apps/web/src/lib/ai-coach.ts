@@ -1,27 +1,13 @@
 import OpenAI from "openai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildStravaCoachContext } from "@/lib/strava";
+import { COACH_ACOMPANHAMENTO_PROMPT } from "@/lib/prompts/coach-acompanhamento";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-const FALLBACK_SYSTEM_PROMPT = `Você é o treinador de corrida virtual da BoraRun. Seu nome é Coach BoraRun.
-
-Suas diretrizes:
-- Você é especialista em corrida de rua, trail running, maratonas, meias-maratonas e corrida para iniciantes
-- Responda sempre em português brasileiro, de forma motivadora e acolhedora
-- Use uma linguagem acessível, como se estivesse falando com um amigo corredor
-- Dê conselhos baseados em evidências sobre treino, nutrição para corredores, prevenção de lesões, alongamento e recuperação
-- Ajude a montar planilhas de treino personalizadas quando solicitado
-- Pergunte sobre o nível do corredor (iniciante, intermediário, avançado), objetivos e histórico de lesões antes de prescrever treinos
-- Mantenha respostas concisas (ideal para WhatsApp) — use no máximo 3-4 parágrafos curtos
-- Use emojis com moderação para manter o tom amigável
-- Nunca dê diagnósticos médicos — sempre recomende procurar um profissional de saúde quando necessário
-- Lembre-se do contexto da conversa para dar respostas coerentes
-
-REGRA IMPORTANTE sobre assuntos fora do tema:
-- Se o usuário falar sobre algo que NÃO seja relacionado a corrida, exercício físico, saúde esportiva ou a BoraRun, responda brevemente com contexto e redirecione de forma natural e simpática para o universo da corrida
-- Nunca ignore a pessoa — sempre acolha o que ela disse antes de redirecionar
-- Se ela insistir em assuntos fora do tema, seja gentil mas firme: "Entendo! Mas como treinador de corrida, posso te ajudar melhor com treinos, metas de corrida e dicas pra evoluir. Bora lá?"`;
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
 type AiGuidelines = {
   system_prompt: string;
@@ -29,6 +15,24 @@ type AiGuidelines = {
   temperature: number;
   max_tokens: number;
 };
+
+interface DbMessage {
+  content: string;
+  sender: string;
+  type: string;
+  created_at: string;
+}
+
+interface ConversationData {
+  flow_variables: Record<string, string> | null;
+  subscription_status: string | null;
+  subscription_plan: string | null;
+  subscription_expires_at: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// AI guidelines (org-level overrides)
+// ---------------------------------------------------------------------------
 
 async function fetchAiGuidelines(
   supabase: SupabaseClient,
@@ -44,26 +48,23 @@ async function fetchAiGuidelines(
   if (data?.system_prompt) {
     return {
       system_prompt: data.system_prompt,
-      model: data.model || "gpt-4o-mini",
+      model: data.model || "gpt-5.4-mini",
       temperature: data.temperature ?? 0.7,
-      max_tokens: data.max_tokens ?? 500,
+      max_tokens: data.max_tokens ?? 1000,
     };
   }
 
   return {
-    system_prompt: FALLBACK_SYSTEM_PROMPT,
-    model: "gpt-4o-mini",
+    system_prompt: COACH_ACOMPANHAMENTO_PROMPT,
+    model: "gpt-5.4-mini",
     temperature: 0.7,
-    max_tokens: 500,
+    max_tokens: 1000,
   };
 }
 
-interface DbMessage {
-  content: string;
-  sender: string;
-  type: string;
-  created_at: string;
-}
+// ---------------------------------------------------------------------------
+// Flow context (available keyword triggers)
+// ---------------------------------------------------------------------------
 
 async function buildFlowContext(
   supabase: SupabaseClient,
@@ -89,12 +90,15 @@ async function buildFlowContext(
 
   if (keywords.length === 0) return "";
 
-  return `\n\nFLOWS DISPONÍVEIS:
+  return `\n\n=== FLOWS DISPONÍVEIS ===
 Existem flows automáticos que o usuário pode ativar usando palavras-chave. Se fizer sentido no contexto da conversa, mencione naturalmente essas opções:
 ${keywords.map((k) => `- ${k}`).join("\n")}
-Exemplo: "A propósito, se quiser saber sobre [tema], é só digitar '[palavra-chave]' que te mostro tudo!"
-Não force — só mencione quando for relevante para o que o usuário está falando.`;
+Não force — só mencione quando for relevante.`;
 }
+
+// ---------------------------------------------------------------------------
+// Company context
+// ---------------------------------------------------------------------------
 
 async function buildCompanyContext(
   supabase: SupabaseClient,
@@ -122,98 +126,310 @@ async function buildCompanyContext(
 
     if (lines.length === 0) return "";
 
-    return `\n\nINFORMAÇÕES DA EMPRESA:\n${lines.join("\n")}\nUse essas informações para responder perguntas sobre a empresa, contato, site, redes sociais, etc.`;
+    return `\n\n=== EMPRESA ===\n${lines.join("\n")}`;
   } catch {
     return "";
   }
 }
 
-async function buildUserProfileContext(
-  supabase: SupabaseClient,
-  conversationId: string
-): Promise<string> {
-  const { data: conv } = await supabase
-    .from("conversations")
-    .select("flow_variables, subscription_status, subscription_plan, subscription_expires_at")
-    .eq("id", conversationId)
-    .single();
+// ---------------------------------------------------------------------------
+// Current week context (calculates which week the athlete is on)
+// ---------------------------------------------------------------------------
 
-  if (!conv?.flow_variables || Object.keys(conv.flow_variables as Record<string, unknown>).length === 0) {
+function getNowBrazil(): Date {
+  // Use Brazil timezone (UTC-3) for date calculations
+  const now = new Date();
+  const brStr = now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" });
+  return new Date(brStr);
+}
+
+function buildCurrentWeekContext(vars: Record<string, string>): string {
+  const planRaw = vars._training_plan;
+  const generatedAt = vars._plan_generated_at;
+  if (!planRaw || !generatedAt) return "";
+
+  try {
+    const plan = typeof planRaw === "string" ? JSON.parse(planRaw) : planRaw;
+    const semanas = plan.semanas as Array<{
+      numero: number;
+      fase?: string;
+      foco?: string;
+      volume_total_km?: number;
+      dias?: Array<Record<string, unknown>>;
+    }>;
+    if (!semanas || semanas.length === 0) return "";
+
+    const startDate = new Date(generatedAt);
+    const now = getNowBrazil();
+    const diffDays = Math.floor((now.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000));
+    const weekNumber = Math.floor(diffDays / 7) + 1;
+
+    const dayNames = ["Domingo", "Segunda", "Terca", "Quarta", "Quinta", "Sexta", "Sabado"];
+    const todayName = dayNames[now.getDay()];
+
+    const lines: string[] = [
+      `\n\n=== PLANO DE TREINO ATIVO ===`,
+      `Plano gerado em: ${new Date(generatedAt).toLocaleDateString("pt-BR")}`,
+    ];
+
+    // Detect expired plan
+    if (weekNumber > semanas.length) {
+      lines.push(`ATENÇÃO: O plano de ${semanas.length} semanas EXPIROU (estamos na semana ${weekNumber}).`);
+      lines.push("Sugira ao atleta gerar um novo plano atualizado.");
+      lines.push(`Hoje é ${todayName}.`);
+      return lines.join("\n");
+    }
+
+    lines.push(`Semana atual: ${weekNumber} de ${semanas.length}`);
+
+    const currentWeek = semanas.find((s) => s.numero === weekNumber) || semanas[semanas.length - 1];
+    const nextWeek = semanas.find((s) => s.numero === weekNumber + 1);
+
+    if (currentWeek) {
+      if (currentWeek.fase) lines.push(`Fase: ${currentWeek.fase}`);
+      if (currentWeek.foco) lines.push(`Foco: ${currentWeek.foco}`);
+      if (currentWeek.volume_total_km) lines.push(`Volume planejado: ${currentWeek.volume_total_km} km`);
+      lines.push(`Hoje é ${todayName}.`);
+      if (currentWeek.dias) {
+        lines.push("\nTreinos desta semana:");
+        for (const dia of currentWeek.dias) {
+          const d = dia as Record<string, string>;
+          lines.push(`- ${d.dia_semana || d.dia}: ${d.descricao || d.treino || d.tipo} ${d.rpe ? `(RPE ${d.rpe})` : ""}`);
+        }
+      }
+    }
+
+    if (nextWeek) {
+      lines.push("\nPróxima semana:");
+      if (nextWeek.fase) lines.push(`Fase: ${nextWeek.fase}`);
+      if (nextWeek.foco) lines.push(`Foco: ${nextWeek.foco}`);
+      if (nextWeek.volume_total_km) lines.push(`Volume planejado: ${nextWeek.volume_total_km} km`);
+    }
+
+    return lines.join("\n");
+  } catch {
     return "";
   }
+}
 
-  const vars = conv.flow_variables as Record<string, string>;
+// ---------------------------------------------------------------------------
+// Coaching summary context (handoff from plan generator)
+// ---------------------------------------------------------------------------
 
-  // Separate training plan from profile variables
-  const trainingPlan = vars._training_plan;
-  const profileVars = Object.entries(vars).filter(([k]) => !k.startsWith("_"));
+function buildCoachingSummaryContext(vars: Record<string, string>): string {
+  const raw = vars._coaching_summary;
+  if (!raw) return "";
 
+  try {
+    const summary = typeof raw === "string" ? JSON.parse(raw) : raw;
+    const lines: string[] = ["\n\n=== RESUMO INTERNO DO PLANEJADOR ==="];
+
+    for (const [key, value] of Object.entries(summary)) {
+      if (value && String(value).trim()) {
+        const label = key.replace(/_/g, " ");
+        lines.push(`- ${label}: ${value}`);
+      }
+    }
+
+    return lines.join("\n");
+  } catch {
+    return "";
+  }
+}
+
+// ---------------------------------------------------------------------------
+// User profile context (onboarding data + subscription)
+// ---------------------------------------------------------------------------
+
+function buildUserProfileContext(vars: Record<string, string>, conv: ConversationData): string {
+  // Only show onboarding/flow variables, not internal system fields
+  const allowedPrefixes = ["onb_", "flow_", "lead_"];
+  const profileVars = Object.entries(vars).filter(
+    ([k]) => !k.startsWith("_") && (allowedPrefixes.some((p) => k.startsWith(p)) || !k.includes("_"))
+  );
   const lines: string[] = [];
 
   if (profileVars.length > 0) {
-    lines.push("\n\nPERFIL DO ALUNO:");
+    lines.push("\n\n=== DADOS DO ATLETA (ONBOARDING) ===");
     for (const [k, v] of profileVars) {
-      lines.push(`- ${k}: ${v}`);
+      if (v && String(v).trim()) {
+        lines.push(`- ${k}: ${v}`);
+      }
     }
   }
 
-  if (conv.subscription_plan) {
-    lines.push(`- Plano: ${conv.subscription_plan}`);
-  }
+  lines.push("\n\n=== ASSINATURA ===");
+  lines.push(`Plano: ${conv.subscription_plan || "nenhum"}`);
+  lines.push(`Status: ${conv.subscription_status || "none"}`);
   if (conv.subscription_expires_at) {
-    lines.push(`- Validade: ${new Date(conv.subscription_expires_at as string).toLocaleDateString("pt-BR")}`);
+    lines.push(`Validade: ${new Date(conv.subscription_expires_at).toLocaleDateString("pt-BR")}`);
   }
 
   if (conv.subscription_status === "trial") {
-    lines.push("\n\nIMPORTANTE - USUÁRIO EM PERÍODO DE TESTE:");
-    lines.push("Este aluno está em um período de teste gratuito de 24h. Responda normalmente e com qualidade, mas ao longo da conversa, mencione naturalmente os benefícios do acompanhamento contínuo premium (plano personalizado, ajustes semanais, análise do Strava, etc). Não seja agressivo — seja sutil e mostre valor.");
-  }
-
-  if (trainingPlan) {
-    try {
-      const plan = typeof trainingPlan === "string" ? JSON.parse(trainingPlan) : trainingPlan;
-      lines.push("\n\nPLANO DE TREINO ATUAL DO ALUNO:");
-      lines.push(JSON.stringify(plan, null, 2));
-      lines.push("\nUse esse plano como referência para orientar o aluno. Você pode sugerir ajustes com base no progresso dele no Strava e no feedback que ele der.");
-    } catch {
-      // ignore malformed plan
-    }
+    lines.push("\nIMPORTANTE - PERÍODO DE TESTE: Este aluno está em teste gratuito. Responda com qualidade, mas mencione naturalmente os benefícios do premium (ajustes semanais, análise do Strava, acompanhamento contínuo). Seja sutil.");
   }
 
   return lines.join("\n");
 }
+
+// ---------------------------------------------------------------------------
+// Profile update instruction (appended to system prompt)
+// ---------------------------------------------------------------------------
+
+const PROFILE_UPDATE_INSTRUCTION = `
+
+=== ATUALIZAÇÃO DE PERFIL ===
+Se durante esta interação você identificar algo que mude o perfil do atleta (ex: nova lesão, mudança de nível, mudança de objetivo, nova restrição, melhora significativa), retorne no FINAL da sua resposta, em uma linha separada, o marcador <<<PROFILE_UPDATE>>> seguido de um JSON com APENAS os campos que mudaram.
+
+Exemplo: se o atleta relata dor no joelho:
+<<<PROFILE_UPDATE>>>{"principais_restricoes":"dor no joelho direito reportada","sinais_de_alerta":"monitorar dor no joelho, reduzir impacto se persistir"}
+
+Regras:
+- Só inclua o marcador se houver mudança REAL no perfil
+- Inclua APENAS os campos que mudaram (merge parcial)
+- Na maioria das mensagens NÃO haverá atualização — não force
+- O marcador NÃO é visível para o atleta — é processado internamente`;
+
+// ---------------------------------------------------------------------------
+// Parse AI response: separate visible message from profile updates
+// ---------------------------------------------------------------------------
+
+const PROFILE_UPDATE_MARKER = "<<<PROFILE_UPDATE>>>";
+
+export type CoachResponse = {
+  message: string;
+  profileUpdates?: Record<string, unknown>;
+};
+
+// Fields the AI coach is allowed to update
+const ALLOWED_PROFILE_FIELDS = new Set([
+  "nivel_do_atleta",
+  "risco",
+  "objetivo",
+  "foco_do_ciclo",
+  "agressividade_do_plano",
+  "dias_de_corrida_por_semana",
+  "treino_chave_1",
+  "treino_chave_2",
+  "longao",
+  "intensidade_permitida",
+  "principais_restricoes",
+  "sinais_de_alerta",
+  "estilo_de_progressao",
+  "criterio_para_subir_carga",
+  "criterio_para_manter_carga",
+  "criterio_para_reduzir_carga",
+  "observacoes_importantes_para_o_coach",
+]);
+
+// Risk levels ordered from least to most severe — never downgrade
+const RISK_LEVELS = ["baixo", "moderado", "alto"];
+
+export function validateProfileUpdates(
+  updates: Record<string, unknown>,
+  currentSummary: Record<string, unknown>
+): Record<string, unknown> | null {
+  const validated: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(updates)) {
+    if (!ALLOWED_PROFILE_FIELDS.has(key)) continue;
+
+    // Prevent risk downgrade (e.g., "alto" → "baixo")
+    if (key === "risco" && typeof value === "string") {
+      const currentRisk = String(currentSummary.risco || "baixo");
+      const currentIdx = RISK_LEVELS.indexOf(currentRisk);
+      const newIdx = RISK_LEVELS.indexOf(value);
+      if (newIdx < currentIdx) continue; // block downgrade
+    }
+
+    validated[key] = value;
+  }
+
+  return Object.keys(validated).length > 0 ? validated : null;
+}
+
+function parseCoachResponse(raw: string): CoachResponse {
+  const markerIndex = raw.indexOf(PROFILE_UPDATE_MARKER);
+  if (markerIndex === -1) {
+    return { message: raw.trim() };
+  }
+
+  const message = raw.substring(0, markerIndex).trim();
+  const jsonStr = raw.substring(markerIndex + PROFILE_UPDATE_MARKER.length).trim();
+
+  try {
+    const profileUpdates = JSON.parse(jsonStr);
+    return { message, profileUpdates };
+  } catch {
+    return { message };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Main: generate coach response
+// ---------------------------------------------------------------------------
 
 export async function generateCoachResponse(
   supabase: SupabaseClient,
   conversationId: string,
   userMessage: string,
   organizationId: string
-): Promise<string> {
-  // Fetch AI guidelines and the dynamic context in parallel.
-  const [guidelines, flowContext, stravaContext, companyContext, userProfile] = await Promise.all([
+): Promise<CoachResponse> {
+  // Fetch conversation data
+  const { data: conv } = await supabase
+    .from("conversations")
+    .select("flow_variables, subscription_status, subscription_plan, subscription_expires_at")
+    .eq("id", conversationId)
+    .single();
+
+  const vars = (conv?.flow_variables as Record<string, string>) || {};
+  const convData = conv as ConversationData || {
+    flow_variables: null,
+    subscription_status: null,
+    subscription_plan: null,
+    subscription_expires_at: null,
+  };
+
+  // Build all context pieces in parallel
+  const [guidelines, flowContext, stravaContext, companyContext] = await Promise.all([
     fetchAiGuidelines(supabase, organizationId),
     buildFlowContext(supabase, organizationId),
     buildStravaCoachContext(supabase, conversationId),
     buildCompanyContext(supabase, organizationId),
-    buildUserProfileContext(supabase, conversationId),
   ]);
 
-  const systemPrompt = guidelines.system_prompt + flowContext + stravaContext + companyContext + userProfile;
+  // Build synchronous context from flow_variables
+  const userProfile = buildUserProfileContext(vars, convData);
+  const coachingSummary = buildCoachingSummaryContext(vars);
+  const currentWeek = buildCurrentWeekContext(vars);
 
-  // Fetch conversation history for context (last 20 messages)
+  // Assemble system prompt
+  const systemPrompt = [
+    guidelines.system_prompt,
+    userProfile,
+    coachingSummary,
+    currentWeek,
+    stravaContext,
+    companyContext,
+    flowContext,
+    PROFILE_UPDATE_INSTRUCTION,
+  ]
+    .filter(Boolean)
+    .join("");
+
+  // Fetch conversation history (last 50 messages for multi-week context)
   const { data: history } = await supabase
     .from("messages")
     .select("content, sender, type, created_at")
     .eq("conversation_id", conversationId)
     .neq("type", "system")
     .order("created_at", { ascending: true })
-    .limit(20);
+    .limit(50);
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: "system", content: systemPrompt },
   ];
 
-  // Add conversation history
   for (const msg of (history as DbMessage[]) || []) {
     if (msg.sender === "contact") {
       messages.push({ role: "user", content: msg.content });
@@ -222,7 +438,6 @@ export async function generateCoachResponse(
     }
   }
 
-  // Add the current message
   messages.push({ role: "user", content: userMessage });
 
   const completion = await openai.chat.completions.create({
@@ -232,5 +447,6 @@ export async function generateCoachResponse(
     temperature: guidelines.temperature,
   });
 
-  return completion.choices[0]?.message?.content || "Desculpe, não consegui gerar uma resposta. Pode repetir?";
+  const rawResponse = completion.choices[0]?.message?.content || "Desculpe, não consegui gerar uma resposta. Pode repetir?";
+  return parseCoachResponse(rawResponse);
 }

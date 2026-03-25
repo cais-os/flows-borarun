@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
+  Crown,
   Headset,
   RotateCcw,
   Send,
@@ -9,6 +10,12 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { createClient } from "@/lib/supabase/client";
 import { ConversationTagsManager } from "./conversation-tags-manager";
 
@@ -259,6 +266,58 @@ export function InboxChatPanel({
           >
             {statusLabels[conversation.status] || conversation.status}
           </Badge>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 gap-1 text-xs text-white hover:bg-white/10"
+              >
+                <Crown size={12} />
+                {conversation.subscription_status === "active"
+                  ? "Ativo"
+                  : conversation.subscription_status === "trial"
+                    ? "Trial"
+                    : "Sem plano"}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={() => {
+                  fetch(`/api/conversations/${conversation.id}/subscription`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ status: "active", plan: "premium", durationDays: 30 }),
+                  }).then(() => onConversationUpdated?.());
+                }}
+              >
+                Ativar Premium (30 dias)
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  fetch(`/api/conversations/${conversation.id}/subscription`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ status: "trial", durationDays: 1 }),
+                  }).then(() => onConversationUpdated?.());
+                }}
+              >
+                Ativar Trial (24h)
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  fetch(`/api/conversations/${conversation.id}/subscription`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ status: "none" }),
+                  }).then(() => onConversationUpdated?.());
+                }}
+              >
+                Desativar
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           <Button
             size="sm"

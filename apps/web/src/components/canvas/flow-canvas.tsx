@@ -1,13 +1,13 @@
 "use client";
 
-import { useCallback, useRef, type DragEvent } from "react";
+import { useCallback, useEffect, useRef, type DragEvent } from "react";
 import {
   ReactFlow,
   Background,
   Controls,
   MiniMap,
   BackgroundVariant,
-
+  type Viewport,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
@@ -138,11 +138,43 @@ export function getDefaultData(type: string) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Viewport persistence per flow (localStorage)
+// ---------------------------------------------------------------------------
+
+const VIEWPORT_STORAGE_KEY = "borarun:flow-viewports";
+
+function getSavedViewport(flowId: string): Viewport | null {
+  try {
+    const stored = localStorage.getItem(VIEWPORT_STORAGE_KEY);
+    if (!stored) return null;
+    const map = JSON.parse(stored) as Record<string, Viewport>;
+    return map[flowId] || null;
+  } catch {
+    return null;
+  }
+}
+
+function saveViewport(flowId: string, viewport: Viewport) {
+  try {
+    const stored = localStorage.getItem(VIEWPORT_STORAGE_KEY);
+    const map = stored ? (JSON.parse(stored) as Record<string, Viewport>) : {};
+    map[flowId] = viewport;
+    localStorage.setItem(VIEWPORT_STORAGE_KEY, JSON.stringify(map));
+  } catch {
+    // ignore storage errors
+  }
+}
+
+// ---------------------------------------------------------------------------
+
 export function FlowCanvas() {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const reactFlowInstance = useRef<any>(null);
+  const hasRestoredViewport = useRef(false);
 
+  const flowId = useFlowStore((s) => s.flowId);
   const nodes = useFlowStore((s) => s.nodes);
   const edges = useFlowStore((s) => s.edges);
   const onNodesChange = useFlowStore((s) => s.onNodesChange);
@@ -150,6 +182,11 @@ export function FlowCanvas() {
   const onConnect = useFlowStore((s) => s.onConnect);
   const addNode = useFlowStore((s) => s.addNode);
   const setSelectedNodeId = useFlowStore((s) => s.setSelectedNodeId);
+
+  // Reset flag when flow changes so we restore viewport on next init
+  useEffect(() => {
+    hasRestoredViewport.current = false;
+  }, [flowId]);
 
   const onDragOver = useCallback((event: DragEvent) => {
     event.preventDefault();
@@ -190,13 +227,24 @@ export function FlowCanvas() {
         onConnect={onConnect}
         onInit={(instance) => {
           reactFlowInstance.current = instance;
+          if (flowId && !hasRestoredViewport.current) {
+            const saved = getSavedViewport(flowId);
+            if (saved) {
+              instance.setViewport(saved);
+            } else {
+              instance.fitView({ padding: 0.28, maxZoom: 0.9 });
+            }
+            hasRestoredViewport.current = true;
+          }
+        }}
+        onMoveEnd={(_, viewport) => {
+          if (flowId) saveViewport(flowId, viewport);
         }}
         onDragOver={onDragOver}
         onDrop={onDrop}
         onNodeClick={(_, node) => setSelectedNodeId(node.id)}
         onPaneClick={() => setSelectedNodeId(null)}
         nodeTypes={nodeTypes}
-        fitView
         fitViewOptions={{ padding: 0.28, maxZoom: 0.9 }}
         minZoom={0.35}
         maxZoom={1.3}

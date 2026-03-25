@@ -72,8 +72,21 @@ export async function POST(request: Request) {
       })
       .eq("id", ref.paymentRecordId);
 
-    // If approved, activate subscription
+    // If approved, activate subscription (with idempotency check)
     if (mpPayment.status === "approved") {
+      // Check if this payment was already processed (idempotency)
+      const { data: existingPayment } = await supabase
+        .from("payments")
+        .select("status")
+        .eq("mp_payment_id", String(mpPayment.id))
+        .eq("status", "approved")
+        .maybeSingle();
+
+      if (existingPayment) {
+        console.log("[MP Webhook] Payment already processed:", mpPayment.id);
+        return NextResponse.json({ ok: true });
+      }
+
       // Load payment record for plan details
       const { data: paymentRecord } = await supabase
         .from("payments")

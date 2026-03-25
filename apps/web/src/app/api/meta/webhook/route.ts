@@ -13,7 +13,7 @@ import {
 } from "@/lib/meta";
 import { createServerClient } from "@/lib/supabase/server";
 import { findMatchingFlow, executeFlow, resumeFlow } from "@/lib/flow-engine";
-import { generateCoachResponse } from "@/lib/ai-coach";
+import { generateCoachResponse, validateProfileUpdates } from "@/lib/ai-coach";
 import { classifyFlowIntent } from "@/lib/intent-classifier";
 import {
   getOrganizationSettingsById,
@@ -611,27 +611,35 @@ export async function POST(request: Request) {
                 continue;
               }
 
-              const aiCoachResponse = await generateCoachResponse(
+              const aiCoachResp = await generateCoachResponse(
                 supabase,
                 conversationId,
                 content,
                 organizationId
               );
-              await simulateTyping(message.id, aiCoachResponse, metaConfig);
+              await simulateTyping(message.id, aiCoachResp.message, metaConfig);
               const aiCoachResult = await sendMetaWhatsAppTextMessage(
                 {
                   to: contactPhone,
-                  body: aiCoachResponse,
+                  body: aiCoachResp.message,
                 },
                 metaConfig
               );
               await supabase.from("messages").insert({
                 conversation_id: conversationId,
-                content: aiCoachResponse,
+                content: aiCoachResp.message,
                 type: "text",
                 sender: "bot",
                 wa_message_id: aiCoachResult.messageId,
               });
+              if (aiCoachResp.profileUpdates) {
+                const { data: cvars } = await supabase.from("conversations").select("flow_variables").eq("id", conversationId).single();
+                const fv = (cvars?.flow_variables as Record<string, string>) || {};
+                const cur = fv._coaching_summary ? JSON.parse(fv._coaching_summary) : {};
+                const valid = validateProfileUpdates(aiCoachResp.profileUpdates, cur);
+                if (valid) fv._coaching_summary = JSON.stringify({ ...cur, ...valid });
+                await supabase.from("conversations").update({ flow_variables: fv }).eq("id", conversationId);
+              }
               continue;
             }
 
@@ -655,27 +663,35 @@ export async function POST(request: Request) {
                 metaConfig,
               });
             } else {
-              const aiResponse = await generateCoachResponse(
+              const aiResp2 = await generateCoachResponse(
                 supabase,
                 conversationId,
                 content,
                 organizationId
               );
-              await simulateTyping(message.id, aiResponse, metaConfig);
+              await simulateTyping(message.id, aiResp2.message, metaConfig);
               const aiResult = await sendMetaWhatsAppTextMessage(
                 {
                   to: contactPhone,
-                  body: aiResponse,
+                  body: aiResp2.message,
                 },
                 metaConfig
               );
               await supabase.from("messages").insert({
                 conversation_id: conversationId,
-                content: aiResponse,
+                content: aiResp2.message,
                 type: "text",
                 sender: "bot",
                 wa_message_id: aiResult.messageId,
               });
+              if (aiResp2.profileUpdates) {
+                const { data: cvars2 } = await supabase.from("conversations").select("flow_variables").eq("id", conversationId).single();
+                const fv2 = (cvars2?.flow_variables as Record<string, string>) || {};
+                const cur2 = fv2._coaching_summary ? JSON.parse(fv2._coaching_summary) : {};
+                const valid2 = validateProfileUpdates(aiResp2.profileUpdates, cur2);
+                if (valid2) fv2._coaching_summary = JSON.stringify({ ...cur2, ...valid2 });
+                await supabase.from("conversations").update({ flow_variables: fv2 }).eq("id", conversationId);
+              }
 
               if (promptMessage) {
                 const { data: convVars } = await supabase
@@ -760,27 +776,35 @@ export async function POST(request: Request) {
               .eq("id", conversationId);
           }
 
-          const aiResponse = await generateCoachResponse(
+          const aiResp3 = await generateCoachResponse(
             supabase,
             conversationId,
             content,
             organizationId
           );
-          await simulateTyping(message.id, aiResponse, metaConfig);
+          await simulateTyping(message.id, aiResp3.message, metaConfig);
           const result = await sendMetaWhatsAppTextMessage(
             {
               to: contactPhone,
-              body: aiResponse,
+              body: aiResp3.message,
             },
             metaConfig
           );
           await supabase.from("messages").insert({
             conversation_id: conversationId,
-            content: aiResponse,
+            content: aiResp3.message,
             type: "text",
             sender: "bot",
             wa_message_id: result.messageId,
           });
+          if (aiResp3.profileUpdates) {
+            const { data: cvars3 } = await supabase.from("conversations").select("flow_variables").eq("id", conversationId).single();
+            const fv3 = (cvars3?.flow_variables as Record<string, string>) || {};
+            const cur3 = fv3._coaching_summary ? JSON.parse(fv3._coaching_summary) : {};
+            const valid3 = validateProfileUpdates(aiResp3.profileUpdates, cur3);
+            if (valid3) fv3._coaching_summary = JSON.stringify({ ...cur3, ...valid3 });
+            await supabase.from("conversations").update({ flow_variables: fv3 }).eq("id", conversationId);
+          }
         } catch (error) {
           console.error("Orchestration error:", error);
         }

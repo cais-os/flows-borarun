@@ -155,6 +155,7 @@ export type PaymentNodeData = {
   durationDays: number;
   currency?: string;
   messageText?: string;
+  ctaButtonText?: string;
   mediaUrl?: string;
   mediaFileName?: string;
   [key: string]: unknown;
@@ -207,6 +208,8 @@ export type WhatsAppFlowNodeData = {
   source?: "external" | "builder";
   /** Variable name prefix for captured responses (e.g. "lead" → lead_name, lead_email) */
   variablePrefix?: string;
+  /** First screen ID to open (for external flows) */
+  firstScreenId?: string;
   /** Draft mode — send as draft for testing */
   draftMode?: boolean;
   [key: string]: unknown;

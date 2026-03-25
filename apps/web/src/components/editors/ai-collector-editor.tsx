@@ -100,6 +100,10 @@ export function AiCollectorEditor({ nodeId, data }: AiCollectorEditorProps) {
           </Button>
         </div>
 
+        <p className="text-xs text-muted-foreground">
+          O nome da variavel e usado para armazenar o dado coletado. Para onboarding de corrida, use o prefixo <strong>onb_</strong> (ex: onb_idade, onb_peso, onb_objetivo) para manter compatibilidade com o gerador de plano e o coach IA.
+        </p>
+
         {fields.length === 0 && (
           <p className="text-sm text-muted-foreground italic">
             Nenhum campo configurado. Adicione os campos que deseja coletar.
@@ -118,7 +122,7 @@ export function AiCollectorEditor({ nodeId, data }: AiCollectorEditorProps) {
                   onChange={(e) =>
                     updateField(field.id, { name: e.target.value })
                   }
-                  placeholder="Nome da variavel (ex: idade)"
+                  placeholder="Nome da variavel (ex: onb_idade)"
                   className="text-sm"
                 />
                 <Input

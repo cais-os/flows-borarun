@@ -23,7 +23,7 @@ import {
 import { createGeneratedAudioAsset } from "@/lib/audio-assets";
 import { buildCapturedVariableValue } from "@/lib/captured-variable";
 import { generatePdf } from "@/lib/pdf-generator";
-import { buildStravaConnectUrl, buildStravaConnectMessage } from "@/lib/strava";
+import { buildStravaConnectUrl, buildStravaConnectMessage, buildStravaCoachContext } from "@/lib/strava";
 import {
   getMercadoPagoConfig,
   createPaymentAndPreference,
@@ -45,6 +45,7 @@ import {
   sendMetaWhatsAppInteractiveButtonsMessage,
   sendMetaWhatsAppInteractiveListMessage,
   sendMetaWhatsAppFlowMessage,
+  sendMetaWhatsAppCtaUrlMessage,
   createWhatsAppFlow,
   updateWhatsAppFlowJson,
   publishWhatsAppFlow,
@@ -931,14 +932,22 @@ async function executeGeneratePdfNode(params: {
 
     if (!template) return;
 
-    const { pdf: pdfBuffer, planData } = await generatePdf({
+    const stravaContext = await buildStravaCoachContext(params.supabase, params.conversationId);
+
+    const { pdf: pdfBuffer, planData, coachingSummary } = await generatePdf({
       templateHtml: template.html_content,
       flowVariables,
       aiPrompt: params.data.aiPrompt,
+      stravaContext: stravaContext || undefined,
     });
 
-    // Persist training plan JSON for AI coach context
-    const updatedVars = { ...flowVariables, _training_plan: JSON.stringify(planData) };
+    // Persist training plan, coaching summary and generation timestamp
+    const updatedVars = {
+      ...flowVariables,
+      _training_plan: JSON.stringify(planData),
+      _coaching_summary: JSON.stringify(coachingSummary),
+      _plan_generated_at: new Date().toISOString(),
+    };
     await params.supabase
       .from("conversations")
       .update({ flow_variables: updatedVars })
@@ -977,6 +986,23 @@ async function executeGeneratePdfNode(params: {
     });
   } catch (error) {
     console.error("Flow engine: failed to generate PDF", error);
+    // Notify athlete about the failure
+    try {
+      const errorMsg = "Houve um problema ao gerar seu plano de treino. Estamos trabalhando nisso e em breve você receberá.";
+      await sendMetaWhatsAppTextMessage(
+        { to: params.contactPhone, body: errorMsg },
+        params.metaConfig
+      );
+      await params.supabase.from("messages").insert({
+        conversation_id: params.conversationId,
+        content: errorMsg,
+        type: "text",
+        sender: "bot",
+        node_id: params.node.id,
+      });
+    } catch (msgErr) {
+      console.error("Flow engine: failed to send PDF error notification", msgErr);
+    }
   }
 }
 
@@ -1373,7 +1399,35 @@ async function runFlowQueue(params: {
             message = buildPaymentMessage(paymentUrl);
           }
 
-          if (paymentData.mediaUrl) {
+          if (paymentData.ctaButtonText?.trim()) {
+            // Send as interactive CTA URL button
+            const bodyText = paymentData.messageText?.trim()
+              ? interpolateVariables(
+                  paymentData.messageText.replace(/\{\{payment_link\}\}/g, "").trim(),
+                  await getConversationVariables(params.supabase, params.conversationId)
+                )
+              : `Para assinar o plano ${paymentData.planName || ""}, clique no botao abaixo:`.trim();
+
+            const ctaResult = await sendMetaWhatsAppCtaUrlMessage(
+              {
+                to: params.contactPhone,
+                bodyText,
+                buttonText: paymentData.ctaButtonText,
+                url: paymentUrl,
+              },
+              params.metaConfig
+            );
+
+            await params.supabase.from("messages").insert({
+              conversation_id: params.conversationId,
+              content: bodyText,
+              type: "interactive",
+              sender: "bot",
+              node_id: current.id,
+              wa_message_id: ctaResult.messageId,
+              metadata: { payment_url: paymentUrl },
+            });
+          } else if (paymentData.mediaUrl) {
             let imageUrl: string;
             if (paymentData.mediaUrl.startsWith("data:")) {
               const base64Data = paymentData.mediaUrl.split(",")[1];
@@ -1507,7 +1561,7 @@ async function runFlowQueue(params: {
               headerText: flowData.headerText || undefined,
               bodyText,
               ctaText: flowData.ctaText || "Abrir formulario",
-              screenId: flowData.screens?.[0]?.id || "WELCOME_SCREEN",
+              screenId: flowData.firstScreenId || flowData.screens?.[0]?.id || "WELCOME_SCREEN",
               mode: flowData.draftMode ? "draft" : "published",
             },
             params.metaConfig

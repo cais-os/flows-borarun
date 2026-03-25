@@ -1,0 +1,767 @@
+{
+  "version": "7.3",
+  "data_api_version": "3.0",
+  "routing_model": {
+    "BOAS_VINDAS": ["DADOS_BASICOS"],
+    "DADOS_BASICOS": ["EXPERIENCIA"],
+    "EXPERIENCIA": ["DETALHES_CORRIDA", "OUTRAS_ATIVIDADES"],
+    "DETALHES_CORRIDA": ["VOLUME_CORRIDA"],
+    "VOLUME_CORRIDA": ["OUTRAS_ATIVIDADES"],
+    "OUTRAS_ATIVIDADES": ["OBJETIVO"],
+    "OBJETIVO": ["OBJETIVO_DISTANCIA", "OBJETIVO_TEMPO", "DISPONIBILIDADE"],
+    "OBJETIVO_DISTANCIA": ["DISPONIBILIDADE"],
+    "OBJETIVO_TEMPO": ["DISPONIBILIDADE"],
+    "DISPONIBILIDADE": ["SAUDE"],
+    "SAUDE": ["SAUDE_DETALHE", "CONFIRMACAO"],
+    "SAUDE_DETALHE": ["CONFIRMACAO"]
+  },
+  "screens": [
+    {
+      "id": "BOAS_VINDAS",
+      "title": "Bora Run",
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Bem-vindo ao Bora Run!"
+          },
+          {
+            "type": "TextBody",
+            "text": "Vamos criar seu plano personalizado de corrida. Em poucos passos vamos conhecer seu perfil, experiencia e objetivos para montar o treino ideal pra voce."
+          },
+          {
+            "type": "TextBody",
+            "text": "O questionario leva cerca de 2 minutos."
+          },
+          {
+            "type": "Footer",
+            "label": "Comecar",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "DADOS_BASICOS",
+      "title": "Dados Basicos",
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Sobre voce"
+          },
+          {
+            "type": "TextInput",
+            "name": "idade",
+            "label": "Idade",
+            "input-type": "text",
+            "required": true,
+            "helper-text": "Ex: 30"
+          },
+          {
+            "type": "TextInput",
+            "name": "altura",
+            "label": "Altura (cm)",
+            "input-type": "text",
+            "required": true,
+            "helper-text": "Ex: 175"
+          },
+          {
+            "type": "TextInput",
+            "name": "peso",
+            "label": "Peso (kg)",
+            "input-type": "text",
+            "required": true,
+            "helper-text": "Ex: 70"
+          },
+          {
+            "type": "RadioButtonsGroup",
+            "name": "sexo",
+            "label": "Sexo",
+            "required": true,
+            "data-source": [
+              { "id": "masculino", "title": "Masculino" },
+              { "id": "feminino", "title": "Feminino" },
+              { "id": "nao_informar", "title": "Prefiro nao informar" }
+            ]
+          },
+          {
+            "type": "Footer",
+            "label": "Continuar",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "idade": "${form.idade}",
+                "altura": "${form.altura}",
+                "peso": "${form.peso}",
+                "sexo": "${form.sexo}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "EXPERIENCIA",
+      "title": "Experiencia",
+      "data": {
+        "idade": { "type": "string", "__example__": "30" },
+        "altura": { "type": "string", "__example__": "175" },
+        "peso": { "type": "string", "__example__": "70" },
+        "sexo": { "type": "string", "__example__": "masculino" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Experiencia atual"
+          },
+          {
+            "type": "RadioButtonsGroup",
+            "name": "ja_corre",
+            "label": "Voce ja corre hoje?",
+            "required": true,
+            "data-source": [
+              { "id": "zero", "title": "Nao, estou comecando do zero" },
+              { "id": "as_vezes", "title": "Sim, corro as vezes" },
+              { "id": "frequente", "title": "Sim, corro com frequencia" }
+            ]
+          },
+          {
+            "type": "Footer",
+            "label": "Continuar",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "idade": "${data.idade}",
+                "altura": "${data.altura}",
+                "peso": "${data.peso}",
+                "sexo": "${data.sexo}",
+                "ja_corre": "${form.ja_corre}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "DETALHES_CORRIDA",
+      "title": "Detalhes da Corrida",
+      "data": {
+        "idade": { "type": "string", "__example__": "30" },
+        "altura": { "type": "string", "__example__": "175" },
+        "peso": { "type": "string", "__example__": "70" },
+        "sexo": { "type": "string", "__example__": "masculino" },
+        "ja_corre": { "type": "string", "__example__": "frequente" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Sobre sua corrida"
+          },
+          {
+            "type": "Dropdown",
+            "name": "vezes_semana",
+            "label": "Vezes por semana",
+            "required": true,
+            "data-source": [
+              { "id": "1x", "title": "1x" },
+              { "id": "2x", "title": "2x" },
+              { "id": "3x", "title": "3x" },
+              { "id": "4x", "title": "4x" },
+              { "id": "5x_mais", "title": "5x ou mais" }
+            ]
+          },
+          {
+            "type": "Dropdown",
+            "name": "maior_distancia",
+            "label": "Maior distancia recente",
+            "required": true,
+            "data-source": [
+              { "id": "menos_3", "title": "Menos de 3 km" },
+              { "id": "3_5", "title": "3 a 5 km" },
+              { "id": "5_10", "title": "5 a 10 km" },
+              { "id": "10_15", "title": "10 a 15 km" },
+              { "id": "15_mais", "title": "15 km ou mais" }
+            ]
+          },
+          {
+            "type": "Footer",
+            "label": "Continuar",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "idade": "${data.idade}",
+                "altura": "${data.altura}",
+                "peso": "${data.peso}",
+                "sexo": "${data.sexo}",
+                "ja_corre": "${data.ja_corre}",
+                "vezes_semana": "${form.vezes_semana}",
+                "maior_distancia": "${form.maior_distancia}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "VOLUME_CORRIDA",
+      "title": "Volume de Corrida",
+      "data": {
+        "idade": { "type": "string", "__example__": "30" },
+        "altura": { "type": "string", "__example__": "175" },
+        "peso": { "type": "string", "__example__": "70" },
+        "sexo": { "type": "string", "__example__": "masculino" },
+        "ja_corre": { "type": "string", "__example__": "frequente" },
+        "vezes_semana": { "type": "string", "__example__": "3x" },
+        "maior_distancia": { "type": "string", "__example__": "5_10" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Volume de corrida"
+          },
+          {
+            "type": "TextBody",
+            "text": "Qual foi aproximadamente seu volume total de corrida nas ultimas 4 semanas?"
+          },
+          {
+            "type": "RadioButtonsGroup",
+            "name": "volume_4_semanas",
+            "label": "Volume ultimas 4 semanas",
+            "required": true,
+            "data-source": [
+              { "id": "menos_20", "title": "Menos de 20 km" },
+              { "id": "20_40", "title": "20 a 40 km" },
+              { "id": "40_80", "title": "40 a 80 km" },
+              { "id": "80_mais", "title": "80 km ou mais" },
+              { "id": "nao_sei", "title": "Nao sei" }
+            ]
+          },
+          {
+            "type": "Footer",
+            "label": "Continuar",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "idade": "${data.idade}",
+                "altura": "${data.altura}",
+                "peso": "${data.peso}",
+                "sexo": "${data.sexo}",
+                "ja_corre": "${data.ja_corre}",
+                "vezes_semana": "${data.vezes_semana}",
+                "maior_distancia": "${data.maior_distancia}",
+                "volume_4_semanas": "${form.volume_4_semanas}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "OUTRAS_ATIVIDADES",
+      "title": "Outras Atividades",
+      "data": {
+        "idade": { "type": "string", "__example__": "30" },
+        "altura": { "type": "string", "__example__": "175" },
+        "peso": { "type": "string", "__example__": "70" },
+        "sexo": { "type": "string", "__example__": "masculino" },
+        "ja_corre": { "type": "string", "__example__": "frequente" },
+        "vezes_semana": { "type": "string", "__example__": "3x" },
+        "volume_4_semanas": { "type": "string", "__example__": "20_40" },
+        "maior_distancia": { "type": "string", "__example__": "5_10" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Outras atividades"
+          },
+          {
+            "type": "CheckboxGroup",
+            "name": "outras_atividades",
+            "label": "Faz outro exercicio?",
+            "required": true,
+            "data-source": [
+              { "id": "nao", "title": "Nao" },
+              { "id": "musculacao", "title": "Musculacao" },
+              { "id": "bike", "title": "Bike" },
+              { "id": "funcional", "title": "Funcional" },
+              { "id": "natacao", "title": "Natacao" },
+              { "id": "outro", "title": "Outro" }
+            ]
+          },
+          {
+            "type": "Footer",
+            "label": "Continuar",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "idade": "${data.idade}",
+                "altura": "${data.altura}",
+                "peso": "${data.peso}",
+                "sexo": "${data.sexo}",
+                "ja_corre": "${data.ja_corre}",
+                "vezes_semana": "${data.vezes_semana}",
+                "volume_4_semanas": "${data.volume_4_semanas}",
+                "maior_distancia": "${data.maior_distancia}",
+                "outras_atividades": "${form.outras_atividades}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "OBJETIVO",
+      "title": "Seu Objetivo",
+      "data": {
+        "idade": { "type": "string", "__example__": "30" },
+        "altura": { "type": "string", "__example__": "175" },
+        "peso": { "type": "string", "__example__": "70" },
+        "sexo": { "type": "string", "__example__": "masculino" },
+        "ja_corre": { "type": "string", "__example__": "frequente" },
+        "vezes_semana": { "type": "string", "__example__": "3x" },
+        "volume_4_semanas": { "type": "string", "__example__": "20_40" },
+        "maior_distancia": { "type": "string", "__example__": "5_10" },
+        "outras_atividades": { "type": "array", "items": { "type": "string" }, "__example__": ["musculacao"] }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Qual seu objetivo?"
+          },
+          {
+            "type": "Dropdown",
+            "name": "objetivo",
+            "label": "Objetivo principal",
+            "required": true,
+            "data-source": [
+              { "id": "distancia_x", "title": "Correr uma distancia especifica" },
+              { "id": "melhorar_tempo", "title": "Melhorar meu tempo" },
+              { "id": "perder_peso", "title": "Perder peso" },
+              { "id": "comecar_zero", "title": "Comecar do zero" },
+              { "id": "disciplina", "title": "Ter mais disciplina" },
+              { "id": "saude", "title": "Saude e bem-estar" }
+            ]
+          },
+          {
+            "type": "Footer",
+            "label": "Continuar",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "idade": "${data.idade}",
+                "altura": "${data.altura}",
+                "peso": "${data.peso}",
+                "sexo": "${data.sexo}",
+                "ja_corre": "${data.ja_corre}",
+                "vezes_semana": "${data.vezes_semana}",
+                "volume_4_semanas": "${data.volume_4_semanas}",
+                "maior_distancia": "${data.maior_distancia}",
+                "outras_atividades": "${data.outras_atividades}",
+                "objetivo": "${form.objetivo}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "OBJETIVO_DISTANCIA",
+      "title": "Distancia Alvo",
+      "data": {
+        "idade": { "type": "string", "__example__": "30" },
+        "altura": { "type": "string", "__example__": "175" },
+        "peso": { "type": "string", "__example__": "70" },
+        "sexo": { "type": "string", "__example__": "masculino" },
+        "ja_corre": { "type": "string", "__example__": "frequente" },
+        "vezes_semana": { "type": "string", "__example__": "3x" },
+        "volume_4_semanas": { "type": "string", "__example__": "20_40" },
+        "maior_distancia": { "type": "string", "__example__": "5_10" },
+        "outras_atividades": { "type": "array", "items": { "type": "string" }, "__example__": ["musculacao"] },
+        "objetivo": { "type": "string", "__example__": "distancia_x" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Qual distancia?"
+          },
+          {
+            "type": "RadioButtonsGroup",
+            "name": "distancia_alvo",
+            "label": "Distancia desejada",
+            "required": true,
+            "data-source": [
+              { "id": "5km", "title": "5 km" },
+              { "id": "10km", "title": "10 km" },
+              { "id": "15km", "title": "15 km" },
+              { "id": "21km", "title": "21 km (meia maratona)" },
+              { "id": "42km", "title": "42 km (maratona)" },
+              { "id": "outra", "title": "Outra" }
+            ]
+          },
+          {
+            "type": "Footer",
+            "label": "Continuar",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "idade": "${data.idade}",
+                "altura": "${data.altura}",
+                "peso": "${data.peso}",
+                "sexo": "${data.sexo}",
+                "ja_corre": "${data.ja_corre}",
+                "vezes_semana": "${data.vezes_semana}",
+                "volume_4_semanas": "${data.volume_4_semanas}",
+                "maior_distancia": "${data.maior_distancia}",
+                "outras_atividades": "${data.outras_atividades}",
+                "objetivo": "${data.objetivo}",
+                "distancia_alvo": "${form.distancia_alvo}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "OBJETIVO_TEMPO",
+      "title": "Melhorar Tempo",
+      "data": {
+        "idade": { "type": "string", "__example__": "30" },
+        "altura": { "type": "string", "__example__": "175" },
+        "peso": { "type": "string", "__example__": "70" },
+        "sexo": { "type": "string", "__example__": "masculino" },
+        "ja_corre": { "type": "string", "__example__": "frequente" },
+        "vezes_semana": { "type": "string", "__example__": "3x" },
+        "volume_4_semanas": { "type": "string", "__example__": "20_40" },
+        "maior_distancia": { "type": "string", "__example__": "5_10" },
+        "outras_atividades": { "type": "array", "items": { "type": "string" }, "__example__": ["musculacao"] },
+        "objetivo": { "type": "string", "__example__": "melhorar_tempo" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Em qual distancia?"
+          },
+          {
+            "type": "TextBody",
+            "text": "Escolha a distancia em que quer melhorar seu tempo."
+          },
+          {
+            "type": "RadioButtonsGroup",
+            "name": "distancia_tempo",
+            "label": "Distancia",
+            "required": true,
+            "data-source": [
+              { "id": "5km", "title": "5 km" },
+              { "id": "10km", "title": "10 km" },
+              { "id": "21km", "title": "21 km (meia maratona)" },
+              { "id": "outra", "title": "Outra" }
+            ]
+          },
+          {
+            "type": "Footer",
+            "label": "Continuar",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "idade": "${data.idade}",
+                "altura": "${data.altura}",
+                "peso": "${data.peso}",
+                "sexo": "${data.sexo}",
+                "ja_corre": "${data.ja_corre}",
+                "vezes_semana": "${data.vezes_semana}",
+                "volume_4_semanas": "${data.volume_4_semanas}",
+                "maior_distancia": "${data.maior_distancia}",
+                "outras_atividades": "${data.outras_atividades}",
+                "objetivo": "${data.objetivo}",
+                "distancia_tempo": "${form.distancia_tempo}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "DISPONIBILIDADE",
+      "title": "Disponibilidade",
+      "data": {
+        "idade": { "type": "string", "__example__": "30" },
+        "altura": { "type": "string", "__example__": "175" },
+        "peso": { "type": "string", "__example__": "70" },
+        "sexo": { "type": "string", "__example__": "masculino" },
+        "ja_corre": { "type": "string", "__example__": "frequente" },
+        "vezes_semana": { "type": "string", "__example__": "3x" },
+        "volume_4_semanas": { "type": "string", "__example__": "20_40" },
+        "maior_distancia": { "type": "string", "__example__": "5_10" },
+        "outras_atividades": { "type": "array", "items": { "type": "string" }, "__example__": ["musculacao"] },
+        "objetivo": { "type": "string", "__example__": "distancia_x" },
+        "distancia_alvo": { "type": "string", "__example__": "10km" },
+        "distancia_tempo": { "type": "string", "__example__": "" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Sua disponibilidade"
+          },
+          {
+            "type": "Dropdown",
+            "name": "dias_treino",
+            "label": "Dias por semana para treinar",
+            "required": true,
+            "data-source": [
+              { "id": "2", "title": "2 dias" },
+              { "id": "3", "title": "3 dias" },
+              { "id": "4", "title": "4 dias" },
+              { "id": "5", "title": "5 dias" },
+              { "id": "6_mais", "title": "6 dias ou mais" }
+            ]
+          },
+          {
+            "type": "Dropdown",
+            "name": "semanas_plano",
+            "label": "Duracao do plano",
+            "required": true,
+            "data-source": [
+              { "id": "4", "title": "4 semanas" },
+              { "id": "6", "title": "6 semanas" },
+              { "id": "8", "title": "8 semanas" },
+              { "id": "12", "title": "12 semanas" },
+              { "id": "16", "title": "16 semanas" }
+            ]
+          },
+          {
+            "type": "Footer",
+            "label": "Continuar",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "idade": "${data.idade}",
+                "altura": "${data.altura}",
+                "peso": "${data.peso}",
+                "sexo": "${data.sexo}",
+                "ja_corre": "${data.ja_corre}",
+                "vezes_semana": "${data.vezes_semana}",
+                "volume_4_semanas": "${data.volume_4_semanas}",
+                "maior_distancia": "${data.maior_distancia}",
+                "outras_atividades": "${data.outras_atividades}",
+                "objetivo": "${data.objetivo}",
+                "distancia_alvo": "${data.distancia_alvo}",
+                "distancia_tempo": "${data.distancia_tempo}",
+                "dias_treino": "${form.dias_treino}",
+                "semanas_plano": "${form.semanas_plano}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "SAUDE",
+      "title": "Saude",
+      "data": {
+        "idade": { "type": "string", "__example__": "30" },
+        "altura": { "type": "string", "__example__": "175" },
+        "peso": { "type": "string", "__example__": "70" },
+        "sexo": { "type": "string", "__example__": "masculino" },
+        "ja_corre": { "type": "string", "__example__": "frequente" },
+        "vezes_semana": { "type": "string", "__example__": "3x" },
+        "volume_4_semanas": { "type": "string", "__example__": "20_40" },
+        "maior_distancia": { "type": "string", "__example__": "5_10" },
+        "outras_atividades": { "type": "array", "items": { "type": "string" }, "__example__": ["musculacao"] },
+        "objetivo": { "type": "string", "__example__": "distancia_x" },
+        "distancia_alvo": { "type": "string", "__example__": "10km" },
+        "distancia_tempo": { "type": "string", "__example__": "" },
+        "dias_treino": { "type": "string", "__example__": "4" },
+        "semanas_plano": { "type": "string", "__example__": "8" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Saude"
+          },
+          {
+            "type": "RadioButtonsGroup",
+            "name": "tem_lesao",
+            "label": "Tem algum problema fisico ou lesao?",
+            "required": true,
+            "data-source": [
+              { "id": "nao", "title": "Nao" },
+              { "id": "sim", "title": "Sim" }
+            ]
+          },
+          {
+            "type": "Footer",
+            "label": "Continuar",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "idade": "${data.idade}",
+                "altura": "${data.altura}",
+                "peso": "${data.peso}",
+                "sexo": "${data.sexo}",
+                "ja_corre": "${data.ja_corre}",
+                "vezes_semana": "${data.vezes_semana}",
+                "volume_4_semanas": "${data.volume_4_semanas}",
+                "maior_distancia": "${data.maior_distancia}",
+                "outras_atividades": "${data.outras_atividades}",
+                "objetivo": "${data.objetivo}",
+                "distancia_alvo": "${data.distancia_alvo}",
+                "distancia_tempo": "${data.distancia_tempo}",
+                "dias_treino": "${data.dias_treino}",
+                "semanas_plano": "${data.semanas_plano}",
+                "tem_lesao": "${form.tem_lesao}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "SAUDE_DETALHE",
+      "title": "Detalhe da Lesao",
+      "data": {
+        "idade": { "type": "string", "__example__": "30" },
+        "altura": { "type": "string", "__example__": "175" },
+        "peso": { "type": "string", "__example__": "70" },
+        "sexo": { "type": "string", "__example__": "masculino" },
+        "ja_corre": { "type": "string", "__example__": "frequente" },
+        "vezes_semana": { "type": "string", "__example__": "3x" },
+        "volume_4_semanas": { "type": "string", "__example__": "20_40" },
+        "maior_distancia": { "type": "string", "__example__": "5_10" },
+        "outras_atividades": { "type": "array", "items": { "type": "string" }, "__example__": ["musculacao"] },
+        "objetivo": { "type": "string", "__example__": "distancia_x" },
+        "distancia_alvo": { "type": "string", "__example__": "10km" },
+        "distancia_tempo": { "type": "string", "__example__": "" },
+        "dias_treino": { "type": "string", "__example__": "4" },
+        "semanas_plano": { "type": "string", "__example__": "8" },
+        "tem_lesao": { "type": "string", "__example__": "sim" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Qual problema?"
+          },
+          {
+            "type": "TextInput",
+            "name": "descricao_lesao",
+            "label": "Descreva brevemente",
+            "input-type": "text",
+            "required": true,
+            "helper-text": "Ex: Dor no joelho direito"
+          },
+          {
+            "type": "Footer",
+            "label": "Continuar",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "idade": "${data.idade}",
+                "altura": "${data.altura}",
+                "peso": "${data.peso}",
+                "sexo": "${data.sexo}",
+                "ja_corre": "${data.ja_corre}",
+                "vezes_semana": "${data.vezes_semana}",
+                "volume_4_semanas": "${data.volume_4_semanas}",
+                "maior_distancia": "${data.maior_distancia}",
+                "outras_atividades": "${data.outras_atividades}",
+                "objetivo": "${data.objetivo}",
+                "distancia_alvo": "${data.distancia_alvo}",
+                "distancia_tempo": "${data.distancia_tempo}",
+                "dias_treino": "${data.dias_treino}",
+                "semanas_plano": "${data.semanas_plano}",
+                "tem_lesao": "${data.tem_lesao}",
+                "descricao_lesao": "${form.descricao_lesao}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "CONFIRMACAO",
+      "title": "Cadastro Completo",
+      "terminal": true,
+      "data": {
+        "idade": { "type": "string", "__example__": "30" },
+        "altura": { "type": "string", "__example__": "175" },
+        "peso": { "type": "string", "__example__": "70" },
+        "sexo": { "type": "string", "__example__": "masculino" },
+        "ja_corre": { "type": "string", "__example__": "frequente" },
+        "vezes_semana": { "type": "string", "__example__": "3x" },
+        "volume_4_semanas": { "type": "string", "__example__": "20_40" },
+        "maior_distancia": { "type": "string", "__example__": "5_10" },
+        "outras_atividades": { "type": "array", "items": { "type": "string" }, "__example__": ["musculacao"] },
+        "objetivo": { "type": "string", "__example__": "distancia_x" },
+        "distancia_alvo": { "type": "string", "__example__": "10km" },
+        "distancia_tempo": { "type": "string", "__example__": "" },
+        "dias_treino": { "type": "string", "__example__": "4" },
+        "semanas_plano": { "type": "string", "__example__": "8" },
+        "tem_lesao": { "type": "string", "__example__": "nao" },
+        "descricao_lesao": { "type": "string", "__example__": "" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Tudo pronto!"
+          },
+          {
+            "type": "TextBody",
+            "text": "Suas informacoes foram registradas. Vamos montar seu plano personalizado de corrida com base no que voce nos contou."
+          },
+          {
+            "type": "Footer",
+            "label": "Finalizar",
+            "on-click-action": {
+              "name": "complete",
+              "payload": {
+                "idade": "${data.idade}",
+                "altura": "${data.altura}",
+                "peso": "${data.peso}",
+                "sexo": "${data.sexo}",
+                "ja_corre": "${data.ja_corre}",
+                "vezes_semana": "${data.vezes_semana}",
+                "volume_4_semanas": "${data.volume_4_semanas}",
+                "maior_distancia": "${data.maior_distancia}",
+                "outras_atividades": "${data.outras_atividades}",
+                "objetivo": "${data.objetivo}",
+                "distancia_alvo": "${data.distancia_alvo}",
+                "distancia_tempo": "${data.distancia_tempo}",
+                "dias_treino": "${data.dias_treino}",
+                "semanas_plano": "${data.semanas_plano}",
+                "tem_lesao": "${data.tem_lesao}",
+                "descricao_lesao": "${data.descricao_lesao}"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
