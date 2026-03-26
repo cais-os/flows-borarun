@@ -16,14 +16,15 @@ export async function generateSpeech(
     throw new Error("ELEVENLABS_API_KEY is not configured");
   }
 
+  // Use OGG/OPUS format so WhatsApp displays as voice note (PTT) instead of forwarded audio
   const response = await fetch(
-    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=ogg_opus`,
     {
       method: "POST",
       headers: {
         "xi-api-key": apiKey,
         "Content-Type": "application/json",
-        Accept: "audio/mpeg",
+        Accept: "audio/ogg",
       },
       body: JSON.stringify({
         text,

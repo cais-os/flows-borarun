@@ -35,6 +35,7 @@ import {
   getMatchedWaitRoute,
   normalizeWaitForReplyNodeData,
 } from "@/lib/wait-for-reply";
+import { convertToOgg, getAudioFormat, needsOggConversion } from "@/lib/audio-converter";
 import {
   type MetaConfig,
   sendMetaWhatsAppTextMessage,
@@ -547,6 +548,7 @@ async function resolveStorageMediaUrl(params: {
   conversationId: string;
   mediaUrl: string;
   fallbackContentType: string;
+  convertAudioToOgg?: boolean;
 }) {
   if (!params.mediaUrl.startsWith("data:")) {
     return params.mediaUrl;
@@ -554,9 +556,21 @@ async function resolveStorageMediaUrl(params: {
 
   const base64Data = params.mediaUrl.split(",")[1];
   const mimeMatch = params.mediaUrl.match(/data:([^;]+)/);
-  const contentType = mimeMatch?.[1] || params.fallbackContentType;
-  const ext = contentType.split("/")[1] || "bin";
-  const buffer = Buffer.from(base64Data || "", "base64");
+  let contentType = mimeMatch?.[1] || params.fallbackContentType;
+  let buffer = Buffer.from(base64Data || "", "base64");
+
+  // Convert audio to OGG/OPUS for WhatsApp voice notes
+  if (params.convertAudioToOgg && contentType.startsWith("audio/") && needsOggConversion(contentType)) {
+    try {
+      const sourceFormat = getAudioFormat(contentType);
+      buffer = Buffer.from(await convertToOgg(buffer, sourceFormat));
+      contentType = "audio/ogg";
+    } catch (error) {
+      console.error("[resolveStorageMediaUrl] OGG conversion failed, using original:", error);
+    }
+  }
+
+  const ext = contentType === "audio/ogg" ? "ogg" : (contentType.split("/")[1] || "bin");
   const fileName = `${params.filePrefix}-${params.conversationId}-${Date.now()}.${ext}`;
 
   await params.supabase.storage
@@ -682,10 +696,22 @@ async function executeSendMessageNode(params: {
   ) {
     try {
       await applyTypingDelay(params.inboundMessageId, typingSeconds, params.metaConfig);
+
+      // Convert uploaded audio to OGG for WhatsApp voice note display
+      const audioUrl = await resolveStorageMediaUrl({
+        supabase: params.supabase,
+        bucket: "audio",
+        filePrefix: "audio",
+        conversationId: params.conversationId,
+        mediaUrl: params.data.mediaUrl,
+        fallbackContentType: "audio/mpeg",
+        convertAudioToOgg: true,
+      });
+
       const result = await sendMetaWhatsAppAudioMessage(
         {
           to: params.contactPhone,
-          audioUrl: params.data.mediaUrl,
+          audioUrl,
         },
         params.metaConfig
       );
@@ -695,7 +721,7 @@ async function executeSendMessageNode(params: {
         content: params.data.fileName || "Audio",
         type: "audio",
         sender: "bot",
-        media_url: params.data.mediaUrl,
+        media_url: audioUrl,
         node_id: params.node.id,
         wa_message_id: result.messageId,
       });

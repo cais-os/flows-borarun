@@ -1285,14 +1285,19 @@ function AudioSection({
 
       {/* Upload mode */}
       {source === "upload" && (
-        <MediaUploader
-          type="audio"
-          accept="audio/*"
-          value={data.mediaUrl}
-          fileName={data.fileName}
-          onChange={(url, name) => update({ mediaUrl: url, fileName: name })}
-          onRemove={() => update({ mediaUrl: undefined, fileName: undefined })}
-        />
+        <>
+          <MediaUploader
+            type="audio"
+            accept="audio/*"
+            value={data.mediaUrl}
+            fileName={data.fileName}
+            onChange={(url, name) => update({ mediaUrl: url, fileName: name })}
+            onRemove={() => update({ mediaUrl: undefined, fileName: undefined })}
+          />
+          <p className="text-xs text-amber-600">
+            Para aparecer como audio gravado (voice note) no WhatsApp, use formato <strong>.ogg</strong>. Audios em MP3/WAV aparecem como arquivo encaminhado.
+          </p>
+        </>
       )}
 
       {/* ElevenLabs mode */}

@@ -22,6 +22,8 @@ export async function extractFieldsFromText(
     "Retorne APENAS um JSON valido com os nomes dos campos como chaves e os valores extraidos como strings.",
     "So inclua campos que voce encontrou com confianca no texto. Retorne {} se nada foi encontrado.",
     "Nao invente dados. Nao inclua campos que nao estao no texto.",
+    "",
+    "IMPORTANTE: Alem dos campos definidos, inclua um campo 'observacoes_contexto' com qualquer informacao relevante que o usuario mencionou mas NAO se encaixa nos campos acima. Exemplos: frequencia de atividades, detalhes sobre rotina, motivacao, contexto emocional, historico relevante, lesoes passadas, preferencias. Se nao houver nada extra relevante, NAO inclua este campo.",
     customPrompt ? `\nInstrucoes adicionais: ${customPrompt}` : "",
   ].join("\n");
 
@@ -50,6 +52,7 @@ export async function extractFieldsFromText(
     const result: Record<string, string> = {};
 
     const validFieldNames = new Set(fields.map((f) => f.name));
+    validFieldNames.add("observacoes_contexto"); // Allow extra context field
     for (const [key, value] of Object.entries(parsed)) {
       if (validFieldNames.has(key) && value != null && String(value).trim() !== "") {
         result[key] = String(value).trim();

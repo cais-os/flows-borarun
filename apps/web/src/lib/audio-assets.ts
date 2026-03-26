@@ -22,12 +22,13 @@ export async function createGeneratedAudioAsset(params: {
   const voiceName = voice?.name || "Voz personalizada";
   const resolvedName = params.name?.trim() || `Audio - ${voiceName}`;
   const audioBuffer = await generateSpeech(trimmedText, params.voiceId);
-  const storagePath = `${params.organizationId}/${crypto.randomUUID()}.mp3`;
+  // Use OGG format so WhatsApp displays as voice note (PTT)
+  const storagePath = `${params.organizationId}/${crypto.randomUUID()}.ogg`;
 
   const { error: uploadError } = await params.supabase.storage
     .from("audio")
     .upload(storagePath, audioBuffer, {
-      contentType: "audio/mpeg",
+      contentType: "audio/ogg",
       upsert: false,
     });
 
