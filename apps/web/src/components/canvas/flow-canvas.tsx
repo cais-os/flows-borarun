@@ -8,6 +8,9 @@ import {
   MiniMap,
   BackgroundVariant,
   type Viewport,
+  type Node,
+  useReactFlow,
+  SelectionMode,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
@@ -42,6 +45,7 @@ import type {
   StravaConnectNodeData,
   PaymentNodeData,
   WhatsAppFlowNodeData,
+  NodeData,
 } from "@/types/node-data";
 
 const nodeTypes = {
@@ -167,12 +171,16 @@ function saveViewport(flowId: string, viewport: Viewport) {
 }
 
 // ---------------------------------------------------------------------------
+// Copy/paste for nodes
+// ---------------------------------------------------------------------------
+
+let copiedNodes: Node<NodeData>[] = [];
+
+// ---------------------------------------------------------------------------
 
 export function FlowCanvas() {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const reactFlowInstance = useRef<any>(null);
-  const hasRestoredViewport = useRef(false);
+  const { setViewport, fitView, getNodes, screenToFlowPosition } = useReactFlow();
 
   const flowId = useFlowStore((s) => s.flowId);
   const nodes = useFlowStore((s) => s.nodes);
@@ -183,10 +191,63 @@ export function FlowCanvas() {
   const addNode = useFlowStore((s) => s.addNode);
   const setSelectedNodeId = useFlowStore((s) => s.setSelectedNodeId);
 
-  // Reset flag when flow changes so we restore viewport on next init
+  // Restore viewport when flow changes
   useEffect(() => {
-    hasRestoredViewport.current = false;
-  }, [flowId]);
+    if (!flowId) return;
+    // Small delay to let nodes render first
+    const timer = setTimeout(() => {
+      const saved = getSavedViewport(flowId);
+      if (saved) {
+        setViewport(saved);
+      } else {
+        fitView({ padding: 0.28, maxZoom: 0.9 });
+      }
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [flowId, setViewport, fitView]);
+
+  // Copy/paste keyboard handler
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if typing in an input/textarea
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
+      // Ctrl+C — copy selected nodes
+      if ((e.ctrlKey || e.metaKey) && e.key === "c") {
+        const selected = getNodes().filter((n) => n.selected) as Node<NodeData>[];
+        if (selected.length > 0) {
+          copiedNodes = selected;
+        }
+      }
+
+      // Ctrl+V — paste copied nodes
+      if ((e.ctrlKey || e.metaKey) && e.key === "v" && copiedNodes.length > 0) {
+        e.preventDefault();
+        const offset = 50;
+        for (const node of copiedNodes) {
+          const newNode: Node<NodeData> = {
+            id: createNodeId(node.type || "sendMessage"),
+            type: node.type,
+            position: {
+              x: node.position.x + offset,
+              y: node.position.y + offset,
+            },
+            data: JSON.parse(JSON.stringify(node.data)) as NodeData,
+          };
+          addNode(newNode);
+        }
+        // Shift for next paste
+        copiedNodes = copiedNodes.map((n) => ({
+          ...n,
+          position: { x: n.position.x + offset, y: n.position.y + offset },
+        }));
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [getNodes, addNode]);
 
   const onDragOver = useCallback((event: DragEvent) => {
     event.preventDefault();
@@ -198,9 +259,9 @@ export function FlowCanvas() {
       event.preventDefault();
 
       const type = event.dataTransfer.getData("application/reactflow");
-      if (!type || !reactFlowInstance.current) return;
+      if (!type) return;
 
-      const position = reactFlowInstance.current.screenToFlowPosition({
+      const position = screenToFlowPosition({
         x: event.clientX,
         y: event.clientY,
       });
@@ -214,7 +275,7 @@ export function FlowCanvas() {
 
       addNode(newNode);
     },
-    [addNode]
+    [addNode, screenToFlowPosition]
   );
 
   return (
@@ -225,18 +286,6 @@ export function FlowCanvas() {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
-        onInit={(instance) => {
-          reactFlowInstance.current = instance;
-          if (flowId && !hasRestoredViewport.current) {
-            const saved = getSavedViewport(flowId);
-            if (saved) {
-              instance.setViewport(saved);
-            } else {
-              instance.fitView({ padding: 0.28, maxZoom: 0.9 });
-            }
-            hasRestoredViewport.current = true;
-          }
-        }}
         onMoveEnd={(_, viewport) => {
           if (flowId) saveViewport(flowId, viewport);
         }}
@@ -248,6 +297,9 @@ export function FlowCanvas() {
         fitViewOptions={{ padding: 0.28, maxZoom: 0.9 }}
         minZoom={0.35}
         maxZoom={1.3}
+        selectionMode={SelectionMode.Partial}
+        selectNodesOnDrag={false}
+        selectionOnDrag
         deleteKeyCode={["Backspace", "Delete"]}
         className="bg-gray-50"
       >
