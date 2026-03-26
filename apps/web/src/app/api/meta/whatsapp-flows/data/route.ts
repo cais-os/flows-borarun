@@ -1,8 +1,22 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 
-// Handle both real newlines and literal \n from env var
-const PRIVATE_KEY = (process.env.WHATSAPP_FLOWS_PRIVATE_KEY || "").replace(/\\n/g, "\n");
+// Handle private key in multiple formats: PEM with real newlines, PEM with literal \n, or base64-encoded PEM
+function resolvePrivateKey(): string {
+  const raw = process.env.WHATSAPP_FLOWS_PRIVATE_KEY || "";
+  if (!raw) return "";
+  // If it starts with base64 (no -----), decode it
+  if (!raw.includes("-----")) {
+    try {
+      return Buffer.from(raw, "base64").toString("utf-8");
+    } catch {
+      return raw;
+    }
+  }
+  // Replace literal \n with real newlines
+  return raw.replace(/\\n/g, "\n");
+}
+const PRIVATE_KEY = resolvePrivateKey();
 
 // -- Encryption helpers (Meta WhatsApp Flows data exchange protocol) --
 
