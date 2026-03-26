@@ -57,6 +57,18 @@ export function StravaConnectEditor({
       </div>
 
       <div className="space-y-2">
+        <Label>Texto do botao (opcional)</Label>
+        <Input
+          value={data.ctaButtonText || ""}
+          onChange={(e) => update({ ctaButtonText: e.target.value })}
+          placeholder="Ex: Conectar Strava"
+        />
+        <p className="text-xs text-slate-400">
+          Se preenchido, envia um botao clicavel em vez do link solto.
+        </p>
+      </div>
+
+      <div className="space-y-2">
         <Label>Mensagem personalizada</Label>
         <Textarea
           rows={6}

@@ -1338,7 +1338,35 @@ async function runFlowQueue(params: {
           message = buildStravaConnectMessage(connectUrl);
         }
 
-        if (stravaData.mediaUrl) {
+        if (stravaData.ctaButtonText?.trim()) {
+          // Send as interactive CTA URL button
+          const bodyText = stravaData.messageText?.trim()
+            ? interpolateVariables(
+                stravaData.messageText.replace(/\{\{strava_link\}\}/g, "").trim(),
+                await getConversationVariables(params.supabase, params.conversationId)
+              )
+            : "Conecte seu Strava para que eu possa acompanhar seus treinos:";
+
+          const ctaResult = await sendMetaWhatsAppCtaUrlMessage(
+            {
+              to: params.contactPhone,
+              bodyText,
+              buttonText: stravaData.ctaButtonText,
+              url: connectUrl,
+            },
+            params.metaConfig
+          );
+
+          await params.supabase.from("messages").insert({
+            conversation_id: params.conversationId,
+            content: bodyText,
+            type: "interactive",
+            sender: "bot",
+            node_id: current.id,
+            wa_message_id: ctaResult.messageId,
+            metadata: { strava_connect_url: connectUrl },
+          });
+        } else if (stravaData.mediaUrl) {
           // Send image with the text as caption (single message)
           let imageUrl: string;
           if (stravaData.mediaUrl.startsWith("data:")) {

@@ -141,6 +141,7 @@ export type StravaConnectNodeData = {
   type: "stravaConnect";
   label: string;
   messageText?: string;
+  ctaButtonText?: string;
   mediaUrl?: string;
   mediaFileName?: string;
   imageCaption?: string;
