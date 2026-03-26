@@ -19,36 +19,55 @@ function resolvePrivateKey(): string {
 const PRIVATE_KEY = resolvePrivateKey();
 
 // -- Encryption helpers (Meta WhatsApp Flows data exchange protocol) --
+// Reference: https://developers.facebook.com/docs/whatsapp/flows/guides/implementingyourflowendpoint/
 
 function decryptRequest(body: { encrypted_aes_key: string; encrypted_flow_data: string; initial_vector: string }) {
-  const privateKey = crypto.createPrivateKey(PRIVATE_KEY);
+  const { encrypted_aes_key, encrypted_flow_data, initial_vector } = body;
 
-  const aesKeyBuffer = crypto.privateDecrypt(
-    { key: privateKey, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" },
-    Buffer.from(body.encrypted_aes_key, "base64")
+  const decryptedAesKey = crypto.privateDecrypt(
+    {
+      key: crypto.createPrivateKey(PRIVATE_KEY),
+      padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+      oaepHash: "sha256",
+    },
+    Buffer.from(encrypted_aes_key, "base64")
   );
 
-  const flowDataBuffer = Buffer.from(body.encrypted_flow_data, "base64");
-  const ivBuffer = Buffer.from(body.initial_vector, "base64");
+  const flowDataBuffer = Buffer.from(encrypted_flow_data, "base64");
+  const initialVectorBuffer = Buffer.from(initial_vector, "base64");
 
   const TAG_LENGTH = 16;
-  const encrypted = flowDataBuffer.subarray(0, -TAG_LENGTH);
-  const tag = flowDataBuffer.subarray(-TAG_LENGTH);
+  const encrypted_flow_data_body = flowDataBuffer.subarray(0, -TAG_LENGTH);
+  const encrypted_flow_data_tag = flowDataBuffer.subarray(-TAG_LENGTH);
 
-  const decipher = crypto.createDecipheriv("aes-128-gcm", aesKeyBuffer, ivBuffer);
-  decipher.setAuthTag(tag);
+  const decipher = crypto.createDecipheriv("aes-128-gcm", decryptedAesKey, initialVectorBuffer);
+  decipher.setAuthTag(encrypted_flow_data_tag);
 
-  const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
-  return { decrypted: JSON.parse(decrypted.toString("utf-8")), aesKey: aesKeyBuffer, iv: ivBuffer };
+  const decryptedJSONString = Buffer.concat([
+    decipher.update(encrypted_flow_data_body),
+    decipher.final(),
+  ]).toString("utf-8");
+
+  return {
+    decryptedBody: JSON.parse(decryptedJSONString),
+    aesKeyBuffer: decryptedAesKey,
+    initialVectorBuffer,
+  };
 }
 
-function encryptResponse(response: Record<string, unknown>, aesKey: Buffer, iv: Buffer) {
-  const flipped = Buffer.from(iv);
-  for (let i = 0; i < flipped.length; i++) flipped[i] = flipped[i] ^ 0xff;
+function encryptResponse(response: Record<string, unknown>, aesKeyBuffer: Buffer, initialVectorBuffer: Buffer) {
+  // Flip the IV bytes (NOT bitwise) as per Meta docs
+  const flipped_iv: number[] = [];
+  for (const pair of initialVectorBuffer.entries()) {
+    flipped_iv.push(~pair[1]);
+  }
 
-  const cipher = crypto.createCipheriv("aes-128-gcm", aesKey, flipped);
-  const encrypted = Buffer.concat([cipher.update(JSON.stringify(response), "utf-8"), cipher.final(), cipher.getAuthTag()]);
-  return encrypted.toString("base64");
+  const cipher = crypto.createCipheriv("aes-128-gcm", aesKeyBuffer, Buffer.from(flipped_iv));
+  return Buffer.concat([
+    cipher.update(JSON.stringify(response), "utf-8"),
+    cipher.final(),
+    cipher.getAuthTag(),
+  ]).toString("base64");
 }
 
 // -- Screen routing logic --
@@ -236,22 +255,27 @@ function getNextScreen(request: FlowRequest): { screen: string; data: Record<str
 export async function POST(request: Request) {
   try {
     if (!PRIVATE_KEY) {
+      console.error("[whatsapp-flows/data] Missing WHATSAPP_FLOWS_PRIVATE_KEY");
       return NextResponse.json({ error: "Missing WHATSAPP_FLOWS_PRIVATE_KEY" }, { status: 500 });
     }
 
     const body = await request.json();
-    const { decrypted, aesKey, iv } = decryptRequest(body);
+    const { decryptedBody, aesKeyBuffer, initialVectorBuffer } = decryptRequest(body);
 
-    console.log("[whatsapp-flows/data] action:", decrypted.action, "screen:", decrypted.screen);
+    console.log("[whatsapp-flows/data] action:", decryptedBody.action, "screen:", decryptedBody.screen);
 
     // Health check from Meta
-    if (decrypted.action === "ping") {
-      const response = encryptResponse({ version: decrypted.version, data: { status: "active" } }, aesKey, iv);
+    if (decryptedBody.action === "ping") {
+      const response = encryptResponse(
+        { data: { status: "active" } },
+        aesKeyBuffer,
+        initialVectorBuffer
+      );
       return new NextResponse(response, { headers: { "Content-Type": "text/plain" } });
     }
 
-    const result = getNextScreen(decrypted);
-    const response = encryptResponse({ version: decrypted.version, ...result }, aesKey, iv);
+    const result = getNextScreen(decryptedBody);
+    const response = encryptResponse(result, aesKeyBuffer, initialVectorBuffer);
 
     return new NextResponse(response, { headers: { "Content-Type": "text/plain" } });
   } catch (error) {
