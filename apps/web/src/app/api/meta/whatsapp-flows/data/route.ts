@@ -279,7 +279,13 @@ export async function POST(request: Request) {
 
     return new NextResponse(response, { headers: { "Content-Type": "text/plain" } });
   } catch (error) {
-    console.error("[whatsapp-flows/data] error:", error);
-    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+    const errMsg = error instanceof Error ? error.message : String(error);
+    const errStack = error instanceof Error ? error.stack : "";
+    console.error("[whatsapp-flows/data] error:", errMsg);
+    console.error("[whatsapp-flows/data] stack:", errStack);
+    console.error("[whatsapp-flows/data] PRIVATE_KEY starts with:", PRIVATE_KEY.substring(0, 30));
+    console.error("[whatsapp-flows/data] PRIVATE_KEY length:", PRIVATE_KEY.length);
+    // Return 421 to signal decryption failure — Meta will refresh the public key
+    return new NextResponse(JSON.stringify({ error: errMsg }), { status: 421, headers: { "Content-Type": "application/json" } });
   }
 }
