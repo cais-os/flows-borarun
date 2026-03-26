@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 
-const PRIVATE_KEY = process.env.WHATSAPP_FLOWS_PRIVATE_KEY || "";
+// Handle both real newlines and literal \n from env var
+const PRIVATE_KEY = (process.env.WHATSAPP_FLOWS_PRIVATE_KEY || "").replace(/\\n/g, "\n");
 
 // -- Encryption helpers (Meta WhatsApp Flows data exchange protocol) --
 
