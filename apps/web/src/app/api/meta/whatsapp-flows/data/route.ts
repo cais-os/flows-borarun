@@ -233,17 +233,26 @@ function getNextScreen(request: FlowRequest): { screen: string; data: Record<str
         return { screen: "SAUDE_DETALHE", data: accumulated };
       }
       return {
-        screen: "CONFIRMACAO",
+        screen: "INFO_ADICIONAL",
         data: { ...accumulated, descricao_lesao: "" },
       };
     }
 
     case "SAUDE_DETALHE":
       return {
-        screen: "CONFIRMACAO",
+        screen: "INFO_ADICIONAL",
         data: {
           ...carry(data),
           descricao_lesao: data.descricao_lesao || "",
+        },
+      };
+
+    case "INFO_ADICIONAL":
+      return {
+        screen: "CONFIRMACAO",
+        data: {
+          ...carry(data),
+          info_adicional: data.info_adicional || "",
         },
       };
 

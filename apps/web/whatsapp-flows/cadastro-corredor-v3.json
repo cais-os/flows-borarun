@@ -12,8 +12,9 @@
     "OBJETIVO_DISTANCIA": ["DISPONIBILIDADE"],
     "OBJETIVO_TEMPO": ["DISPONIBILIDADE"],
     "DISPONIBILIDADE": ["SAUDE"],
-    "SAUDE": ["SAUDE_DETALHE", "CONFIRMACAO"],
-    "SAUDE_DETALHE": ["CONFIRMACAO"]
+    "SAUDE": ["SAUDE_DETALHE", "INFO_ADICIONAL"],
+    "SAUDE_DETALHE": ["INFO_ADICIONAL"],
+    "INFO_ADICIONAL": ["CONFIRMACAO"]
   },
   "screens": [
     {
@@ -703,6 +704,74 @@
       }
     },
     {
+      "id": "INFO_ADICIONAL",
+      "title": "Informacoes Extras",
+      "data": {
+        "idade": { "type": "string", "__example__": "30" },
+        "altura": { "type": "string", "__example__": "175" },
+        "peso": { "type": "string", "__example__": "70" },
+        "sexo": { "type": "string", "__example__": "masculino" },
+        "ja_corre": { "type": "string", "__example__": "frequente" },
+        "vezes_semana": { "type": "string", "__example__": "3x" },
+        "volume_4_semanas": { "type": "string", "__example__": "20_40" },
+        "maior_distancia": { "type": "string", "__example__": "5_10" },
+        "outras_atividades": { "type": "array", "items": { "type": "string" }, "__example__": ["musculacao"] },
+        "objetivo": { "type": "string", "__example__": "distancia_x" },
+        "distancia_alvo": { "type": "string", "__example__": "10km" },
+        "distancia_tempo": { "type": "string", "__example__": "" },
+        "dias_treino": { "type": "string", "__example__": "4" },
+        "semanas_plano": { "type": "string", "__example__": "8" },
+        "tem_lesao": { "type": "string", "__example__": "nao" },
+        "descricao_lesao": { "type": "string", "__example__": "" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Mais alguma coisa?"
+          },
+          {
+            "type": "TextBody",
+            "text": "Escreva outras informacoes relevantes sobre voce, sua rotina e objetivos na corrida. Quanto mais detalhes, melhor sera seu plano."
+          },
+          {
+            "type": "TextArea",
+            "name": "info_adicional",
+            "label": "Informacoes extras (opcional)",
+            "required": false,
+            "helper-text": "Ex: Trabalho sentado o dia todo, corro de manha antes do trabalho, quero correr minha primeira meia maratona em outubro..."
+          },
+          {
+            "type": "Footer",
+            "label": "Continuar",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "idade": "${data.idade}",
+                "altura": "${data.altura}",
+                "peso": "${data.peso}",
+                "sexo": "${data.sexo}",
+                "ja_corre": "${data.ja_corre}",
+                "vezes_semana": "${data.vezes_semana}",
+                "volume_4_semanas": "${data.volume_4_semanas}",
+                "maior_distancia": "${data.maior_distancia}",
+                "outras_atividades": "${data.outras_atividades}",
+                "objetivo": "${data.objetivo}",
+                "distancia_alvo": "${data.distancia_alvo}",
+                "distancia_tempo": "${data.distancia_tempo}",
+                "dias_treino": "${data.dias_treino}",
+                "semanas_plano": "${data.semanas_plano}",
+                "tem_lesao": "${data.tem_lesao}",
+                "descricao_lesao": "${data.descricao_lesao}",
+                "info_adicional": "${form.info_adicional}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
       "id": "CONFIRMACAO",
       "title": "Cadastro Completo",
       "terminal": true,
@@ -722,7 +791,8 @@
         "dias_treino": { "type": "string", "__example__": "4" },
         "semanas_plano": { "type": "string", "__example__": "8" },
         "tem_lesao": { "type": "string", "__example__": "nao" },
-        "descricao_lesao": { "type": "string", "__example__": "" }
+        "descricao_lesao": { "type": "string", "__example__": "" },
+        "info_adicional": { "type": "string", "__example__": "" }
       },
       "layout": {
         "type": "SingleColumnLayout",
@@ -756,7 +826,8 @@
                 "dias_treino": "${data.dias_treino}",
                 "semanas_plano": "${data.semanas_plano}",
                 "tem_lesao": "${data.tem_lesao}",
-                "descricao_lesao": "${data.descricao_lesao}"
+                "descricao_lesao": "${data.descricao_lesao}",
+                "info_adicional": "${data.info_adicional}"
               }
             }
           }
