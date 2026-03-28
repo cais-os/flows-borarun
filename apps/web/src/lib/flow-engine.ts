@@ -991,22 +991,28 @@ async function executeGeneratePdfNode(params: {
     if (params.inboundMessageId) {
       await sendTypingIndicator(params.inboundMessageId, params.metaConfig).catch(() => {});
     }
+    // Build dynamic file name with athlete's name if available
+    const athleteName = flowVariables.nome || flowVariables.onb_nome || flowVariables.flow_nome || "";
+    const pdfDisplayName = athleteName
+      ? `Plano de Treino - ${athleteName}.pdf`
+      : (params.data.fileName || "plano-de-treino.pdf");
+
     const result = await sendMetaWhatsAppDocumentMessage(
       {
         to: params.contactPhone,
         documentUrl: urlData.publicUrl,
-        fileName: params.data.fileName || "plano-de-treino.pdf",
+        fileName: pdfDisplayName,
       },
       params.metaConfig
     );
 
     await params.supabase.from("messages").insert({
       conversation_id: params.conversationId,
-      content: params.data.fileName || "plano-de-treino.pdf",
+      content: pdfDisplayName,
       type: "file",
       sender: "bot",
       media_url: urlData.publicUrl,
-      file_name: params.data.fileName || "plano-de-treino.pdf",
+      file_name: pdfDisplayName,
       node_id: params.node.id,
       wa_message_id: result.messageId,
     });
