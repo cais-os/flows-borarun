@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import chromium from "@sparticuz/chromium";
+import chromium from "@sparticuz/chromium-min";
 import puppeteer from "puppeteer-core";
 import { renderPdfTemplateHtml } from "@/lib/pdf-template-renderer";
 import { PLANEJADOR_INICIAL_PROMPT } from "@/lib/prompts/planejador-inicial";
@@ -33,12 +33,15 @@ async function getBrowser() {
     }
   }
 
-  // Serverless (Vercel): use @sparticuz/chromium (full, with system libs)
+  // Serverless (Vercel): use @sparticuz/chromium-min with remote binary
+  const executablePath = await chromium.executablePath(
+    "https://github.com/Sparticuz/chromium/releases/download/v133.0.0/chromium-v133.0.0-pack.tar"
+  );
   const browser = await puppeteer.launch({
     args: chromium.args,
     defaultViewport: { width: 794, height: 1123 },
-    executablePath: await chromium.executablePath(),
-    headless: chromium.headless,
+    executablePath,
+    headless: true,
   });
   return { browser, isPlaywright: false };
 }
