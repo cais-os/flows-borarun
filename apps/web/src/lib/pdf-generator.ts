@@ -16,7 +16,7 @@ IMPORTANTE: Retorne APENAS um JSON válido (sem markdown, sem código, sem expli
 
 // Remote chromium binary for serverless (Vercel)
 const CHROMIUM_PACK_URL =
-  "https://github.com/Sparticuz/chromium/releases/download/v143.0.0/chromium-v143.0.0-pack.tar";
+  "https://github.com/Sparticuz/chromium/releases/download/v131.0.1/chromium-v131.0.1-pack.tar";
 
 async function getBrowser() {
   const isLocal = !!process.env.PLAYWRIGHT_BROWSERS_PATH || process.env.NODE_ENV === "development";
