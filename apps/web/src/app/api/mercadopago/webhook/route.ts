@@ -4,6 +4,7 @@ import { getOrganizationSettingsById } from "@/lib/organization";
 import {
   getMetaConfigFromSettings,
   sendMetaWhatsAppTextMessage,
+  sendMetaWhatsAppInteractiveListMessage,
 } from "@/lib/meta";
 import {
   getMercadoPagoConfig,
@@ -126,20 +127,63 @@ export async function POST(request: Request) {
 
           if (conversation?.contact_phone) {
             const { config: metaConfig } = getMetaConfigFromSettings(settings);
-            const confirmMsg = `Pagamento confirmado! Sua assinatura do plano "${paymentRecord.plan_name}" foi ativada com sucesso. Validade: ${paymentRecord.duration_days} dias.`;
 
-            const result = await sendMetaWhatsAppTextMessage(
-              { to: conversation.contact_phone, body: confirmMsg },
+            // Message 1: Congratulations
+            const congratsMsg = "Parabens! Voce assinou o plano Premium com sucesso. A partir de agora esta liberado a conversar com a IA assessora de corrida!";
+            const r1 = await sendMetaWhatsAppTextMessage(
+              { to: conversation.contact_phone, body: congratsMsg },
               metaConfig
             );
-
             await supabase.from("messages").insert({
               conversation_id: ref.conversationId,
-              content: confirmMsg,
+              content: congratsMsg,
               type: "text",
               sender: "bot",
-              wa_message_id: result.messageId,
+              wa_message_id: r1.messageId,
             });
+
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+
+            // Message 2: Ask preferred day for weekly training updates
+            const dayMsg = "Vamos te enviar os treinos atualizados semanalmente de acordo com sua evolucao. Qual dia da semana prefere receber seus treinos?";
+            const r2 = await sendMetaWhatsAppInteractiveListMessage(
+              {
+                to: conversation.contact_phone,
+                body: dayMsg,
+                buttonText: "Escolher dia",
+                sectionTitle: "Dias da semana",
+                items: [
+                  { id: "day_1", title: "Segunda-feira" },
+                  { id: "day_2", title: "Terca-feira" },
+                  { id: "day_3", title: "Quarta-feira" },
+                  { id: "day_4", title: "Quinta-feira" },
+                  { id: "day_5", title: "Sexta-feira" },
+                  { id: "day_6", title: "Sabado" },
+                  { id: "day_0", title: "Domingo" },
+                ],
+              },
+              metaConfig
+            );
+            await supabase.from("messages").insert({
+              conversation_id: ref.conversationId,
+              content: dayMsg,
+              type: "interactive",
+              sender: "bot",
+              wa_message_id: r2.messageId,
+            });
+
+            // Set flag so webhook knows to capture the day/hour preference
+            const { data: convVars } = await supabase
+              .from("conversations")
+              .select("flow_variables")
+              .eq("id", ref.conversationId)
+              .single();
+            const fv = (convVars?.flow_variables as Record<string, string>) || {};
+            fv._awaiting_weekly_day = "true";
+            await supabase
+              .from("conversations")
+              .update({ flow_variables: fv })
+              .eq("id", ref.conversationId);
           }
         } catch (msgErr) {
           console.error("[MP Webhook] Failed to send confirmation message:", msgErr);

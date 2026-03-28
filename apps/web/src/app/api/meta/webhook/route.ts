@@ -10,6 +10,7 @@ import {
   sendMetaWhatsAppTextMessage,
   type MetaConfig,
   sendTypingIndicator,
+  sendMetaWhatsAppInteractiveListMessage,
   validateMetaWebhookSignature,
   validateMetaWebhookVerifyToken,
 } from "@/lib/meta";
@@ -462,6 +463,65 @@ export async function POST(request: Request) {
             continue;
           }
 
+          // Weekly training preference capture (after payment)
+          {
+            const { data: prefConv } = await supabase
+              .from("conversations")
+              .select("flow_variables")
+              .eq("id", conversationId)
+              .single();
+            const prefVars = (prefConv?.flow_variables as Record<string, string>) || {};
+
+            if (prefVars._awaiting_weekly_day === "true") {
+              const listReplyId = message.interactive?.list_reply?.id || content;
+              const dayMatch = listReplyId.match(/day_(\d)/);
+              if (dayMatch) {
+                prefVars._weekly_training_day = dayMatch[1];
+                delete prefVars._awaiting_weekly_day;
+                prefVars._awaiting_weekly_hour = "true";
+                await supabase.from("conversations").update({ flow_variables: prefVars }).eq("id", conversationId);
+
+                // Ask for preferred hour
+                await sendMetaWhatsAppInteractiveListMessage(
+                  {
+                    to: contactPhone,
+                    body: "E em qual horario prefere receber?",
+                    buttonText: "Escolher horario",
+                    sectionTitle: "Horarios",
+                    items: [
+                      { id: "hour_06", title: "06:00" },
+                      { id: "hour_07", title: "07:00" },
+                      { id: "hour_08", title: "08:00" },
+                      { id: "hour_09", title: "09:00" },
+                      { id: "hour_18", title: "18:00" },
+                      { id: "hour_19", title: "19:00" },
+                      { id: "hour_20", title: "20:00" },
+                    ],
+                  },
+                  metaConfig
+                );
+                continue;
+              }
+            }
+
+            if (prefVars._awaiting_weekly_hour === "true") {
+              const listReplyId = message.interactive?.list_reply?.id || content;
+              const hourMatch = listReplyId.match(/hour_(\d+)/);
+              if (hourMatch) {
+                prefVars._weekly_training_hour = `${hourMatch[1]}:00`;
+                prefVars._weekly_training_enabled = "true";
+                delete prefVars._awaiting_weekly_hour;
+                await supabase.from("conversations").update({ flow_variables: prefVars }).eq("id", conversationId);
+
+                await sendMetaWhatsAppTextMessage(
+                  { to: contactPhone, body: "Perfeito! Voce vai receber seus treinos atualizados toda semana. Agora pode me mandar qualquer duvida sobre corrida!" },
+                  metaConfig
+                );
+                continue;
+              }
+            }
+          }
+
           if (
             conversationStatus === "paused" &&
             existing?.active_flow_id &&
@@ -532,6 +592,32 @@ export async function POST(request: Request) {
 
             if (currentNodeType === "aiCollector") {
               await resumeFlow(supabase, conversationId, contactPhone, content, {
+                inboundMessageId: message.id,
+                organizationId,
+                metaConfig,
+              });
+              continue;
+            }
+
+            if (currentNodeType === "stravaConnect") {
+              const buttonId = message.interactive?.button_reply?.id;
+              if (buttonId === "strava_retry") {
+                // User wants to retry — resend the Strava connect link
+                const { buildStravaConnectUrl, buildStravaConnectMessage } = await import("@/lib/strava");
+                const connectUrl = buildStravaConnectUrl({ conversationId });
+                const retryMsg = buildStravaConnectMessage(connectUrl);
+                await sendMetaWhatsAppTextMessage({ to: contactPhone, body: retryMsg }, metaConfig);
+                await supabase.from("messages").insert({
+                  conversation_id: conversationId,
+                  content: retryMsg,
+                  type: "text",
+                  sender: "bot",
+                });
+                // Stay paused — don't resume
+                continue;
+              }
+              // "strava_skip" or any other message — resume flow without Strava
+              await resumeFlow(supabase, conversationId, contactPhone, content || "strava_skip", {
                 inboundMessageId: message.id,
                 organizationId,
                 metaConfig,

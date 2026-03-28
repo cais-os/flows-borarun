@@ -1419,8 +1419,15 @@ async function runFlowQueue(params: {
       } catch (error) {
         console.error("Flow engine: failed to send Strava connect link", error);
       }
-      // Delay to preserve delivery order
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+
+      // Pause flow — resumes when Strava callback fires or user sends message
+      await pauseFlow({
+        supabase: params.supabase,
+        conversationId: params.conversationId,
+        currentNodeId: current.id,
+        queue,
+      });
+      return "paused" as const;
     }
 
     if (data.type === "payment") {
@@ -2094,6 +2101,9 @@ export async function resumeFlow(
 
       return { status: "waiting" };
     }
+  } else if (currentNode.data.type === "stravaConnect") {
+    // Strava connected (via callback) or user chose to skip — just advance
+    // No special variable injection needed
   } else if (currentNode.data.type === "whatsappFlow") {
     // WhatsApp Flow responses are injected into variables by the data endpoint
     // before calling resumeFlow. Clean up internal state.
