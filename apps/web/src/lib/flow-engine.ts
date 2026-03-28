@@ -1246,6 +1246,9 @@ async function runFlowQueue(params: {
         }
       }
       // Non-interactive or single-path interactive → continues automatically
+
+      // Small delay between consecutive sends to preserve WhatsApp delivery order
+      await new Promise((resolve) => setTimeout(resolve, 1500));
     }
 
     if (data.type === "tagConversation") {
@@ -1416,6 +1419,8 @@ async function runFlowQueue(params: {
       } catch (error) {
         console.error("Flow engine: failed to send Strava connect link", error);
       }
+      // Delay to preserve delivery order
+      await new Promise((resolve) => setTimeout(resolve, 1500));
     }
 
     if (data.type === "payment") {
@@ -1531,6 +1536,8 @@ async function runFlowQueue(params: {
       } catch (error) {
         console.error("Flow engine: failed to send payment link", error);
       }
+      // Delay to preserve delivery order
+      await new Promise((resolve) => setTimeout(resolve, 1500));
     }
 
     if (data.type === "whatsappFlow") {
