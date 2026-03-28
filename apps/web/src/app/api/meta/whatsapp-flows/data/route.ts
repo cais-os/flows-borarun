@@ -104,6 +104,7 @@ function getNextScreen(request: FlowRequest): { screen: string; data: Record<str
       return {
         screen: "EXPERIENCIA",
         data: {
+          nome: data.nome || "",
           idade: data.idade || "",
           altura: data.altura || "",
           peso: data.peso || "",
@@ -114,6 +115,7 @@ function getNextScreen(request: FlowRequest): { screen: string; data: Record<str
     case "EXPERIENCIA": {
       const jaCorre = data.ja_corre || "zero";
       const base = {
+        nome: data.nome || "",
         idade: data.idade || "",
         altura: data.altura || "",
         peso: data.peso || "",
@@ -141,6 +143,7 @@ function getNextScreen(request: FlowRequest): { screen: string; data: Record<str
       return {
         screen: "VOLUME_CORRIDA",
         data: {
+          nome: data.nome || "",
           idade: data.idade || "",
           altura: data.altura || "",
           peso: data.peso || "",
@@ -155,6 +158,7 @@ function getNextScreen(request: FlowRequest): { screen: string; data: Record<str
       return {
         screen: "OUTRAS_ATIVIDADES",
         data: {
+          nome: data.nome || "",
           idade: data.idade || "",
           altura: data.altura || "",
           peso: data.peso || "",

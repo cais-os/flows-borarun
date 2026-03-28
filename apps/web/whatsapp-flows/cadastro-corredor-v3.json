@@ -58,6 +58,14 @@
           },
           {
             "type": "TextInput",
+            "name": "nome",
+            "label": "Seu nome",
+            "input-type": "text",
+            "required": true,
+            "helper-text": "Ex: Rodrigo"
+          },
+          {
+            "type": "TextInput",
             "name": "idade",
             "label": "Idade",
             "input-type": "text",
@@ -97,6 +105,7 @@
             "on-click-action": {
               "name": "data_exchange",
               "payload": {
+                "nome": "${form.nome}",
                 "idade": "${form.idade}",
                 "altura": "${form.altura}",
                 "peso": "${form.peso}",
@@ -111,6 +120,7 @@
       "id": "EXPERIENCIA",
       "title": "Experiencia",
       "data": {
+        "nome": { "type": "string", "__example__": "Rodrigo" },
         "idade": { "type": "string", "__example__": "30" },
         "altura": { "type": "string", "__example__": "175" },
         "peso": { "type": "string", "__example__": "70" },
@@ -140,6 +150,7 @@
             "on-click-action": {
               "name": "data_exchange",
               "payload": {
+                "nome": "${data.nome}",
                 "idade": "${data.idade}",
                 "altura": "${data.altura}",
                 "peso": "${data.peso}",
@@ -155,6 +166,7 @@
       "id": "DETALHES_CORRIDA",
       "title": "Detalhes da Corrida",
       "data": {
+        "nome": { "type": "string", "__example__": "Rodrigo" },
         "idade": { "type": "string", "__example__": "30" },
         "altura": { "type": "string", "__example__": "175" },
         "peso": { "type": "string", "__example__": "70" },
@@ -200,6 +212,7 @@
             "on-click-action": {
               "name": "data_exchange",
               "payload": {
+                "nome": "${data.nome}",
                 "idade": "${data.idade}",
                 "altura": "${data.altura}",
                 "peso": "${data.peso}",
@@ -217,6 +230,7 @@
       "id": "VOLUME_CORRIDA",
       "title": "Volume de Corrida",
       "data": {
+        "nome": { "type": "string", "__example__": "Rodrigo" },
         "idade": { "type": "string", "__example__": "30" },
         "altura": { "type": "string", "__example__": "175" },
         "peso": { "type": "string", "__example__": "70" },
@@ -255,6 +269,7 @@
             "on-click-action": {
               "name": "data_exchange",
               "payload": {
+                "nome": "${data.nome}",
                 "idade": "${data.idade}",
                 "altura": "${data.altura}",
                 "peso": "${data.peso}",
@@ -273,6 +288,7 @@
       "id": "OUTRAS_ATIVIDADES",
       "title": "Outras Atividades",
       "data": {
+        "nome": { "type": "string", "__example__": "Rodrigo" },
         "idade": { "type": "string", "__example__": "30" },
         "altura": { "type": "string", "__example__": "175" },
         "peso": { "type": "string", "__example__": "70" },
@@ -309,6 +325,7 @@
             "on-click-action": {
               "name": "data_exchange",
               "payload": {
+                "nome": "${data.nome}",
                 "idade": "${data.idade}",
                 "altura": "${data.altura}",
                 "peso": "${data.peso}",
@@ -328,6 +345,7 @@
       "id": "OBJETIVO",
       "title": "Seu Objetivo",
       "data": {
+        "nome": { "type": "string", "__example__": "Rodrigo" },
         "idade": { "type": "string", "__example__": "30" },
         "altura": { "type": "string", "__example__": "175" },
         "peso": { "type": "string", "__example__": "70" },
@@ -365,6 +383,7 @@
             "on-click-action": {
               "name": "data_exchange",
               "payload": {
+                "nome": "${data.nome}",
                 "idade": "${data.idade}",
                 "altura": "${data.altura}",
                 "peso": "${data.peso}",
@@ -385,6 +404,7 @@
       "id": "OBJETIVO_DISTANCIA",
       "title": "Distancia Alvo",
       "data": {
+        "nome": { "type": "string", "__example__": "Rodrigo" },
         "idade": { "type": "string", "__example__": "30" },
         "altura": { "type": "string", "__example__": "175" },
         "peso": { "type": "string", "__example__": "70" },
@@ -423,6 +443,7 @@
             "on-click-action": {
               "name": "data_exchange",
               "payload": {
+                "nome": "${data.nome}",
                 "idade": "${data.idade}",
                 "altura": "${data.altura}",
                 "peso": "${data.peso}",
@@ -444,6 +465,7 @@
       "id": "OBJETIVO_TEMPO",
       "title": "Melhorar Tempo",
       "data": {
+        "nome": { "type": "string", "__example__": "Rodrigo" },
         "idade": { "type": "string", "__example__": "30" },
         "altura": { "type": "string", "__example__": "175" },
         "peso": { "type": "string", "__example__": "70" },
@@ -484,6 +506,7 @@
             "on-click-action": {
               "name": "data_exchange",
               "payload": {
+                "nome": "${data.nome}",
                 "idade": "${data.idade}",
                 "altura": "${data.altura}",
                 "peso": "${data.peso}",
@@ -505,6 +528,7 @@
       "id": "DISPONIBILIDADE",
       "title": "Disponibilidade",
       "data": {
+        "nome": { "type": "string", "__example__": "Rodrigo" },
         "idade": { "type": "string", "__example__": "30" },
         "altura": { "type": "string", "__example__": "175" },
         "peso": { "type": "string", "__example__": "70" },
@@ -557,6 +581,7 @@
             "on-click-action": {
               "name": "data_exchange",
               "payload": {
+                "nome": "${data.nome}",
                 "idade": "${data.idade}",
                 "altura": "${data.altura}",
                 "peso": "${data.peso}",
@@ -581,6 +606,7 @@
       "id": "SAUDE",
       "title": "Saude",
       "data": {
+        "nome": { "type": "string", "__example__": "Rodrigo" },
         "idade": { "type": "string", "__example__": "30" },
         "altura": { "type": "string", "__example__": "175" },
         "peso": { "type": "string", "__example__": "70" },
@@ -619,6 +645,7 @@
             "on-click-action": {
               "name": "data_exchange",
               "payload": {
+                "nome": "${data.nome}",
                 "idade": "${data.idade}",
                 "altura": "${data.altura}",
                 "peso": "${data.peso}",
@@ -644,6 +671,7 @@
       "id": "SAUDE_DETALHE",
       "title": "Detalhe da Lesao",
       "data": {
+        "nome": { "type": "string", "__example__": "Rodrigo" },
         "idade": { "type": "string", "__example__": "30" },
         "altura": { "type": "string", "__example__": "175" },
         "peso": { "type": "string", "__example__": "70" },
@@ -681,6 +709,7 @@
             "on-click-action": {
               "name": "data_exchange",
               "payload": {
+                "nome": "${data.nome}",
                 "idade": "${data.idade}",
                 "altura": "${data.altura}",
                 "peso": "${data.peso}",
@@ -707,6 +736,7 @@
       "id": "INFO_ADICIONAL",
       "title": "Informacoes Extras",
       "data": {
+        "nome": { "type": "string", "__example__": "Rodrigo" },
         "idade": { "type": "string", "__example__": "30" },
         "altura": { "type": "string", "__example__": "175" },
         "peso": { "type": "string", "__example__": "70" },
@@ -748,6 +778,7 @@
             "on-click-action": {
               "name": "data_exchange",
               "payload": {
+                "nome": "${data.nome}",
                 "idade": "${data.idade}",
                 "altura": "${data.altura}",
                 "peso": "${data.peso}",
@@ -776,6 +807,7 @@
       "title": "Cadastro Completo",
       "terminal": true,
       "data": {
+        "nome": { "type": "string", "__example__": "Rodrigo" },
         "idade": { "type": "string", "__example__": "30" },
         "altura": { "type": "string", "__example__": "175" },
         "peso": { "type": "string", "__example__": "70" },
@@ -811,6 +843,7 @@
             "on-click-action": {
               "name": "complete",
               "payload": {
+                "nome": "${data.nome}",
                 "idade": "${data.idade}",
                 "altura": "${data.altura}",
                 "peso": "${data.peso}",
