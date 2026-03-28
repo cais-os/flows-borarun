@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import chromium from "@sparticuz/chromium-min";
+import chromium from "@sparticuz/chromium";
 import puppeteer from "puppeteer-core";
 import { renderPdfTemplateHtml } from "@/lib/pdf-template-renderer";
 import { PLANEJADOR_INICIAL_PROMPT } from "@/lib/prompts/planejador-inicial";
@@ -13,10 +13,6 @@ const JSON_FORMAT_INSTRUCTION = `
 IMPORTANTE: Retorne APENAS um JSON válido (sem markdown, sem código, sem explicações) com EXATAMENTE 2 chaves raiz:
 1. "training_plan" — com as sub-chaves: perfil_atleta, logica_plano, semanas
 2. "coaching_summary" — com o resumo interno para o coach de acompanhamento`;
-
-// Remote chromium binary for serverless (Vercel)
-const CHROMIUM_PACK_URL =
-  "https://github.com/Sparticuz/chromium/releases/download/v131.0.1/chromium-v131.0.1-pack.tar";
 
 async function getBrowser() {
   const isLocal = !!process.env.PLAYWRIGHT_BROWSERS_PATH || process.env.NODE_ENV === "development";
@@ -37,12 +33,12 @@ async function getBrowser() {
     }
   }
 
-  // Serverless (Vercel): use @sparticuz/chromium-min
+  // Serverless (Vercel): use @sparticuz/chromium (full, with system libs)
   const browser = await puppeteer.launch({
-    args: [...chromium.args, "--hide-scrollbars", "--disable-web-security"],
+    args: chromium.args,
     defaultViewport: { width: 794, height: 1123 },
-    executablePath: await chromium.executablePath(CHROMIUM_PACK_URL),
-    headless: true,
+    executablePath: await chromium.executablePath(),
+    headless: chromium.headless,
   });
   return { browser, isPlaywright: false };
 }
