@@ -69,6 +69,25 @@ export function StravaConnectEditor({
       </div>
 
       <div className="space-y-2">
+        <Label>Mensagem do botao &quot;Seguir sem&quot;</Label>
+        <Textarea
+          rows={2}
+          value={data.skipMessageText || ""}
+          onChange={(e) => update({ skipMessageText: e.target.value })}
+          placeholder="Depois de conectar o Strava, vou continuar automaticamente. Se preferir, pode seguir sem:"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label>Texto do botao &quot;Seguir sem&quot;</Label>
+        <Input
+          value={data.skipButtonText || ""}
+          onChange={(e) => update({ skipButtonText: e.target.value })}
+          placeholder="Seguir sem Strava"
+        />
+      </div>
+
+      <div className="space-y-2">
         <Label>Mensagem personalizada</Label>
         <Textarea
           rows={6}

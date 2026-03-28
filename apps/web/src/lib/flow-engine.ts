@@ -1423,12 +1423,14 @@ async function runFlowQueue(params: {
       // Send skip button so user can continue without Strava
       try {
         await new Promise((resolve) => setTimeout(resolve, 1500));
+        const skipBody = stravaData.skipMessageText?.trim() || "Depois de conectar o Strava, vou continuar automaticamente. Se preferir, pode seguir sem:";
+        const skipBtnText = stravaData.skipButtonText?.trim() || "Seguir sem Strava";
         const skipResult = await sendMetaWhatsAppInteractiveButtonsMessage(
           {
             to: params.contactPhone,
-            body: "Depois de conectar o Strava, vou continuar automaticamente. Se preferir, pode seguir sem:",
+            body: skipBody,
             replyButtons: [
-              { id: "strava_skip", title: "Seguir sem Strava" },
+              { id: "strava_skip", title: skipBtnText },
             ],
           },
           params.metaConfig
