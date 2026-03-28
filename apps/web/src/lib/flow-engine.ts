@@ -1420,6 +1420,31 @@ async function runFlowQueue(params: {
         console.error("Flow engine: failed to send Strava connect link", error);
       }
 
+      // Send skip button so user can continue without Strava
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        const skipResult = await sendMetaWhatsAppInteractiveButtonsMessage(
+          {
+            to: params.contactPhone,
+            body: "Depois de conectar o Strava, vou continuar automaticamente. Se preferir, pode seguir sem:",
+            replyButtons: [
+              { id: "strava_skip", title: "Seguir sem Strava" },
+            ],
+          },
+          params.metaConfig
+        );
+        await params.supabase.from("messages").insert({
+          conversation_id: params.conversationId,
+          content: "Seguir sem Strava?",
+          type: "interactive",
+          sender: "bot",
+          node_id: current.id,
+          wa_message_id: skipResult.messageId,
+        });
+      } catch (error) {
+        console.error("Flow engine: failed to send Strava skip button", error);
+      }
+
       // Pause flow — resumes when Strava callback fires or user sends message
       await pauseFlow({
         supabase: params.supabase,
