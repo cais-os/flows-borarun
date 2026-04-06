@@ -1255,6 +1255,12 @@ async function runFlowQueue(params: {
 
       // Small delay between consecutive sends to preserve WhatsApp delivery order
       await new Promise((resolve) => setTimeout(resolve, 1500));
+
+      // Touch updated_at so the webhook staleness check knows the flow is still active
+      await params.supabase
+        .from("conversations")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("id", params.conversationId);
     }
 
     if (data.type === "tagConversation") {
@@ -1279,6 +1285,12 @@ async function runFlowQueue(params: {
       });
       // Wait for WhatsApp to deliver the PDF before sending subsequent messages
       await new Promise((resolve) => setTimeout(resolve, 5000));
+
+      // Touch updated_at so the webhook staleness check knows the flow is still active
+      await params.supabase
+        .from("conversations")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("id", params.conversationId);
     }
 
     if (data.type === "aiCollector") {

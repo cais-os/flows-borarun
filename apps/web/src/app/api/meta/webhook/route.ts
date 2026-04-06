@@ -396,6 +396,50 @@ export async function POST(request: Request) {
           continue;
         }
 
+        // Guard: skip all bot processing when a flow is actively executing.
+        // The message is already saved above — we just don't want to trigger
+        // a new flow or AI response that would interrupt the running flow.
+        if (conversationStatus === "running" && existing?.active_flow_id) {
+          const { data: freshConv } = await supabase
+            .from("conversations")
+            .select("status, active_flow_id, updated_at")
+            .eq("id", conversationId)
+            .single();
+
+          if (freshConv?.status === "running" && freshConv.active_flow_id) {
+            const updatedAt = new Date(freshConv.updated_at as string).getTime();
+            const stalenessMs = 2 * 60 * 1000;
+
+            if (Date.now() - updatedAt < stalenessMs) {
+              console.log("[webhook] flow actively running, skipping processing", {
+                conversationId,
+                activeFlowId: freshConv.active_flow_id,
+                content: content.substring(0, 50),
+              });
+              continue;
+            }
+
+            // Stale — clean up crashed/timed-out flow
+            console.warn("[webhook] stale running flow, resetting", {
+              conversationId,
+              activeFlowId: freshConv.active_flow_id,
+              staleDurationMs: Date.now() - updatedAt,
+            });
+            await supabase
+              .from("conversations")
+              .update({
+                status: "ai",
+                active_flow_id: null,
+                current_node_id: null,
+                flow_node_queue: null,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", conversationId);
+            // Fall through to normal processing
+          }
+          // If status changed (flow completed between reads), fall through
+        }
+
         try {
           console.log("[webhook] orchestration start", {
             conversationId,
@@ -666,68 +710,16 @@ export async function POST(request: Request) {
             }
 
             if (currentNodeType === "sendMessage") {
-              if (selectedHandleId) {
-                await resumeFlow(supabase, conversationId, contactPhone, content, {
-                  selectedHandleId,
-                  inboundMessageId: message.id,
-                  organizationId,
-                  metaConfig,
-                });
-                continue;
-              }
-
-              const triggerMatch = await findMatchingFlow(
-                supabase,
-                content,
-                false,
+              // Whether the user clicked a button/list item or sent free text,
+              // delegate to resumeFlow. If interactive options exist and no
+              // selection was made, resumeFlow re-prompts and keeps the flow
+              // paused instead of abandoning it.
+              await resumeFlow(supabase, conversationId, contactPhone, content, {
+                selectedHandleId: selectedHandleId || undefined,
+                inboundMessageId: message.id,
                 organizationId,
-                conversationId
-              );
-              if (triggerMatch) {
-                await executeFlow(
-                  supabase,
-                  conversationId,
-                  contactPhone,
-                  triggerMatch.flow,
-                  triggerMatch.triggerNode,
-                  {
-                    inboundMessageId: message.id,
-                    organizationId,
-                    metaConfig,
-                  }
-                );
-                continue;
-              }
-
-              const aiCoachResp = await generateCoachResponse(
-                supabase,
-                conversationId,
-                content,
-                organizationId
-              );
-              await simulateTyping(message.id, aiCoachResp.message, metaConfig);
-              const aiCoachResult = await sendMetaWhatsAppTextMessage(
-                {
-                  to: contactPhone,
-                  body: aiCoachResp.message,
-                },
-                metaConfig
-              );
-              await supabase.from("messages").insert({
-                conversation_id: conversationId,
-                content: aiCoachResp.message,
-                type: "text",
-                sender: "bot",
-                wa_message_id: aiCoachResult.messageId,
+                metaConfig,
               });
-              if (aiCoachResp.profileUpdates) {
-                const { data: cvars } = await supabase.from("conversations").select("flow_variables").eq("id", conversationId).single();
-                const fv = (cvars?.flow_variables as Record<string, string>) || {};
-                const cur = fv._coaching_summary ? JSON.parse(fv._coaching_summary) : {};
-                const valid = validateProfileUpdates(aiCoachResp.profileUpdates, cur);
-                if (valid) fv._coaching_summary = JSON.stringify({ ...cur, ...valid });
-                await supabase.from("conversations").update({ flow_variables: fv }).eq("id", conversationId);
-              }
               continue;
             }
 
