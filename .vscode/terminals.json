@@ -1,0 +1,22 @@
+{
+  "autorun": false,
+  "autokill": true,
+  "terminals": [
+    {
+      "name": "node",
+      "description": "Web server for local development",
+      "command": "cd apps/web && pnpm run dev"
+    },
+    {
+      "name": "supabase",
+      "description": "Supabase local development server",
+      "command": "supabase start"
+    },
+    {
+      "name": "zsh",
+      "description": "The regular terminal",
+      "focus": true,
+      "command": ""
+    }
+  ]
+}

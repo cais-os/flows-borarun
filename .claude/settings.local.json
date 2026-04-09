@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx vercel:*)"
+      "Bash(npx vercel:*)",
+      "Read(//Users/guilhermenovak/Documents/Claude Personal Plugins/**)",
+      "Read(//Users/guilhermenovak/Documents/**)"
     ]
   }
 }
