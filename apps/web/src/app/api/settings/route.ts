@@ -7,6 +7,12 @@ import {
 export async function GET() {
   try {
     const context = await getCurrentOrganizationContext();
+    if (context.role !== "owner") {
+      return NextResponse.json(
+        { error: "Only organization owners can manage settings" },
+        { status: 403 }
+      );
+    }
 
     return NextResponse.json({
       organizationId: context.organizationId,
@@ -28,6 +34,14 @@ export async function GET() {
 
 export async function PUT(request: Request) {
   try {
+    const context = await getCurrentOrganizationContext();
+    if (context.role !== "owner") {
+      return NextResponse.json(
+        { error: "Only organization owners can manage settings" },
+        { status: 403 }
+      );
+    }
+
     const body = (await request.json()) as Record<string, unknown>;
 
     const saved = await upsertCurrentOrganizationSettings({
@@ -56,6 +70,8 @@ export async function PUT(request: Request) {
         (body.mercado_pago_access_token as string) || null,
       mercado_pago_public_key:
         (body.mercado_pago_public_key as string) || null,
+      mercado_pago_webhook_secret:
+        (body.mercado_pago_webhook_secret as string) || null,
       subscription_nudge_message:
         (body.subscription_nudge_message as string) || null,
     });

@@ -7,6 +7,7 @@ import {
 } from "@/lib/meta";
 import { getOrganizationSettingsById } from "@/lib/organization";
 import { buildStravaCoachContext } from "@/lib/strava";
+import { validateCronAuthorization } from "@/lib/internal-auth";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -31,10 +32,9 @@ function getNowBrazil(): Date {
 }
 
 export async function GET(request: Request) {
-  // Verify cron secret
-  const authHeader = request.headers.get("authorization");
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const auth = validateCronAuthorization(request.headers.get("authorization"));
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.message }, { status: auth.status });
   }
 
   const supabase = createServerClient();

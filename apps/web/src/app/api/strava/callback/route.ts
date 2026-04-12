@@ -18,6 +18,7 @@ import {
   syncStravaActivitiesForConversation,
   verifyStravaState,
 } from "@/lib/strava";
+import { getCronSecret } from "@/lib/internal-auth";
 
 function redirectToStatus(requestUrl: string, status: string, message: string) {
   const url = new URL("/strava/connected", resolveAppOrigin(requestUrl));
@@ -156,20 +157,25 @@ export async function GET(request: Request) {
 
     // Resume the paused flow via internal endpoint so it gets its own 60s timeout
     // (fire-and-forget — don't await, so the redirect returns immediately)
-    const origin = resolveAppOrigin(request.url);
-    fetch(`${origin}/api/flow/resume`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-internal-secret": process.env.CRON_SECRET || "__internal__",
-      },
-      body: JSON.stringify({
-        conversationId: state.conversationId,
-        contactPhone: connection.contact_phone,
-        userAnswer: "strava_connected",
-        organizationId: previewState.organizationId,
-      }),
-    }).catch((err) => console.error("Failed to trigger flow resume:", err));
+    const cronSecret = getCronSecret();
+    if (!cronSecret) {
+      console.error("Failed to trigger flow resume: CRON_SECRET is not configured");
+    } else {
+      const origin = resolveAppOrigin(request.url);
+      fetch(`${origin}/api/flow/resume`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-internal-secret": cronSecret,
+        },
+        body: JSON.stringify({
+          conversationId: state.conversationId,
+          contactPhone: connection.contact_phone,
+          userAnswer: "strava_connected",
+          organizationId: previewState.organizationId,
+        }),
+      }).catch((err) => console.error("Failed to trigger flow resume:", err));
+    }
 
     return redirectToStatus(
       request.url,

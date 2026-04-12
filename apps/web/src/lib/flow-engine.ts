@@ -1658,7 +1658,6 @@ async function runFlowQueue(params: {
             // Create new flow on Meta
             const flowJson = buildWhatsAppFlowJson(flowData.screens);
 
-            const settings = await getOrganizationSettingsById(params.organizationId);
             const endpointUri = process.env.WHATSAPP_FLOWS_ENDPOINT_URL || undefined;
 
             const created = await createWhatsAppFlow(

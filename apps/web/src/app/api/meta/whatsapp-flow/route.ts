@@ -5,12 +5,13 @@ import { createServerClient } from "@/lib/supabase/server";
 import {
   decryptFlowRequest,
   encryptFlowResponse,
+  resolveWhatsAppFlowsPrivateKey,
 } from "@/lib/whatsapp-flow-crypto";
 import { resumeFlow } from "@/lib/flow-engine";
 import { getMetaConfigFromSettings } from "@/lib/meta";
 import { getOrganizationSettingsById } from "@/lib/organization";
 
-const PRIVATE_KEY = process.env.WHATSAPP_FLOWS_PRIVATE_KEY || "";
+const PRIVATE_KEY = resolveWhatsAppFlowsPrivateKey();
 
 /**
  * WhatsApp Flows Data Endpoint.
@@ -42,7 +43,7 @@ export async function POST(req: NextRequest) {
     // Decrypt the request
     const { decryptedBody, aesKeyBuffer, ivBuffer } = decryptFlowRequest(
       body,
-      PRIVATE_KEY.replace(/\\n/g, "\n")
+      PRIVATE_KEY
     );
 
     const action = decryptedBody.action as string;
@@ -74,7 +75,6 @@ export async function POST(req: NextRequest) {
     // Handle data_exchange — the user navigated between screens
     if (action === "data_exchange") {
       const screen = decryptedBody.screen as string | undefined;
-      const data = (decryptedBody.data || {}) as Record<string, unknown>;
 
       // If this is not the final screen, just acknowledge
       // (you can add multi-screen routing here if needed)
@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const [conversationId, _nodeId, _ts] = flowToken.split(":");
+      const [conversationId] = flowToken.split(":");
 
       if (!conversationId) {
         console.error("[whatsapp-flow] Invalid flow_token:", flowToken);

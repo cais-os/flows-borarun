@@ -9,6 +9,7 @@ import {
 import {
   getMercadoPagoConfig,
   fetchMercadoPagoPayment,
+  verifyMercadoPagoWebhookSignature,
 } from "@/lib/mercado-pago";
 
 export async function POST(request: Request) {
@@ -43,6 +44,33 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true });
     }
 
+    if (!mpConfig.config.webhookSecret) {
+      console.error("[MP Webhook] Missing webhook secret for org", orgId);
+      return NextResponse.json(
+        { ok: false, error: "Webhook secret not configured" },
+        { status: 503 }
+      );
+    }
+
+    const signatureVerified = verifyMercadoPagoWebhookSignature({
+      body,
+      requestIdHeader: request.headers.get("x-request-id"),
+      requestUrl: request.url,
+      secret: mpConfig.config.webhookSecret,
+      signatureHeader: request.headers.get("x-signature"),
+    });
+
+    if (!signatureVerified) {
+      console.error("[MP Webhook] Invalid signature", {
+        orgId,
+        paymentId: body.data?.id || null,
+      });
+      return NextResponse.json(
+        { ok: false, error: "Invalid webhook signature" },
+        { status: 401 }
+      );
+    }
+
     // Fetch payment details from Mercado Pago
     const mpPayment = await fetchMercadoPagoPayment(
       body.data.id,
@@ -60,40 +88,74 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true });
     }
 
+    if (ref.organizationId !== orgId) {
+      console.error("[MP Webhook] Organization mismatch:", {
+        queryOrgId: orgId,
+        refOrgId: ref.organizationId,
+      });
+      return NextResponse.json({ ok: true });
+    }
+
     const supabase = createServerClient();
 
-    // Update payment record
-    await supabase
+    const { data: paymentRecord } = await supabase
       .from("payments")
-      .update({
-        mp_payment_id: String(mpPayment.id),
-        status: mpPayment.status,
-        paid_at: mpPayment.date_approved || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", ref.paymentRecordId);
+      .select("id, organization_id, conversation_id, amount, currency, status, mp_payment_id, plan_name, duration_days")
+      .eq("id", ref.paymentRecordId)
+      .maybeSingle();
+
+    if (!paymentRecord) {
+      console.error("[MP Webhook] Payment record not found:", ref.paymentRecordId);
+      return NextResponse.json({ ok: true });
+    }
+
+    if (
+      paymentRecord.organization_id !== orgId ||
+      paymentRecord.conversation_id !== ref.conversationId
+    ) {
+      console.error("[MP Webhook] Payment record context mismatch:", {
+        paymentRecordId: ref.paymentRecordId,
+        queryOrgId: orgId,
+        recordOrgId: paymentRecord.organization_id,
+        referenceConversationId: ref.conversationId,
+        recordConversationId: paymentRecord.conversation_id,
+      });
+      return NextResponse.json({ ok: true });
+    }
+
+    if (
+      Number(paymentRecord.amount) !== Number(mpPayment.transaction_amount) ||
+      paymentRecord.currency !== mpPayment.currency_id
+    ) {
+      console.error("[MP Webhook] Payment amount/currency mismatch:", {
+        paymentRecordId: ref.paymentRecordId,
+        expectedAmount: paymentRecord.amount,
+        receivedAmount: mpPayment.transaction_amount,
+        expectedCurrency: paymentRecord.currency,
+        receivedCurrency: mpPayment.currency_id,
+      });
+      return NextResponse.json({ ok: true });
+    }
 
     // If approved, activate subscription (with idempotency check)
     if (mpPayment.status === "approved") {
-      // Check if this payment was already processed (idempotency)
-      const { data: existingPayment } = await supabase
-        .from("payments")
-        .select("status")
-        .eq("mp_payment_id", String(mpPayment.id))
-        .eq("status", "approved")
-        .maybeSingle();
-
-      if (existingPayment) {
+      if (
+        paymentRecord.status === "approved" &&
+        paymentRecord.mp_payment_id === String(mpPayment.id)
+      ) {
         console.log("[MP Webhook] Payment already processed:", mpPayment.id);
         return NextResponse.json({ ok: true });
       }
 
-      // Load payment record for plan details
-      const { data: paymentRecord } = await supabase
+      await supabase
         .from("payments")
-        .select("plan_name, duration_days")
-        .eq("id", ref.paymentRecordId)
-        .single();
+        .update({
+          mp_payment_id: String(mpPayment.id),
+          status: mpPayment.status,
+          paid_at: mpPayment.date_approved || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", ref.paymentRecordId);
 
       if (paymentRecord) {
         const expiresAt = new Date();
@@ -189,6 +251,16 @@ export async function POST(request: Request) {
           console.error("[MP Webhook] Failed to send confirmation message:", msgErr);
         }
       }
+    } else {
+      await supabase
+        .from("payments")
+        .update({
+          mp_payment_id: String(mpPayment.id),
+          status: mpPayment.status,
+          paid_at: mpPayment.date_approved || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", ref.paymentRecordId);
     }
 
     return NextResponse.json({ ok: true });

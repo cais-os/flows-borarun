@@ -12,6 +12,24 @@ import crypto from "crypto";
 
 const FLOW_DATA_TAG_LENGTH = 16; // AES-GCM auth tag length in bytes
 
+export function resolveWhatsAppFlowsPrivateKey(
+  rawPrivateKey = process.env.WHATSAPP_FLOWS_PRIVATE_KEY || ""
+) {
+  if (!rawPrivateKey) {
+    return "";
+  }
+
+  if (!rawPrivateKey.includes("-----")) {
+    try {
+      return Buffer.from(rawPrivateKey, "base64").toString("utf-8");
+    } catch {
+      return rawPrivateKey;
+    }
+  }
+
+  return rawPrivateKey.replace(/\\n/g, "\n");
+}
+
 /**
  * Decrypt an incoming WhatsApp Flow data request.
  *

@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { OrganizationSettings } from "./organization";
 import { resolveAppOrigin } from "./strava";
@@ -11,6 +12,7 @@ const MP_API_BASE = "https://api.mercadopago.com";
 export type MercadoPagoConfig = {
   accessToken: string;
   publicKey: string | null;
+  webhookSecret: string | null;
 };
 
 export function getMercadoPagoConfig(
@@ -24,8 +26,101 @@ export function getMercadoPagoConfig(
     config: {
       accessToken: settings.mercado_pago_access_token,
       publicKey: settings.mercado_pago_public_key ?? null,
+      webhookSecret:
+        settings.mercado_pago_webhook_secret ||
+        process.env.MERCADO_PAGO_WEBHOOK_SECRET ||
+        null,
     },
   };
+}
+
+type VerifyMercadoPagoWebhookSignatureParams = {
+  body: {
+    data?: {
+      id?: string | number;
+    };
+  };
+  requestIdHeader: string | null;
+  requestUrl: string;
+  secret: string | null;
+  signatureHeader: string | null;
+};
+
+function parseMercadoPagoSignatureHeader(signatureHeader: string | null) {
+  if (!signatureHeader) {
+    return null;
+  }
+
+  const signatureParts = signatureHeader
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .reduce<Record<string, string>>((accumulator, part) => {
+      const [key, value] = part.split("=", 2);
+      if (key && value) {
+        accumulator[key] = value;
+      }
+      return accumulator;
+    }, {});
+
+  const ts = signatureParts.ts?.trim();
+  const v1 = signatureParts.v1?.trim().toLowerCase();
+
+  if (!ts || !v1 || !/^[a-f0-9]+$/i.test(v1)) {
+    return null;
+  }
+
+  return { ts, v1 };
+}
+
+function getMercadoPagoWebhookDataId(
+  body: VerifyMercadoPagoWebhookSignatureParams["body"],
+  requestUrl: string
+) {
+  if (body.data?.id !== undefined && body.data.id !== null) {
+    return String(body.data.id);
+  }
+
+  return new URL(requestUrl).searchParams.get("data.id");
+}
+
+function safeCompareHex(expected: string, received: string) {
+  if (expected.length !== received.length) {
+    return false;
+  }
+
+  try {
+    return timingSafeEqual(
+      Buffer.from(expected, "hex"),
+      Buffer.from(received, "hex")
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function verifyMercadoPagoWebhookSignature(
+  params: VerifyMercadoPagoWebhookSignatureParams
+) {
+  if (!params.secret || !params.requestIdHeader) {
+    return false;
+  }
+
+  const parsedSignature = parseMercadoPagoSignatureHeader(
+    params.signatureHeader
+  );
+  const dataId = getMercadoPagoWebhookDataId(params.body, params.requestUrl);
+
+  if (!parsedSignature || !dataId) {
+    return false;
+  }
+
+  const manifest = `id:${dataId};request-id:${params.requestIdHeader};ts:${parsedSignature.ts};`;
+  const expectedSignature = createHmac("sha256", params.secret)
+    .update(manifest)
+    .digest("hex");
+
+  return safeCompareHex(expectedSignature, parsedSignature.v1);
 }
 
 // ---------------------------------------------------------------------------

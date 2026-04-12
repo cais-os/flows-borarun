@@ -5,6 +5,7 @@ import { createServerClient } from "@/lib/supabase/server";
 import { resumeFlowOnTimeout } from "@/lib/flow-engine";
 import { getOrganizationSettingsById } from "@/lib/organization";
 import { getMetaConfigFromSettings } from "@/lib/meta";
+import { validateCronAuthorization } from "@/lib/internal-auth";
 
 /**
  * Cron endpoint that checks for expired waitTimer nodes.
@@ -13,12 +14,9 @@ import { getMetaConfigFromSettings } from "@/lib/meta";
  * GET /api/cron/timers
  */
 export async function GET(request: Request) {
-  // Optional: verify cron secret to prevent unauthorized calls
-  const authHeader = request.headers.get("authorization");
-  const cronSecret = process.env.CRON_SECRET;
-
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const auth = validateCronAuthorization(request.headers.get("authorization"));
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.message }, { status: auth.status });
   }
 
   const supabase = createServerClient();

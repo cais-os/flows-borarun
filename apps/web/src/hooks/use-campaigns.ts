@@ -40,7 +40,9 @@ export function useCampaigns() {
   }, []);
 
   useEffect(() => {
-    fetchCampaigns();
+    void (async () => {
+      await fetchCampaigns();
+    })();
   }, [fetchCampaigns]);
 
   const createCampaign = useCallback(

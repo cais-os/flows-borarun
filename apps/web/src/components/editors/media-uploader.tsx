@@ -1,7 +1,8 @@
 "use client";
 
+import NextImage from "next/image";
 import { useCallback, useRef, type DragEvent, useState } from "react";
-import { Upload, X, FileText, Image, Mic, Video } from "lucide-react";
+import { Upload, X, FileText, ImageIcon, Mic, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface MediaUploaderProps {
@@ -14,7 +15,7 @@ interface MediaUploaderProps {
 }
 
 const typeIcons = {
-  image: <Image size={20} />,
+  image: <ImageIcon size={20} />,
   file: <FileText size={20} />,
   audio: <Mic size={20} />,
   video: <Video size={20} />,
@@ -74,10 +75,13 @@ export function MediaUploader({
           </Button>
         </div>
         {type === "image" && (
-          <img
+          <NextImage
             src={value}
-            alt="Preview"
-            className="mt-2 rounded max-h-32 object-cover w-full"
+            alt={`Preview da ${typeLabels[type]}`}
+            width={640}
+            height={360}
+            unoptimized
+            className="mt-2 h-auto max-h-32 w-full rounded object-cover"
           />
         )}
         {type === "audio" && (

@@ -7,6 +7,12 @@ import {
 
 export async function POST(request: Request) {
   const context = await getCurrentOrganizationContext();
+  if (context.role !== "owner") {
+    return NextResponse.json(
+      { error: "Only organization owners can send Meta test messages" },
+      { status: 403 }
+    );
+  }
   const { configured, missing, config } = getMetaConfigFromSettings(
     context.settings
   );

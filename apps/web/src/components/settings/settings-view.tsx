@@ -35,6 +35,7 @@ type SettingsFormValues = {
   stravaScopes: string;
   mercadoPagoAccessToken: string;
   mercadoPagoPublicKey: string;
+  mercadoPagoWebhookSecret: string;
   subscriptionNudgeMessage: string;
 };
 
@@ -60,6 +61,7 @@ type SettingsPayload = {
     strava_scopes: string[] | null;
     mercado_pago_access_token: string | null;
     mercado_pago_public_key: string | null;
+    mercado_pago_webhook_secret: string | null;
     subscription_nudge_message: string | null;
   } | null;
 };
@@ -83,6 +85,7 @@ const defaultValues: SettingsFormValues = {
   stravaScopes: "read,activity:read_all",
   mercadoPagoAccessToken: "",
   mercadoPagoPublicKey: "",
+  mercadoPagoWebhookSecret: "",
   subscriptionNudgeMessage: "",
 };
 
@@ -107,6 +110,8 @@ function mapPayloadToForm(payload: SettingsPayload): SettingsFormValues {
       payload.settings?.strava_scopes?.join(",") || "read,activity:read_all",
     mercadoPagoAccessToken: payload.settings?.mercado_pago_access_token || "",
     mercadoPagoPublicKey: payload.settings?.mercado_pago_public_key || "",
+    mercadoPagoWebhookSecret:
+      payload.settings?.mercado_pago_webhook_secret || "",
     subscriptionNudgeMessage: payload.settings?.subscription_nudge_message || "",
   };
 }
@@ -117,6 +122,13 @@ export function SettingsView() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
+  const [accessDenied, setAccessDenied] = useState(false);
+
+  const handleSignOut = async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    window.location.href = "/auth/login";
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -129,6 +141,9 @@ export function SettingsView() {
         };
 
         if (!response.ok) {
+          if (response.status === 403) {
+            throw new Error("Somente o dono da assessoria pode acessar essas configuracoes.");
+          }
           throw new Error(data.error || "Falha ao carregar configuracoes");
         }
 
@@ -138,6 +153,12 @@ export function SettingsView() {
         }
       } catch (error) {
         if (!cancelled) {
+          if (
+            error instanceof Error &&
+            error.message.includes("Somente o dono da assessoria")
+          ) {
+            setAccessDenied(true);
+          }
           console.error("Failed to load settings", error);
           setSaveMessage(
             error instanceof Error
@@ -200,6 +221,7 @@ export function SettingsView() {
             .filter(Boolean),
           mercado_pago_access_token: form.mercadoPagoAccessToken,
           mercado_pago_public_key: form.mercadoPagoPublicKey,
+          mercado_pago_webhook_secret: form.mercadoPagoWebhookSecret,
           subscription_nudge_message: form.subscriptionNudgeMessage,
         }),
       });
@@ -223,6 +245,49 @@ export function SettingsView() {
     return (
       <div className="flex flex-1 items-center justify-center">
         <Loader2 size={28} className="animate-spin text-slate-400" />
+      </div>
+    );
+  }
+
+  if (accessDenied) {
+    return (
+      <div className="flex flex-1 overflow-y-auto p-4">
+        <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
+          <Card className="border-slate-200 bg-white shadow-[0_24px_60px_-40px_rgba(15,23,42,0.35)]">
+            <CardHeader>
+              <CardTitle className="text-xl text-slate-900">
+                Acesso restrito
+              </CardTitle>
+              <CardDescription>
+                Integracoes, credenciais e configuracoes da assessoria ficam
+                disponiveis apenas para o usuario com papel de dono.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-slate-600">
+                Se voce precisa alterar WhatsApp, Strava, Mercado Pago ou o
+                plano da conta, entre com o usuario proprietario da
+                organizacao.
+              </p>
+              {saveMessage ? (
+                <div className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  {saveMessage}
+                </div>
+              ) : null}
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="gap-2 rounded-xl border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                  onClick={() => void handleSignOut()}
+                >
+                  <LogOut size={16} />
+                  Sair da conta
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     );
   }
@@ -502,6 +567,22 @@ export function SettingsView() {
                 placeholder="APP_USR-..."
               />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="mercadoPagoWebhookSecret">Webhook Secret</Label>
+              <Input
+                id="mercadoPagoWebhookSecret"
+                type="password"
+                value={form.mercadoPagoWebhookSecret}
+                onChange={(e) =>
+                  updateField("mercadoPagoWebhookSecret", e.target.value)
+                }
+                placeholder="Segredo de assinatura do webhook"
+              />
+              <p className="text-xs text-slate-400">
+                Use o segredo configurado no painel de notificacoes do Mercado
+                Pago para validar a autenticidade dos webhooks.
+              </p>
+            </div>
           </CardContent>
         </Card>
 
@@ -542,11 +623,7 @@ export function SettingsView() {
             type="button"
             variant="outline"
             className="gap-2 rounded-xl border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
-            onClick={async () => {
-              const supabase = createClient();
-              await supabase.auth.signOut();
-              window.location.href = "/auth/login";
-            }}
+            onClick={() => void handleSignOut()}
           >
             <LogOut size={16} />
             Sair da conta

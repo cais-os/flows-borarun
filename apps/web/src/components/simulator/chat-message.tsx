@@ -1,6 +1,7 @@
 "use client";
 
-import { Bot, User, Headset } from "lucide-react";
+import NextImage from "next/image";
+import { Bot, User, Headset, Paperclip } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { WhatsAppReplyButton } from "@/types/node-data";
 import type { ChatMessage as ChatMessageType } from "@/types/simulator";
@@ -25,8 +26,8 @@ export function ChatMessage({
 }: ChatMessageProps) {
   if (message.type === "system") {
     return (
-      <div className="flex justify-center my-2">
-        <span className="text-xs text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
+      <div className="my-2 flex justify-center">
+        <span className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-500">
           {message.content}
         </span>
       </div>
@@ -38,11 +39,11 @@ export function ChatMessage({
 
   return (
     <div
-      className={`flex gap-2 mb-3 ${isContact ? "justify-end" : "justify-start"}`}
+      className={`mb-3 flex gap-2 ${isContact ? "justify-end" : "justify-start"}`}
     >
       {!isContact && (
         <div
-          className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${
+          className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full ${
             isHuman ? "bg-blue-100 text-blue-600" : "bg-gray-200 text-gray-600"
           }`}
         >
@@ -55,27 +56,34 @@ export function ChatMessage({
           isContact
             ? "bg-[#dcf8c6] text-gray-800"
             : isHuman
-              ? "bg-blue-50 text-gray-800 border border-blue-100"
-              : "bg-white text-gray-800 border border-gray-200"
+              ? "border border-blue-100 bg-blue-50 text-gray-800"
+              : "border border-gray-200 bg-white text-gray-800"
         }`}
       >
         {isHuman && (
-          <span className="text-[10px] font-medium text-blue-600 block mb-0.5">
+          <span className="mb-0.5 block text-[10px] font-medium text-blue-600">
             Operador
           </span>
         )}
 
         {message.templateName && (
-          <span className="text-[10px] font-medium text-green-700 block mb-0.5">
+          <span className="mb-0.5 block text-[10px] font-medium text-green-700">
             Template: {message.templateName}
           </span>
         )}
 
         {message.mediaUrl && message.type === "image" && (
-          <img
+          <NextImage
             src={message.mediaUrl}
-            alt="Imagem"
-            className="rounded mb-1 max-h-40 object-cover"
+            alt={
+              message.fileName
+                ? `Imagem enviada: ${message.fileName}`
+                : "Imagem enviada"
+            }
+            width={320}
+            height={240}
+            unoptimized
+            className="mb-1 h-auto max-h-40 rounded object-cover"
           />
         )}
 
@@ -84,16 +92,21 @@ export function ChatMessage({
         )}
 
         {message.type === "video" && message.mediaUrl && (
-          <video controls className="mb-1 max-w-full rounded" src={message.mediaUrl} />
+          <video
+            controls
+            className="mb-1 max-w-full rounded"
+            src={message.mediaUrl}
+          />
         )}
 
         {message.type === "file" && message.fileName && (
-          <div className="flex items-center gap-1.5 mb-1 text-sm text-blue-600">
-            📎 {message.fileName}
+          <div className="mb-1 flex items-center gap-1.5 text-sm text-blue-600">
+            <Paperclip size={14} />
+            {message.fileName}
           </div>
         )}
 
-        <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+        <p className="whitespace-pre-wrap text-sm">{message.content}</p>
 
         {message.replyButtons && message.replyButtons.length > 0 && (
           <div className="mt-2 space-y-1.5">
@@ -118,13 +131,13 @@ export function ChatMessage({
           </div>
         )}
 
-        <span className="text-[10px] text-gray-400 block text-right mt-0.5">
+        <span className="mt-0.5 block text-right text-[10px] text-gray-400">
           {formatTime(message.timestamp)}
         </span>
       </div>
 
       {isContact && (
-        <div className="w-7 h-7 rounded-full bg-green-100 text-green-600 flex items-center justify-center flex-shrink-0">
+        <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-green-100 text-green-600">
           <User size={14} />
         </div>
       )}

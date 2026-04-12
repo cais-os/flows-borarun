@@ -21,6 +21,7 @@ export type OrganizationSettings = {
   strava_scopes: string[] | null;
   mercado_pago_access_token: string | null;
   mercado_pago_public_key: string | null;
+  mercado_pago_webhook_secret: string | null;
   subscription_nudge_message: string | null;
 };
 
@@ -143,7 +144,11 @@ export async function getCurrentOrganizationContext(): Promise<OrganizationConte
 
   const organizationMembership = membership as unknown as OrganizationMembershipRow;
 
-  const { data: settings, error: settingsError } = await supabase
+  const settingsClient = process.env.SUPABASE_SERVICE_ROLE_KEY
+    ? createServerClient()
+    : supabase;
+
+  const { data: settings, error: settingsError } = await settingsClient
     .from("organization_settings")
     .select("*")
     .eq("organization_id", organizationMembership.organization_id)

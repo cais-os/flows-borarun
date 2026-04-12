@@ -37,6 +37,42 @@ interface CampanhasEditorProps {
   onSend: (id: string) => Promise<{ sent: number; failed: number } | null>;
 }
 
+function buildEditorState(campaign: Campaign) {
+  let sendMode: "now" | "scheduled" = "now";
+  let scheduledAt = "";
+
+  if (campaign.scheduled_at) {
+    sendMode = "scheduled";
+    const dt = new Date(campaign.scheduled_at);
+    scheduledAt = new Date(dt.getTime() - dt.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 16);
+  }
+
+  let csvColumns: string[] = [];
+  let csvData: Array<Record<string, string>> = [];
+
+  if (campaign.recipients.length > 0) {
+    const firstRecipient = campaign.recipients[0];
+    const cols = ["phone", "name", ...Object.keys(firstRecipient.variables || {})];
+    csvColumns = [...new Set(cols)];
+    csvData = campaign.recipients.map((recipient) => ({
+      phone: recipient.phone,
+      name: recipient.name || "",
+      ...recipient.variables,
+    }));
+  }
+
+  return {
+    name: campaign.name,
+    selectedTemplate: campaign.template_name || "",
+    csvColumns,
+    csvData,
+    sendMode,
+    scheduledAt,
+  };
+}
+
 function parseCSV(text: string): Array<Record<string, string>> {
   const lines = text.trim().split("\n");
   if (lines.length < 2) return [];
@@ -59,16 +95,21 @@ function extractTemplateVariables(template: MetaTemplate): string[] {
 }
 
 export function CampanhasEditor({ campaign, onUpdate, onSend }: CampanhasEditorProps) {
-  const [name, setName] = useState(campaign.name);
+  const initialState = buildEditorState(campaign);
+  const [name, setName] = useState(initialState.name);
   const [templates, setTemplates] = useState<MetaTemplate[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<string>(
-    campaign.template_name || ""
+    initialState.selectedTemplate
   );
-  const [csvColumns, setCsvColumns] = useState<string[]>([]);
-  const [csvData, setCsvData] = useState<Array<Record<string, string>>>([]);
+  const [csvColumns, setCsvColumns] = useState<string[]>(initialState.csvColumns);
+  const [csvData, setCsvData] = useState<Array<Record<string, string>>>(
+    initialState.csvData
+  );
   const [variableMapping, setVariableMapping] = useState<Record<string, string>>({});
-  const [sendMode, setSendMode] = useState<"now" | "scheduled">("now");
-  const [scheduledAt, setScheduledAt] = useState("");
+  const [sendMode, setSendMode] = useState<"now" | "scheduled">(
+    initialState.sendMode
+  );
+  const [scheduledAt, setScheduledAt] = useState(initialState.scheduledAt);
   const [sending, setSending] = useState(false);
   const [saving, setSaving] = useState(false);
   const [sendResult, setSendResult] = useState<{
@@ -77,32 +118,6 @@ export function CampanhasEditor({ campaign, onUpdate, onSend }: CampanhasEditorP
   } | null>(null);
 
   const isReadOnly = campaign.status !== "draft";
-
-  useEffect(() => {
-    setName(campaign.name);
-    setSelectedTemplate(campaign.template_name || "");
-    if (campaign.scheduled_at) {
-      setSendMode("scheduled");
-      // Convert ISO to datetime-local format
-      const dt = new Date(campaign.scheduled_at);
-      const local = new Date(dt.getTime() - dt.getTimezoneOffset() * 60000)
-        .toISOString()
-        .slice(0, 16);
-      setScheduledAt(local);
-    }
-    if (campaign.recipients.length > 0) {
-      const firstRecipient = campaign.recipients[0];
-      const cols = ["phone", "name", ...Object.keys(firstRecipient.variables || {})];
-      setCsvColumns([...new Set(cols)]);
-      setCsvData(
-        campaign.recipients.map((r) => ({
-          phone: r.phone,
-          name: r.name || "",
-          ...r.variables,
-        }))
-      );
-    }
-  }, [campaign]);
 
   useEffect(() => {
     fetch("/api/meta/templates")
@@ -142,8 +157,9 @@ export function CampanhasEditor({ campaign, onUpdate, onSend }: CampanhasEditorP
         const phone = row.phone || row.Phone || row.telefone || "";
         const recipientName = row.name || row.Name || row.nome || "";
         const variables: Record<string, string> = {};
-        for (const [varName, colName] of Object.entries(variableMapping)) {
-          variables[varName] = row[colName] || "";
+        for (const [, colName] of Object.entries(variableMapping)) {
+          if (!colName) continue;
+          variables[colName] = row[colName] || "";
         }
         return { phone, name: recipientName, variables };
       });
@@ -182,8 +198,9 @@ export function CampanhasEditor({ campaign, onUpdate, onSend }: CampanhasEditorP
         const phone = row.phone || row.Phone || row.telefone || "";
         const recipientName = row.name || row.Name || row.nome || "";
         const variables: Record<string, string> = {};
-        for (const [varName, colName] of Object.entries(variableMapping)) {
-          variables[varName] = row[colName] || "";
+        for (const [, colName] of Object.entries(variableMapping)) {
+          if (!colName) continue;
+          variables[colName] = row[colName] || "";
         }
         return { phone, name: recipientName, variables };
       });

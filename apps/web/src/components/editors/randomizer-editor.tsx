@@ -15,7 +15,6 @@ interface RandomizerEditorProps {
 
 export function RandomizerEditor({ nodeId, data }: RandomizerEditorProps) {
   const updateNodeData = useFlowStore((s) => s.updateNodeData);
-  const edges = useFlowStore((s) => s.edges);
 
   const update = (partial: Partial<RandomizerNodeData>) => {
     updateNodeData(nodeId, partial);

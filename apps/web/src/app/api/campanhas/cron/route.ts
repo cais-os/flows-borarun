@@ -7,6 +7,7 @@ import {
   getMetaConfigFromSettings,
   sendMetaWhatsAppTemplateMessage,
 } from "@/lib/meta";
+import { validateCronAuthorization } from "@/lib/internal-auth";
 
 interface Recipient {
   phone: string;
@@ -15,12 +16,9 @@ interface Recipient {
 }
 
 export async function GET(request: Request) {
-  // Protect with CRON_SECRET
-  const authHeader = request.headers.get("authorization");
-  const cronSecret = process.env.CRON_SECRET;
-
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const auth = validateCronAuthorization(request.headers.get("authorization"));
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.message }, { status: auth.status });
   }
 
   const supabase = createServerClient();
@@ -72,9 +70,12 @@ export async function GET(request: Request) {
         if (bodyVars.length > 0) {
           components.push({
             type: "body",
-            parameters: bodyVars.map((varName: string) => ({
+            parameters: bodyVars.map((varName: string, index: number) => ({
               type: "text" as const,
-              text: recipient.variables?.[varName] || varName,
+              text:
+                recipient.variables?.[varName] ||
+                recipient.variables?.[`{{${index + 1}}}`] ||
+                varName,
             })),
           });
         }

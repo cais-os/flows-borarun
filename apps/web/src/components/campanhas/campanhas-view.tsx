@@ -42,6 +42,7 @@ export function CampanhasView() {
 
       {selectedCampaign ? (
         <CampanhasEditor
+          key={selectedCampaign.id}
           campaign={selectedCampaign}
           onUpdate={updateCampaign}
           onSend={sendCampaign}

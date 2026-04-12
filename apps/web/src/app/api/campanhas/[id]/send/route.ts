@@ -58,9 +58,12 @@ export async function POST(
       }> = [];
 
       if (bodyVars.length > 0) {
-        const bodyParams = bodyVars.map((varName: string) => ({
+        const bodyParams = bodyVars.map((varName: string, index: number) => ({
           type: "text" as const,
-          text: recipient.variables?.[varName] || varName,
+          text:
+            recipient.variables?.[varName] ||
+            recipient.variables?.[`{{${index + 1}}}`] ||
+            varName,
         }));
 
         components.push({

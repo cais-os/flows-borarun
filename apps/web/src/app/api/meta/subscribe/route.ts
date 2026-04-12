@@ -7,6 +7,12 @@ import {
 
 export async function POST() {
   const context = await getCurrentOrganizationContext();
+  if (context.role !== "owner") {
+    return NextResponse.json(
+      { error: "Only organization owners can manage Meta subscriptions" },
+      { status: 403 }
+    );
+  }
   const { configured, missing, config } = getMetaConfigFromSettings(
     context.settings
   );

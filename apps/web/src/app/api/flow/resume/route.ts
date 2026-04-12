@@ -5,6 +5,7 @@ import { createServerClient } from "@/lib/supabase/server";
 import { resumeFlow } from "@/lib/flow-engine";
 import { getOrganizationSettingsById } from "@/lib/organization";
 import { getMetaConfigFromSettings } from "@/lib/meta";
+import { validateInternalSecret } from "@/lib/internal-auth";
 
 /**
  * Internal endpoint to resume a paused flow in a separate function invocation,
@@ -14,9 +15,9 @@ import { getMetaConfigFromSettings } from "@/lib/meta";
  * Body: { conversationId, contactPhone, userAnswer, organizationId }
  */
 export async function POST(request: Request) {
-  const secret = request.headers.get("x-internal-secret");
-  if (secret !== (process.env.CRON_SECRET || "__internal__")) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const auth = validateInternalSecret(request.headers.get("x-internal-secret"));
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.message }, { status: auth.status });
   }
 
   const body = (await request.json()) as {
