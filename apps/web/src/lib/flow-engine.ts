@@ -379,11 +379,13 @@ async function applyTypingDelay(
   typingSeconds: number | undefined,
   metaConfig: MetaConfig
 ) {
+  // Skip typing delays for programmatic resumes (no inbound message)
+  // to avoid accumulating delays that cause Vercel function timeouts
+  if (!inboundMessageId) return;
+
   const seconds = Math.max(0, Math.min(30, typingSeconds || 0));
 
-  if (inboundMessageId) {
-    await sendTypingIndicator(inboundMessageId, metaConfig).catch(() => {});
-  }
+  await sendTypingIndicator(inboundMessageId, metaConfig).catch(() => {});
 
   if (seconds > 0) {
     await new Promise((resolve) => setTimeout(resolve, seconds * 1000));

@@ -117,9 +117,10 @@ export async function GET(request: Request) {
         .filter(Boolean),
     });
 
-    await syncStravaActivitiesForConversation(supabase, state.conversationId, {
+    // Fire-and-forget: sync activities in background to avoid callback timeout
+    syncStravaActivitiesForConversation(supabase, state.conversationId, {
       force: true,
-    });
+    }).catch((err) => console.error("Background Strava sync failed:", err));
 
     const summary = await getStravaConnectionSummary(
       supabase,
