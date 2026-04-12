@@ -24,7 +24,12 @@ import {
 import { createGeneratedAudioAsset } from "@/lib/audio-assets";
 import { buildCapturedVariableValue } from "@/lib/captured-variable";
 import { generatePdf } from "@/lib/pdf-generator";
-import { buildStravaConnectUrl, buildStravaConnectMessage, buildStravaCoachContext } from "@/lib/strava";
+import {
+  buildStravaConnectUrl,
+  buildStravaConnectMessage,
+  buildStravaCoachContext,
+  resolveAppOrigin,
+} from "@/lib/strava";
 import {
   getMercadoPagoConfig,
   createPaymentAndPreference,
@@ -37,6 +42,7 @@ import {
   normalizeWaitForReplyNodeData,
 } from "@/lib/wait-for-reply";
 import { convertToOgg, getAudioFormat, needsOggConversion } from "@/lib/audio-converter";
+import { getCronSecret } from "@/lib/internal-auth";
 import {
   type MetaConfig,
   sendMetaWhatsAppTextMessage,
@@ -79,6 +85,8 @@ interface TriggerMatchContext {
   tagNames: Set<string>;
   subscriptionPlan?: "free" | "premium";
 }
+
+const FLOW_CONTINUATION_SOFT_LIMIT_MS = 50_000;
 
 function findNextNodes(
   nodeId: string,
@@ -134,6 +142,39 @@ function mergeQueues(...groups: FlowNode[][]): FlowNode[] {
   }
 
   return merged;
+}
+
+function getEstimatedNodeCostMs(node: FlowNode): number {
+  switch (node.data.type) {
+    case "generatePdf":
+      return 45_000;
+    case "payment":
+      return 8_000;
+    case "stravaConnect":
+    case "whatsappFlow":
+      return 6_000;
+    case "sendMessage": {
+      const sendData = node.data as SendMessageNodeData;
+      if (sendData.messageType === "audio") return 10_000;
+      if (
+        sendData.messageType === "image" ||
+        sendData.messageType === "video" ||
+        sendData.messageType === "file"
+      ) {
+        return 8_000;
+      }
+      return 3_000;
+    }
+    default:
+      return 2_000;
+  }
+}
+
+function shouldYieldFlowExecution(startedAt: number, currentNode: FlowNode) {
+  return (
+    Date.now() - startedAt + getEstimatedNodeCostMs(currentNode) >=
+    FLOW_CONTINUATION_SOFT_LIMIT_MS
+  );
 }
 
 function interpolateVariables(
@@ -336,6 +377,67 @@ async function pauseFlow(params: {
       updated_at: new Date().toISOString(),
     })
     .eq("id", params.conversationId);
+}
+
+async function persistFlowContinuation(params: {
+  supabase: SupabaseClient;
+  conversationId: string;
+  queue: FlowNode[];
+}) {
+  await params.supabase
+    .from("conversations")
+    .update({
+      status: "running",
+      current_node_id: null,
+      flow_node_queue: params.queue.map((node) => node.id),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", params.conversationId);
+}
+
+function triggerFlowContinuation(params: {
+  conversationId: string;
+  contactPhone: string;
+  organizationId: string;
+}) {
+  const secret = getCronSecret();
+  if (!secret) {
+    console.error("[flow-engine] CRON_SECRET is not configured; cannot continue flow");
+    return;
+  }
+
+  let origin: string;
+  try {
+    origin = resolveAppOrigin();
+  } catch (error) {
+    console.error("[flow-engine] failed to resolve app origin for continuation", error);
+    return;
+  }
+
+  fetch(`${origin}/api/flow/continue`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-internal-secret": secret,
+    },
+    body: JSON.stringify({
+      conversationId: params.conversationId,
+      contactPhone: params.contactPhone,
+      organizationId: params.organizationId,
+    }),
+  })
+    .then(async (response) => {
+      if (!response.ok) {
+        console.error(
+          "[flow-engine] flow continuation request failed:",
+          response.status,
+          await response.text()
+        );
+      }
+    })
+    .catch((error) =>
+      console.error("[flow-engine] failed to trigger flow continuation", error)
+    );
 }
 
 async function completeFlow(
@@ -1108,10 +1210,35 @@ async function runFlowQueue(params: {
   const queue = [...params.initialQueue];
   let pendingAnswer = params.pendingUserAnswer;
   const execId = params.executionId ?? null;
+  const startedAt = Date.now();
 
   while (queue.length > 0) {
     const current = queue.shift()!;
     const data = current.data;
+
+    if (shouldYieldFlowExecution(startedAt, current)) {
+      const remainingQueue = [current, ...queue];
+      console.warn("[flow-engine] yielding flow continuation", {
+        conversationId: params.conversationId,
+        currentNodeId: current.id,
+        currentNodeType: current.data.type,
+        remainingQueueLength: remainingQueue.length,
+      });
+
+      await persistFlowContinuation({
+        supabase: params.supabase,
+        conversationId: params.conversationId,
+        queue: remainingQueue,
+      });
+
+      triggerFlowContinuation({
+        conversationId: params.conversationId,
+        contactPhone: params.contactPhone,
+        organizationId: params.organizationId,
+      });
+
+      return "continued" as const;
+    }
 
     // Log every node visit for analytics
     if (params.flowId) {
@@ -1935,6 +2062,103 @@ export type ResumeFlowResult =
   | { status: "ignored" }
   | { status: "waiting" }
   | { status: "resumed" };
+
+export async function continueFlowQueue(
+  supabase: SupabaseClient,
+  conversationId: string,
+  contactPhone: string,
+  options: {
+    organizationId: string;
+    metaConfig: MetaConfig;
+  }
+) {
+  const { data: conversation } = await supabase
+    .from("conversations")
+    .select("active_flow_id, flow_node_queue")
+    .eq("id", conversationId)
+    .single();
+
+  if (!conversation?.active_flow_id) {
+    console.log("[continueFlowQueue] ignored: no active flow", {
+      conversationId,
+    });
+    return { status: "ignored" as const };
+  }
+
+  const queueIds = (conversation.flow_node_queue as string[]) || [];
+  if (queueIds.length === 0) {
+    const executionId = await findActiveExecutionId(
+      supabase,
+      conversation.active_flow_id as string,
+      conversationId
+    );
+    await completeFlow(supabase, conversationId);
+    await completeFlowExecution(supabase, executionId, "completed");
+    return { status: "completed" as const };
+  }
+
+  const { data: flow } = await supabase
+    .from("flows")
+    .select("*")
+    .eq("organization_id", options.organizationId)
+    .eq("id", conversation.active_flow_id)
+    .single();
+
+  if (!flow) {
+    console.log("[continueFlowQueue] ignored: flow not found", {
+      activeFlowId: conversation.active_flow_id,
+      organizationId: options.organizationId,
+    });
+    return { status: "ignored" as const };
+  }
+
+  const nodes = flow.nodes as unknown as FlowNode[];
+  const edges = flow.edges as unknown as FlowEdge[];
+  const initialQueue = queueIds
+    .map((id) => nodes.find((node) => node.id === id))
+    .filter(Boolean) as FlowNode[];
+
+  if (initialQueue.length === 0) {
+    const executionId = await findActiveExecutionId(
+      supabase,
+      conversation.active_flow_id as string,
+      conversationId
+    );
+    await completeFlow(supabase, conversationId);
+    await completeFlowExecution(supabase, executionId, "completed");
+    return { status: "completed" as const };
+  }
+
+  await supabase
+    .from("conversations")
+    .update({
+      status: "running",
+      current_node_id: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", conversationId);
+
+  const executionId = await findActiveExecutionId(
+    supabase,
+    conversation.active_flow_id as string,
+    conversationId
+  );
+
+  await runFlowQueue({
+    supabase,
+    organizationId: options.organizationId,
+    metaConfig: options.metaConfig,
+    conversationId,
+    contactPhone,
+    nodes,
+    edges,
+    initialQueue,
+    executionId,
+    flowId: conversation.active_flow_id as string,
+  });
+
+  return { status: "continued" as const };
+}
 
 /**
  * Resume a paused flow after the user replies.
