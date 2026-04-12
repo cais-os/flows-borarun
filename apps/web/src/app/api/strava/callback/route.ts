@@ -18,7 +18,6 @@ import {
   syncStravaActivitiesForConversation,
   verifyStravaState,
 } from "@/lib/strava";
-import { resumeFlow } from "@/lib/flow-engine";
 
 function redirectToStatus(requestUrl: string, status: string, message: string) {
   const url = new URL("/strava/connected", resolveAppOrigin(requestUrl));
@@ -155,21 +154,22 @@ export async function GET(request: Request) {
       console.error("Failed to send Strava confirmation on WhatsApp", metaError);
     }
 
-    // Resume the paused flow
-    try {
-      await resumeFlow(
-        supabase,
-        state.conversationId,
-        connection.contact_phone,
-        "strava_connected",
-        {
-          organizationId: previewState.organizationId,
-          metaConfig,
-        }
-      );
-    } catch (resumeError) {
-      console.error("Failed to resume flow after Strava connect:", resumeError);
-    }
+    // Resume the paused flow via internal endpoint so it gets its own 60s timeout
+    // (fire-and-forget — don't await, so the redirect returns immediately)
+    const origin = resolveAppOrigin(request.url);
+    fetch(`${origin}/api/flow/resume`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-internal-secret": process.env.CRON_SECRET || "__internal__",
+      },
+      body: JSON.stringify({
+        conversationId: state.conversationId,
+        contactPhone: connection.contact_phone,
+        userAnswer: "strava_connected",
+        organizationId: previewState.organizationId,
+      }),
+    }).catch((err) => console.error("Failed to trigger flow resume:", err));
 
     return redirectToStatus(
       request.url,
