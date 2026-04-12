@@ -30,6 +30,12 @@ interface ConversationData {
   subscription_expires_at: string | null;
 }
 
+type ConversationPaymentData = {
+  status: string | null;
+  plan_name: string | null;
+  paid_at: string | null;
+};
+
 // ---------------------------------------------------------------------------
 // AI guidelines (org-level overrides)
 // ---------------------------------------------------------------------------
@@ -264,12 +270,133 @@ function buildUserProfileContext(vars: Record<string, string>, conv: Conversatio
   if (conv.subscription_expires_at) {
     lines.push(`Validade: ${new Date(conv.subscription_expires_at).toLocaleDateString("pt-BR")}`);
   }
+  lines.push(
+    "Use esses dados como verdade do sistema para responder sobre assinatura, premium, trial e liberacao de acesso. Nao diga que voce nao consegue verificar quando esse contexto estiver presente."
+  );
 
   if (conv.subscription_status === "trial") {
     lines.push("\nIMPORTANTE - PERÍODO DE TESTE: Este aluno está em teste gratuito. Responda com qualidade, mas mencione naturalmente os benefícios do premium (ajustes semanais, análise do Strava, acompanhamento contínuo). Seja sutil.");
   }
 
   return lines.join("\n");
+}
+
+function normalizeAiCoachText(text: string) {
+  return text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function formatSubscriptionDate(date: string | null) {
+  if (!date) return null;
+
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return parsed.toLocaleDateString("pt-BR");
+}
+
+function isSubscriptionStatusQuestion(userMessage: string) {
+  const normalized = normalizeAiCoachText(userMessage);
+  const hasSubscriptionKeyword =
+    /\b(assinatura|assinante|premium|trial|teste|plano)\b/.test(normalized);
+  const hasPaymentKeyword =
+    /\b(pagamento|paguei|pago|mercado pago|pix|cartao|cobranca)\b/.test(
+      normalized
+    );
+  const hasVerificationIntent =
+    /\b(verifica|verificar|confirm|confirmar|confirmado|entrou|caiu|aprovad|ativo|liberad|acesso|status|sou|estou|recebi)\b/.test(
+      normalized
+    );
+
+  return hasPaymentKeyword || (hasSubscriptionKeyword && hasVerificationIntent);
+}
+
+function buildSubscriptionStatusResponse(params: {
+  conversation: ConversationData;
+  latestPayment: ConversationPaymentData | null;
+}) {
+  const validity = formatSubscriptionDate(
+    params.conversation.subscription_expires_at
+  );
+  const paidAt = formatSubscriptionDate(params.latestPayment?.paid_at || null);
+  const isPremiumActive =
+    params.conversation.subscription_status === "active" &&
+    params.conversation.subscription_plan === "premium";
+
+  if (isPremiumActive) {
+    if (params.latestPayment?.status === "approved") {
+      return {
+        message: [
+          "Sim. Seu pagamento foi confirmado e sua assinatura Premium esta ativa.",
+          validity ? `Ela esta valida ate ${validity}.` : null,
+          paidAt ? `Pagamento aprovado em ${paidAt}.` : null,
+        ]
+          .filter(Boolean)
+          .join(" "),
+      };
+    }
+
+    return {
+      message: [
+        "Sim. Sua assinatura Premium esta ativa no sistema.",
+        validity ? `Ela esta valida ate ${validity}.` : null,
+      ]
+        .filter(Boolean)
+        .join(" "),
+    };
+  }
+
+  if (params.latestPayment?.status === "approved") {
+    return {
+      message: [
+        "Seu pagamento consta como aprovado.",
+        "Se o acesso premium ainda nao refletiu na conversa, avise o suporte porque isso indica uma inconsistencia de sincronizacao.",
+        validity ? `Hoje o sistema mostra validade ate ${validity}.` : null,
+      ]
+        .filter(Boolean)
+        .join(" "),
+    };
+  }
+
+  if (
+    params.latestPayment?.status === "pending" ||
+    params.latestPayment?.status === "in_process"
+  ) {
+    return {
+      message:
+        "Seu pagamento ainda aparece como em processamento no sistema. Assim que for aprovado, a assinatura Premium deve ser liberada automaticamente.",
+    };
+  }
+
+  if (
+    params.latestPayment?.status === "rejected" ||
+    params.latestPayment?.status === "cancelled"
+  ) {
+    return {
+      message:
+        "No momento o ultimo pagamento nao foi aprovado, entao a assinatura Premium ainda nao esta ativa.",
+    };
+  }
+
+  if (params.conversation.subscription_status === "trial") {
+    return {
+      message: [
+        "No momento voce esta em periodo de teste, e nao com a assinatura Premium ativa.",
+        validity ? `Seu teste atual vai ate ${validity}.` : null,
+      ]
+        .filter(Boolean)
+        .join(" "),
+    };
+  }
+
+  return {
+    message:
+      "No momento nao encontrei uma assinatura Premium ativa para esta conversa.",
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -375,12 +502,24 @@ export async function generateCoachResponse(
   userMessage: string,
   organizationId: string
 ): Promise<CoachResponse> {
-  // Fetch conversation data
-  const { data: conv } = await supabase
-    .from("conversations")
-    .select("flow_variables, subscription_status, subscription_plan, subscription_expires_at")
-    .eq("id", conversationId)
-    .single();
+  // Fetch conversation data and the latest payment so subscription questions
+  // can be answered deterministically from the system state.
+  const [{ data: conv }, { data: latestPayment }] = await Promise.all([
+    supabase
+      .from("conversations")
+      .select(
+        "flow_variables, subscription_status, subscription_plan, subscription_expires_at"
+      )
+      .eq("id", conversationId)
+      .single(),
+    supabase
+      .from("payments")
+      .select("status, plan_name, paid_at")
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
 
   const vars = (conv?.flow_variables as Record<string, string>) || {};
   const convData = conv as ConversationData || {
@@ -389,6 +528,14 @@ export async function generateCoachResponse(
     subscription_plan: null,
     subscription_expires_at: null,
   };
+  const paymentData = (latestPayment as ConversationPaymentData | null) || null;
+
+  if (isSubscriptionStatusQuestion(userMessage)) {
+    return buildSubscriptionStatusResponse({
+      conversation: convData,
+      latestPayment: paymentData,
+    });
+  }
 
   // Build all context pieces in parallel
   const [guidelines, flowContext, stravaContext, companyContext] = await Promise.all([
