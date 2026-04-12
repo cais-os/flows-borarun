@@ -1,3 +1,5 @@
+export const maxDuration = 60;
+
 import { NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
 import { getOrganizationSettingsById } from "@/lib/organization";
