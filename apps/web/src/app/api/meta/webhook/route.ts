@@ -689,30 +689,38 @@ export async function POST(request: Request) {
                   | Record<string, string>
                   | undefined;
 
-              if (flowResponseData) {
-                // Inject form fields as flow variables with prefix
-                const { data: convVars } = await supabase
-                  .from("conversations")
-                  .select("flow_variables")
-                  .eq("id", conversationId)
-                  .single();
-
-                const vars =
-                  (convVars?.flow_variables as Record<string, string>) || {};
-                const prefix = vars.__whatsappFlow_prefix || "flow";
-
-                for (const [key, value] of Object.entries(flowResponseData)) {
-                  if (key !== "flow_token") {
-                    vars[`${prefix}_${key}`] = String(value);
-                  }
-                }
-                vars[`${prefix}_response`] = JSON.stringify(flowResponseData);
-
-                await supabase
-                  .from("conversations")
-                  .update({ flow_variables: vars })
-                  .eq("id", conversationId);
+              if (!flowResponseData) {
+                console.log("[meta/webhook] ignoring message while waiting for WhatsApp Flow response", {
+                  conversationId,
+                  messageId: message.id,
+                  messageType: message.type,
+                  interactiveType: message.interactive?.type || null,
+                });
+                continue;
               }
+
+              // Inject form fields as flow variables with prefix
+              const { data: convVars } = await supabase
+                .from("conversations")
+                .select("flow_variables")
+                .eq("id", conversationId)
+                .single();
+
+              const vars =
+                (convVars?.flow_variables as Record<string, string>) || {};
+              const prefix = vars.__whatsappFlow_prefix || "flow";
+
+              for (const [key, value] of Object.entries(flowResponseData)) {
+                if (key !== "flow_token") {
+                  vars[`${prefix}_${key}`] = String(value);
+                }
+              }
+              vars[`${prefix}_response`] = JSON.stringify(flowResponseData);
+
+              await supabase
+                .from("conversations")
+                .update({ flow_variables: vars })
+                .eq("id", conversationId);
 
               await resumeFlow(supabase, conversationId, contactPhone, content, {
                 inboundMessageId: message.id,
