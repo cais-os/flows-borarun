@@ -5,14 +5,36 @@ import { resolveAppOrigin } from "./strava";
 
 const MP_API_BASE = "https://api.mercadopago.com";
 
-// ---------------------------------------------------------------------------
-// Config
-// ---------------------------------------------------------------------------
-
 export type MercadoPagoConfig = {
   accessToken: string;
   publicKey: string | null;
   webhookSecret: string | null;
+};
+
+export type MercadoPagoNotificationPayload = {
+  action?: string;
+  topic?: string;
+  type?: string;
+  data?: {
+    id?: string | number;
+  };
+  id?: string | number;
+  resource?: string;
+};
+
+export type MercadoPagoNotificationKind =
+  | "payment"
+  | "subscription_authorized_payment"
+  | "subscription_preapproval";
+
+export type MercadoPagoBillingMode = "one_time" | "recurring";
+
+type VerifyMercadoPagoWebhookSignatureParams = {
+  body: MercadoPagoNotificationPayload;
+  requestIdHeader: string | null;
+  requestUrl: string;
+  secret: string | null;
+  signatureHeader: string | null;
 };
 
 export function getMercadoPagoConfig(
@@ -21,6 +43,7 @@ export function getMercadoPagoConfig(
   if (!settings?.mercado_pago_access_token) {
     return { configured: false, config: null };
   }
+
   return {
     configured: true,
     config: {
@@ -33,23 +56,6 @@ export function getMercadoPagoConfig(
     },
   };
 }
-
-type VerifyMercadoPagoWebhookSignatureParams = {
-  body: {
-    action?: string;
-    topic?: string;
-    type?: string;
-    data?: {
-      id?: string | number;
-    };
-    id?: string | number;
-    resource?: string;
-  };
-  requestIdHeader: string | null;
-  requestUrl: string;
-  secret: string | null;
-  signatureHeader: string | null;
-};
 
 function parseMercadoPagoSignatureHeader(signatureHeader: string | null) {
   if (!signatureHeader) {
@@ -89,57 +95,96 @@ function getMercadoPagoWebhookDataId(
   return new URL(requestUrl).searchParams.get("data.id");
 }
 
-export type MercadoPagoNotificationPayload = {
-  action?: string;
-  topic?: string;
-  type?: string;
-  data?: {
-    id?: string | number;
+function getMercadoPagoNotificationType(params: {
+  body: MercadoPagoNotificationPayload;
+  requestUrl: string;
+}) {
+  const url = new URL(params.requestUrl);
+
+  return (
+    params.body.type ||
+    params.body.topic ||
+    url.searchParams.get("type") ||
+    url.searchParams.get("topic") ||
+    null
+  );
+}
+
+function getMercadoPagoResourceId(params: {
+  body: MercadoPagoNotificationPayload;
+  requestUrl: string;
+}) {
+  const url = new URL(params.requestUrl);
+
+  return (
+    (params.body.data?.id !== undefined && params.body.data.id !== null
+      ? String(params.body.data.id)
+      : null) ||
+    (params.body.id !== undefined && params.body.id !== null
+      ? String(params.body.id)
+      : null) ||
+    url.searchParams.get("data.id") ||
+    url.searchParams.get("id") ||
+    params.body.resource?.match(/\/v1\/payments\/(\d+)/)?.[1] ||
+    params.body.resource?.match(/\/authorized_payments\/([^/?]+)/)?.[1] ||
+    params.body.resource?.match(/\/preapproval\/([^/?]+)/)?.[1] ||
+    null
+  );
+}
+
+export function extractMercadoPagoNotification(params: {
+  body: MercadoPagoNotificationPayload;
+  requestUrl: string;
+}) {
+  const notificationType = getMercadoPagoNotificationType(params);
+  const resourceId = getMercadoPagoResourceId(params);
+
+  let kind: MercadoPagoNotificationKind | null = null;
+
+  if (
+    notificationType === "subscription_authorized_payment" ||
+    params.body.resource?.includes("/authorized_payments/")
+  ) {
+    kind = "subscription_authorized_payment";
+  } else if (
+    notificationType === "subscription_preapproval" ||
+    params.body.resource?.includes("/preapproval/")
+  ) {
+    kind = "subscription_preapproval";
+  } else if (
+    notificationType === "payment" ||
+    notificationType === "payment.created" ||
+    notificationType === "payment.updated" ||
+    params.body.action?.startsWith("payment.") ||
+    params.body.resource?.includes("/v1/payments/")
+  ) {
+    kind = "payment";
+  }
+
+  return {
+    notificationType,
+    resourceId,
+    kind,
+    isSupportedNotification: Boolean(kind && resourceId),
+    isSignedWebhookShape:
+      params.body.data?.id !== undefined &&
+      params.body.data?.id !== null &&
+      typeof params.body.type === "string",
   };
-  id?: string | number;
-  resource?: string;
-};
+}
 
 export function extractMercadoPagoPaymentNotification(params: {
   body: MercadoPagoNotificationPayload;
   requestUrl: string;
 }) {
-  const url = new URL(params.requestUrl);
-  const notificationType =
-    params.body.type ||
-    params.body.topic ||
-    url.searchParams.get("type") ||
-    url.searchParams.get("topic") ||
-    null;
-
-  const paymentId =
-    params.body.data?.id !== undefined && params.body.data.id !== null
-      ? String(params.body.data.id)
-      : params.body.id !== undefined && params.body.id !== null
-        ? String(params.body.id)
-        : url.searchParams.get("data.id") ||
-          url.searchParams.get("id") ||
-          params.body.resource?.match(/\/v1\/payments\/(\d+)/)?.[1] ||
-          null;
-
-  const isPaymentNotification =
-    Boolean(paymentId) &&
-    (
-      notificationType === "payment" ||
-      notificationType === "payment.created" ||
-      notificationType === "payment.updated" ||
-      params.body.action?.startsWith("payment.") ||
-      params.body.resource?.includes("/v1/payments/")
-    );
+  const notification = extractMercadoPagoNotification(params);
 
   return {
-    notificationType,
-    paymentId,
-    isPaymentNotification,
-    isSignedWebhookShape:
-      params.body.type === "payment" &&
-      params.body.data?.id !== undefined &&
-      params.body.data?.id !== null,
+    notificationType: notification.notificationType,
+    paymentId: notification.kind === "payment" ? notification.resourceId : null,
+    isPaymentNotification:
+      notification.kind === "payment" && Boolean(notification.resourceId),
+    isSignedWebhookShape: notification.isSignedWebhookShape,
   };
 }
 
@@ -182,10 +227,6 @@ export function verifyMercadoPagoWebhookSignature(
   return safeCompareHex(expectedSignature, parsedSignature.v1);
 }
 
-// ---------------------------------------------------------------------------
-// Create preference + payment record
-// ---------------------------------------------------------------------------
-
 export interface CreatePaymentParams {
   supabase: SupabaseClient;
   organizationId: string;
@@ -195,12 +236,45 @@ export interface CreatePaymentParams {
   durationDays: number;
   currency: string;
   accessToken: string;
+  billingMode?: MercadoPagoBillingMode;
+  payerEmail?: string | null;
+}
+
+type PaymentReference = {
+  paymentRecordId: string;
+  conversationId: string;
+  organizationId: string;
+};
+
+function buildPaymentReference(reference: PaymentReference) {
+  return JSON.stringify(reference);
+}
+
+function getStatusPageUrl(params: {
+  origin: string;
+  organizationId: string;
+  paymentRecordId: string;
+  status?: "success" | "failure" | "pending";
+}) {
+  const url = new URL(`${params.origin}/mercadopago/status`);
+  url.searchParams.set("org", params.organizationId);
+  url.searchParams.set("payment_record_id", params.paymentRecordId);
+  if (params.status) {
+    url.searchParams.set("s", params.status);
+  }
+  return url.toString();
 }
 
 export async function createPaymentAndPreference(
   params: CreatePaymentParams
-): Promise<{ initPoint: string; paymentRecordId: string }> {
-  // 1. Insert pending payment record
+): Promise<{
+  initPoint: string;
+  paymentRecordId: string;
+  checkoutId: string;
+  checkoutType: "preference" | "subscription";
+}> {
+  const billingMode = params.billingMode || "recurring";
+
   const { data: payment, error: insertErr } = await params.supabase
     .from("payments")
     .insert({
@@ -212,6 +286,8 @@ export async function createPaymentAndPreference(
       duration_days: params.durationDays,
       currency: params.currency,
       status: "pending",
+      billing_mode: billingMode,
+      payer_email: params.payerEmail || null,
     })
     .select("id")
     .single();
@@ -221,17 +297,82 @@ export async function createPaymentAndPreference(
   }
 
   const paymentRecordId = payment.id as string;
-
-  // 2. Build external reference (so webhook can resolve context)
-  const externalReference = JSON.stringify({
+  const externalReference = buildPaymentReference({
     paymentRecordId,
     conversationId: params.conversationId,
     organizationId: params.organizationId,
   });
-
   const origin = resolveAppOrigin();
 
-  // 3. Create Mercado Pago preference
+  if (billingMode === "recurring") {
+    if (!params.payerEmail) {
+      throw new Error(
+        "Mercado Pago recurring subscriptions require payer_email. Capture the contact email before this node."
+      );
+    }
+
+    const body = {
+      reason: params.planName,
+      external_reference: externalReference,
+      payer_email: params.payerEmail,
+      back_url: getStatusPageUrl({
+        origin,
+        organizationId: params.organizationId,
+        paymentRecordId,
+        status: "pending",
+      }),
+      notification_url: `${origin}/api/mercadopago/webhook?org=${params.organizationId}&source_news=webhooks`,
+      status: "pending",
+      auto_recurring: {
+        frequency: 1,
+        frequency_type: "months",
+        transaction_amount: params.amount,
+        currency_id: params.currency,
+      },
+    };
+
+    const res = await fetch(`${MP_API_BASE}/preapproval`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${params.accessToken}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(
+        `Mercado Pago subscription creation failed (${res.status}): ${errText}`
+      );
+    }
+
+    const subscription = (await res.json()) as {
+      id: string;
+      init_point: string;
+      status?: string;
+    };
+
+    await params.supabase
+      .from("payments")
+      .update({
+        mp_preference_id: subscription.id,
+        mp_subscription_id: subscription.id,
+        mp_subscription_status: subscription.status || "pending",
+        billing_mode: billingMode,
+        payer_email: params.payerEmail,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", paymentRecordId);
+
+    return {
+      initPoint: subscription.init_point,
+      paymentRecordId,
+      checkoutId: subscription.id,
+      checkoutType: "subscription",
+    };
+  }
+
   const body = {
     items: [
       {
@@ -242,9 +383,24 @@ export async function createPaymentAndPreference(
       },
     ],
     back_urls: {
-      success: `${origin}/mercadopago/status?s=success&org=${params.organizationId}`,
-      failure: `${origin}/mercadopago/status?s=failure&org=${params.organizationId}`,
-      pending: `${origin}/mercadopago/status?s=pending&org=${params.organizationId}`,
+      success: getStatusPageUrl({
+        origin,
+        organizationId: params.organizationId,
+        paymentRecordId,
+        status: "success",
+      }),
+      failure: getStatusPageUrl({
+        origin,
+        organizationId: params.organizationId,
+        paymentRecordId,
+        status: "failure",
+      }),
+      pending: getStatusPageUrl({
+        origin,
+        organizationId: params.organizationId,
+        paymentRecordId,
+        status: "pending",
+      }),
     },
     notification_url: `${origin}/api/mercadopago/webhook?org=${params.organizationId}&source_news=webhooks`,
     external_reference: externalReference,
@@ -262,7 +418,9 @@ export async function createPaymentAndPreference(
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`Mercado Pago preference creation failed (${res.status}): ${errText}`);
+    throw new Error(
+      `Mercado Pago preference creation failed (${res.status}): ${errText}`
+    );
   }
 
   const preference = (await res.json()) as {
@@ -270,22 +428,27 @@ export async function createPaymentAndPreference(
     init_point: string;
   };
 
-  // 4. Update payment record with preference id
   await params.supabase
     .from("payments")
-    .update({ mp_preference_id: preference.id })
+    .update({
+      mp_preference_id: preference.id,
+      billing_mode: billingMode,
+      payer_email: params.payerEmail || null,
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", paymentRecordId);
 
-  return { initPoint: preference.init_point, paymentRecordId };
+  return {
+    initPoint: preference.init_point,
+    paymentRecordId,
+    checkoutId: preference.id,
+    checkoutType: "preference",
+  };
 }
-
-// ---------------------------------------------------------------------------
-// Fetch payment details from Mercado Pago
-// ---------------------------------------------------------------------------
 
 export interface MercadoPagoPayment {
   id: number;
-  status: string; // approved | pending | rejected | in_process | cancelled
+  status: string;
   status_detail: string;
   external_reference: string;
   transaction_amount: number;
@@ -302,17 +465,47 @@ export interface MercadoPagoPreference {
   auto_return: string | null;
 }
 
+export interface MercadoPagoSubscription {
+  id: string;
+  status: string;
+  external_reference: string | null;
+  init_point: string | null;
+  payer_email?: string | null;
+  back_url?: string | null;
+  reason?: string | null;
+  next_payment_date?: string | null;
+  auto_recurring?: {
+    frequency?: number;
+    frequency_type?: string;
+    transaction_amount?: number;
+    currency_id?: string;
+  } | null;
+}
+
+export interface MercadoPagoAuthorizedPayment {
+  id: string | number;
+  preapproval_id?: string | null;
+  external_reference?: string | null;
+  status?: string | null;
+  payment?: {
+    id?: string | number;
+  } | null;
+}
+
 export async function fetchMercadoPagoPayment(
   paymentId: string,
   accessToken: string
 ): Promise<MercadoPagoPayment> {
   const res = await fetch(`${MP_API_BASE}/v1/payments/${paymentId}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
+    cache: "no-store",
   });
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`Failed to fetch MP payment ${paymentId} (${res.status}): ${errText}`);
+    throw new Error(
+      `Failed to fetch MP payment ${paymentId} (${res.status}): ${errText}`
+    );
   }
 
   return (await res.json()) as MercadoPagoPayment;
@@ -322,10 +515,13 @@ export async function fetchMercadoPagoPreference(
   preferenceId: string,
   accessToken: string
 ): Promise<MercadoPagoPreference> {
-  const res = await fetch(`${MP_API_BASE}/checkout/preferences/${preferenceId}`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-    cache: "no-store",
-  });
+  const res = await fetch(
+    `${MP_API_BASE}/checkout/preferences/${preferenceId}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      cache: "no-store",
+    }
+  );
 
   if (!res.ok) {
     const errText = await res.text();
@@ -335,6 +531,71 @@ export async function fetchMercadoPagoPreference(
   }
 
   return (await res.json()) as MercadoPagoPreference;
+}
+
+export async function fetchMercadoPagoSubscription(
+  subscriptionId: string,
+  accessToken: string
+): Promise<MercadoPagoSubscription> {
+  const res = await fetch(`${MP_API_BASE}/preapproval/${subscriptionId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(
+      `Failed to fetch MP subscription ${subscriptionId} (${res.status}): ${errText}`
+    );
+  }
+
+  return (await res.json()) as MercadoPagoSubscription;
+}
+
+export async function cancelMercadoPagoSubscription(
+  subscriptionId: string,
+  accessToken: string
+): Promise<MercadoPagoSubscription> {
+  const res = await fetch(`${MP_API_BASE}/preapproval/${subscriptionId}`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ status: "cancelled" }),
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(
+      `Failed to cancel MP subscription ${subscriptionId} (${res.status}): ${errText}`
+    );
+  }
+
+  return (await res.json()) as MercadoPagoSubscription;
+}
+
+export async function fetchMercadoPagoAuthorizedPayment(
+  authorizedPaymentId: string,
+  accessToken: string
+): Promise<MercadoPagoAuthorizedPayment> {
+  const res = await fetch(
+    `${MP_API_BASE}/authorized_payments/${authorizedPaymentId}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      cache: "no-store",
+    }
+  );
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(
+      `Failed to fetch MP authorized payment ${authorizedPaymentId} (${res.status}): ${errText}`
+    );
+  }
+
+  return (await res.json()) as MercadoPagoAuthorizedPayment;
 }
 
 export async function searchMercadoPagoPaymentsByExternalReference(
@@ -365,10 +626,6 @@ export async function searchMercadoPagoPaymentsByExternalReference(
 
   return payload.results || [];
 }
-
-// ---------------------------------------------------------------------------
-// Default message
-// ---------------------------------------------------------------------------
 
 export function buildPaymentMessage(paymentUrl: string): string {
   return [

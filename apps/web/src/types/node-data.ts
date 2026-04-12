@@ -124,6 +124,8 @@ export interface WhatsAppListItem {
   description?: string;
 }
 
+export type PaymentBillingMode = "one_time" | "recurring";
+
 export interface WaitForReplyRoute {
   id: string;
   label: string;
@@ -157,6 +159,8 @@ export type PaymentNodeData = {
   planName: string;
   amount: number;
   durationDays: number;
+  billingMode?: PaymentBillingMode;
+  payerEmailVariable?: string;
   currency?: string;
   messageText?: string;
   ctaButtonText?: string;

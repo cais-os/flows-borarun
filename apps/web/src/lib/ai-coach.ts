@@ -149,6 +149,13 @@ function getNowBrazil(): Date {
   return new Date(brStr);
 }
 
+function formatEffortLabel(value: string | undefined) {
+  if (!value) return "";
+  const normalized = String(value).trim();
+  if (!normalized) return "";
+  return `(esforco ${normalized}/10)`;
+}
+
 function buildCurrentWeekContext(vars: Record<string, string>): string {
   const planRaw = vars._training_plan;
   const generatedAt = vars._plan_generated_at;
@@ -200,7 +207,19 @@ function buildCurrentWeekContext(vars: Record<string, string>): string {
         lines.push("\nTreinos desta semana:");
         for (const dia of currentWeek.dias) {
           const d = dia as Record<string, string>;
-          lines.push(`- ${d.dia_semana || d.dia}: ${d.descricao || d.treino || d.tipo} ${d.rpe ? `(RPE ${d.rpe})` : ""}`);
+          const plannedDistance =
+            d.distancia_km ||
+            d.km ||
+            d.quilometragem_km ||
+            d.volume_km ||
+            d.distancia_prevista_km;
+          const distancePrefix = plannedDistance
+            ? `${plannedDistance} km - `
+            : "";
+          const effortLabel = formatEffortLabel(d.rpe);
+          lines.push(
+            `- ${d.dia_semana || d.dia}: ${distancePrefix}${d.descricao || d.treino || d.tipo} ${effortLabel}`.trim()
+          );
         }
       }
     }
@@ -323,9 +342,28 @@ function buildSubscriptionStatusResponse(params: {
     params.conversation.subscription_expires_at
   );
   const paidAt = formatSubscriptionDate(params.latestPayment?.paid_at || null);
+  const isCancelledButStillValid =
+    params.conversation.subscription_status === "cancelled" &&
+    params.conversation.subscription_plan === "premium" &&
+    Boolean(params.conversation.subscription_expires_at) &&
+    new Date(params.conversation.subscription_expires_at as string) > new Date();
   const isPremiumActive =
     params.conversation.subscription_status === "active" &&
     params.conversation.subscription_plan === "premium";
+
+  if (isCancelledButStillValid) {
+    return {
+      message: [
+        "Sua renovacao automatica do Premium esta cancelada.",
+        validity
+          ? `Voce continua com acesso liberado ate ${validity}.`
+          : "Voce continua com acesso ate o fim do periodo ja pago.",
+        "Nao devem acontecer novas cobrancas automaticas depois disso.",
+      ]
+        .filter(Boolean)
+        .join(" "),
+    };
+  }
 
   if (isPremiumActive) {
     if (params.latestPayment?.status === "approved") {
@@ -393,6 +431,13 @@ function buildSubscriptionStatusResponse(params: {
     };
   }
 
+  if (params.conversation.subscription_status === "cancelled") {
+    return {
+      message:
+        "Sua assinatura recorrente esta cancelada e nao ha renovacao automatica ativa no momento.",
+    };
+  }
+
   return {
     message:
       "No momento nao encontrei uma assinatura Premium ativa para esta conversa.",
@@ -427,6 +472,15 @@ export type CoachResponse = {
   message: string;
   profileUpdates?: Record<string, unknown>;
 };
+
+function normalizeCoachMessage(message: string) {
+  return message
+    .replace(/\bRPE\b/gi, "esforco")
+    .replace(
+      /\besforco\s+(\d+(?:\s*-\s*\d+)?)(?!\s*\/\s*10)\b/gi,
+      "esforco $1/10"
+    );
+}
 
 // Fields the AI coach is allowed to update
 const ALLOWED_PROFILE_FIELDS = new Set([
@@ -478,7 +532,7 @@ export function validateProfileUpdates(
 function parseCoachResponse(raw: string): CoachResponse {
   const markerIndex = raw.indexOf(PROFILE_UPDATE_MARKER);
   if (markerIndex === -1) {
-    return { message: raw.trim() };
+    return { message: normalizeCoachMessage(raw.trim()) };
   }
 
   const message = raw.substring(0, markerIndex).trim();
@@ -486,9 +540,9 @@ function parseCoachResponse(raw: string): CoachResponse {
 
   try {
     const profileUpdates = JSON.parse(jsonStr);
-    return { message, profileUpdates };
+    return { message: normalizeCoachMessage(message), profileUpdates };
   } catch {
-    return { message };
+    return { message: normalizeCoachMessage(message) };
   }
 }
 

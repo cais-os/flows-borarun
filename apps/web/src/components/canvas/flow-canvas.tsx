@@ -124,6 +124,7 @@ export function getDefaultData(type: string) {
         label: "Pagamento",
         planName: "",
         amount: 0,
+        billingMode: "recurring",
         durationDays: 30,
       } satisfies PaymentNodeData;
     case NODE_TYPES.WHATSAPP_FLOW:

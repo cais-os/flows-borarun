@@ -13,6 +13,7 @@ import {
   reconcileMercadoPagoPayment,
   reconcileMercadoPagoPaymentByExternalReference,
   reconcileMercadoPagoPaymentByPreferenceId,
+  reconcileMercadoPagoPaymentRecord,
   type ReconcileMercadoPagoPaymentResult,
 } from "@/lib/mercado-pago-reconciliation";
 import { createServerClient } from "@/lib/supabase/server";
@@ -123,6 +124,7 @@ async function reconcileSuccessStatus(params: {
   collectionId: string | null;
   externalReference: string | null;
   preferenceId: string | null;
+  paymentRecordId: string | null;
 }) {
   if (!params.orgId) {
     return null;
@@ -140,6 +142,15 @@ async function reconcileSuccessStatus(params: {
         settings,
         paymentId: resolvedPaymentId,
         source: "payment",
+      });
+    }
+
+    if (params.paymentRecordId) {
+      return await reconcileMercadoPagoPaymentRecord({
+        supabase,
+        organizationId: params.orgId,
+        settings,
+        paymentRecordId: params.paymentRecordId,
       });
     }
 
@@ -178,6 +189,7 @@ export default async function MercadoPagoStatusPage({
     collection_id?: string;
     preference_id?: string;
     external_reference?: string;
+    payment_record_id?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -192,15 +204,22 @@ export default async function MercadoPagoStatusPage({
   const collectionId = normalizeParam(params.collection_id);
   const preferenceId = normalizeParam(params.preference_id);
   const externalReference = normalizeParam(params.external_reference);
+  const paymentRecordId = normalizeParam(params.payment_record_id);
 
   const reconciliation =
-    params.s === "success"
+    orgId &&
+    (paymentId ||
+      collectionId ||
+      preferenceId ||
+      externalReference ||
+      paymentRecordId)
       ? await reconcileSuccessStatus({
           orgId,
           paymentId,
           collectionId,
           preferenceId,
           externalReference,
+          paymentRecordId,
         })
       : null;
 
@@ -213,8 +232,12 @@ export default async function MercadoPagoStatusPage({
 
   let retryUrl: string | null = null;
 
-  if (currentStatusKey === "failure" && preferenceId && orgId) {
-    retryUrl = `/api/mercadopago/retry?preference_id=${encodeURIComponent(preferenceId)}&org=${encodeURIComponent(orgId)}`;
+  if (currentStatusKey === "failure" && orgId) {
+    if (paymentRecordId) {
+      retryUrl = `/api/mercadopago/retry?payment_record_id=${encodeURIComponent(paymentRecordId)}&org=${encodeURIComponent(orgId)}`;
+    } else if (preferenceId) {
+      retryUrl = `/api/mercadopago/retry?preference_id=${encodeURIComponent(preferenceId)}&org=${encodeURIComponent(orgId)}`;
+    }
   }
 
   return (

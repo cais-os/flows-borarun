@@ -1,16 +1,23 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { OrganizationSettings } from "@/lib/organization";
 import {
+  fetchMercadoPagoAuthorizedPayment,
   fetchMercadoPagoPayment,
   fetchMercadoPagoPreference,
+  fetchMercadoPagoSubscription,
   getMercadoPagoConfig,
   searchMercadoPagoPaymentsByExternalReference,
+  type MercadoPagoAuthorizedPayment,
+  type MercadoPagoBillingMode,
   type MercadoPagoPayment,
+  type MercadoPagoSubscription,
 } from "@/lib/mercado-pago";
 import {
+  getMetaConfig,
   getMetaConfigFromSettings,
   sendMetaWhatsAppInteractiveListMessage,
   sendMetaWhatsAppTextMessage,
+  type MetaConfig,
 } from "@/lib/meta";
 
 const PREMIUM_CONFIRMATION_PAYMENT_KEY = "_premium_confirmation_payment_id";
@@ -31,6 +38,11 @@ type PaymentRecordRow = {
   status: string | null;
   mp_payment_id: string | null;
   mp_preference_id: string | null;
+  mp_subscription_id: string | null;
+  mp_subscription_status: string | null;
+  mp_authorized_payment_id: string | null;
+  billing_mode: MercadoPagoBillingMode | null;
+  payer_email: string | null;
   plan_name: string | null;
   duration_days: number | null;
 };
@@ -46,7 +58,13 @@ type ConversationRow = {
 
 export type ReconcileMercadoPagoPaymentResult = {
   status: "approved" | "not_approved" | "ignored" | "not_found";
-  source: "payment" | "preference" | "external_reference" | "pending";
+  source:
+    | "payment"
+    | "preference"
+    | "subscription"
+    | "authorized_payment"
+    | "external_reference"
+    | "pending";
   paymentRecordId?: string;
   conversationId?: string;
   mpPaymentId?: string;
@@ -102,6 +120,10 @@ function pickBestMercadoPagoPayment(
   );
 }
 
+function getBillingMode(value: MercadoPagoBillingMode | null | undefined) {
+  return value === "one_time" ? "one_time" : "recurring";
+}
+
 async function persistConversationFlowVariables(params: {
   supabase: SupabaseClient;
   conversationId: string;
@@ -116,6 +138,43 @@ async function persistConversationFlowVariables(params: {
     .eq("id", params.conversationId);
 }
 
+async function sendWithMetaFallback<T>(params: {
+  settings: OrganizationSettings | null;
+  label: string;
+  send: (config: MetaConfig) => Promise<T>;
+}) {
+  const primary = getMetaConfigFromSettings(params.settings);
+
+  if (!primary.configured || !primary.config) {
+    throw new Error("[mercado-pago] Meta not configured");
+  }
+
+  try {
+    return await params.send(primary.config);
+  } catch (error) {
+    const fallback = getMetaConfig();
+    const canRetryWithEnv =
+      fallback.configured &&
+      !!fallback.config &&
+      (
+        fallback.config.systemToken !== primary.config.systemToken ||
+        fallback.config.phoneNumberId !== primary.config.phoneNumberId ||
+        fallback.config.wabaId !== primary.config.wabaId
+      );
+
+    if (!canRetryWithEnv || !fallback.config) {
+      throw error;
+    }
+
+    console.warn(
+      `[mercado-pago] Failed to send ${params.label} with organization Meta config; retrying with env config`,
+      error
+    );
+
+    return params.send(fallback.config);
+  }
+}
+
 async function sendPostPaymentMessages(params: {
   supabase: SupabaseClient;
   conversation: ConversationRow;
@@ -126,7 +185,7 @@ async function sendPostPaymentMessages(params: {
     return;
   }
 
-  const { configured, config } = getMetaConfigFromSettings(params.settings);
+  const { configured } = getMetaConfigFromSettings(params.settings);
   if (!configured) {
     console.warn("[mercado-pago] Meta not configured; skipping post-payment messages");
     return;
@@ -139,13 +198,18 @@ async function sendPostPaymentMessages(params: {
   if (flowVariables[PREMIUM_CONFIRMATION_PAYMENT_KEY] !== params.paymentId) {
     const congratsMsg =
       "Parabens! Voce assinou o plano Premium com sucesso. A partir de agora esta liberado a conversar com a IA assessora de corrida!";
-    const sent = await sendMetaWhatsAppTextMessage(
-      {
-        to: params.conversation.contact_phone,
-        body: congratsMsg,
-      },
-      config
-    );
+    const sent = await sendWithMetaFallback({
+      settings: params.settings,
+      label: "premium confirmation",
+      send: (config) =>
+        sendMetaWhatsAppTextMessage(
+          {
+            to: params.conversation.contact_phone!,
+            body: congratsMsg,
+          },
+          config
+        ),
+    });
 
     await params.supabase.from("messages").insert({
       conversation_id: params.conversation.id,
@@ -169,24 +233,29 @@ async function sendPostPaymentMessages(params: {
 
   const dayMsg =
     "Vamos te enviar os treinos atualizados semanalmente de acordo com sua evolucao. Qual dia da semana prefere receber seus treinos?";
-  const sent = await sendMetaWhatsAppInteractiveListMessage(
-    {
-      to: params.conversation.contact_phone,
-      body: dayMsg,
-      buttonText: "Escolher dia",
-      sectionTitle: "Dias da semana",
-      items: [
-        { id: "day_1", title: "Segunda-feira" },
-        { id: "day_2", title: "Terca-feira" },
-        { id: "day_3", title: "Quarta-feira" },
-        { id: "day_4", title: "Quinta-feira" },
-        { id: "day_5", title: "Sexta-feira" },
-        { id: "day_6", title: "Sabado" },
-        { id: "day_0", title: "Domingo" },
-      ],
-    },
-    config
-  );
+  const sent = await sendWithMetaFallback({
+    settings: params.settings,
+    label: "weekly day prompt",
+    send: (config) =>
+      sendMetaWhatsAppInteractiveListMessage(
+        {
+          to: params.conversation.contact_phone!,
+          body: dayMsg,
+          buttonText: "Escolher dia",
+          sectionTitle: "Dias da semana",
+          items: [
+            { id: "day_1", title: "Segunda-feira" },
+            { id: "day_2", title: "Terca-feira" },
+            { id: "day_3", title: "Quarta-feira" },
+            { id: "day_4", title: "Quinta-feira" },
+            { id: "day_5", title: "Sexta-feira" },
+            { id: "day_6", title: "Sabado" },
+            { id: "day_0", title: "Domingo" },
+          ],
+        },
+        config
+      ),
+  });
 
   await params.supabase.from("messages").insert({
     conversation_id: params.conversation.id,
@@ -208,16 +277,50 @@ async function updatePaymentRecordStatus(params: {
   supabase: SupabaseClient;
   paymentRecordId: string;
   mpPayment: MercadoPagoPayment;
+  mpAuthorizedPaymentId?: string | null;
+  mpSubscriptionId?: string | null;
+  mpSubscriptionStatus?: string | null;
 }) {
   await params.supabase
     .from("payments")
     .update({
       mp_payment_id: String(params.mpPayment.id),
+      mp_authorized_payment_id: params.mpAuthorizedPaymentId || null,
+      mp_subscription_id: params.mpSubscriptionId || undefined,
+      mp_subscription_status: params.mpSubscriptionStatus || undefined,
+      payer_email: params.mpPayment.payer?.email || undefined,
       status: params.mpPayment.status,
       paid_at: params.mpPayment.date_approved || null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", params.paymentRecordId);
+}
+
+async function syncPaymentRecordSubscription(params: {
+  supabase: SupabaseClient;
+  paymentRecordId: string;
+  subscription: MercadoPagoSubscription;
+}) {
+  await params.supabase
+    .from("payments")
+    .update({
+      mp_subscription_id: params.subscription.id,
+      mp_subscription_status: params.subscription.status || null,
+      payer_email: params.subscription.payer_email || undefined,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", params.paymentRecordId);
+}
+
+function getAuthorizedPaymentLinkedPaymentId(
+  authorizedPayment: MercadoPagoAuthorizedPayment
+) {
+  const directPaymentId = authorizedPayment.payment?.id;
+  if (directPaymentId !== undefined && directPaymentId !== null) {
+    return String(directPaymentId);
+  }
+
+  return null;
 }
 
 export async function reconcileMercadoPagoPayment(params: {
@@ -226,6 +329,9 @@ export async function reconcileMercadoPagoPayment(params: {
   settings: OrganizationSettings | null;
   paymentId: string;
   source?: ReconcileMercadoPagoPaymentResult["source"];
+  authorizedPaymentId?: string | null;
+  subscriptionId?: string | null;
+  subscriptionStatus?: string | null;
 }): Promise<ReconcileMercadoPagoPaymentResult> {
   const mpConfig = getMercadoPagoConfig(params.settings);
   if (!mpConfig.configured || !mpConfig.config) {
@@ -262,7 +368,7 @@ export async function reconcileMercadoPagoPayment(params: {
   const { data: paymentRecord } = await params.supabase
     .from("payments")
     .select(
-      "id, organization_id, conversation_id, amount, currency, status, mp_payment_id, mp_preference_id, plan_name, duration_days"
+      "id, organization_id, conversation_id, amount, currency, status, mp_payment_id, mp_preference_id, mp_subscription_id, mp_subscription_status, mp_authorized_payment_id, billing_mode, payer_email, plan_name, duration_days"
     )
     .eq("id", paymentRef.paymentRecordId)
     .maybeSingle();
@@ -338,6 +444,10 @@ export async function reconcileMercadoPagoPayment(params: {
       supabase: params.supabase,
       paymentRecordId: record.id,
       mpPayment,
+      mpAuthorizedPaymentId: params.authorizedPaymentId,
+      mpSubscriptionId: params.subscriptionId || record.mp_subscription_id,
+      mpSubscriptionStatus:
+        params.subscriptionStatus || record.mp_subscription_status,
     });
 
     return {
@@ -356,6 +466,10 @@ export async function reconcileMercadoPagoPayment(params: {
       supabase: params.supabase,
       paymentRecordId: record.id,
       mpPayment,
+      mpAuthorizedPaymentId: params.authorizedPaymentId,
+      mpSubscriptionId: params.subscriptionId || record.mp_subscription_id,
+      mpSubscriptionStatus:
+        params.subscriptionStatus || record.mp_subscription_status,
     });
 
     const expiresAt = new Date();
@@ -394,6 +508,130 @@ export async function reconcileMercadoPagoPayment(params: {
     mpPaymentId: String(mpPayment.id),
     paymentStatus: mpPayment.status,
     alreadyProcessed,
+  };
+}
+
+export async function reconcileMercadoPagoSubscriptionById(params: {
+  supabase: SupabaseClient;
+  organizationId: string;
+  settings: OrganizationSettings | null;
+  subscriptionId: string;
+  source?: ReconcileMercadoPagoPaymentResult["source"];
+}): Promise<ReconcileMercadoPagoPaymentResult> {
+  const mpConfig = getMercadoPagoConfig(params.settings);
+  if (!mpConfig.configured || !mpConfig.config) {
+    throw new Error(
+      `[mercado-pago] organization ${params.organizationId} is not configured`
+    );
+  }
+
+  const subscription = await fetchMercadoPagoSubscription(
+    params.subscriptionId,
+    mpConfig.config.accessToken
+  );
+  const paymentRef = parsePaymentReference(subscription.external_reference);
+
+  if (!paymentRef) {
+    return {
+      status: "ignored",
+      source: params.source || "subscription",
+    };
+  }
+
+  if (paymentRef.organizationId !== params.organizationId) {
+    return {
+      status: "ignored",
+      source: params.source || "subscription",
+      paymentRecordId: paymentRef.paymentRecordId,
+      conversationId: paymentRef.conversationId,
+    };
+  }
+
+  await syncPaymentRecordSubscription({
+    supabase: params.supabase,
+    paymentRecordId: paymentRef.paymentRecordId,
+    subscription,
+  });
+
+  if (subscription.status === "cancelled") {
+    await params.supabase
+      .from("conversations")
+      .update({
+        subscription_status: "cancelled",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", paymentRef.conversationId)
+      .eq("organization_id", params.organizationId);
+
+    return {
+      status: "ignored",
+      source: params.source || "subscription",
+      paymentRecordId: paymentRef.paymentRecordId,
+      conversationId: paymentRef.conversationId,
+    };
+  }
+
+  return reconcileMercadoPagoPaymentByExternalReference({
+    supabase: params.supabase,
+    organizationId: params.organizationId,
+    settings: params.settings,
+    externalReference:
+      subscription.external_reference ||
+      JSON.stringify({
+        paymentRecordId: paymentRef.paymentRecordId,
+        conversationId: paymentRef.conversationId,
+        organizationId: paymentRef.organizationId,
+      }),
+    source: params.source || "subscription",
+  });
+}
+
+export async function reconcileMercadoPagoAuthorizedPayment(params: {
+  supabase: SupabaseClient;
+  organizationId: string;
+  settings: OrganizationSettings | null;
+  authorizedPaymentId: string;
+}): Promise<ReconcileMercadoPagoPaymentResult> {
+  const mpConfig = getMercadoPagoConfig(params.settings);
+  if (!mpConfig.configured || !mpConfig.config) {
+    throw new Error(
+      `[mercado-pago] organization ${params.organizationId} is not configured`
+    );
+  }
+
+  const authorizedPayment = await fetchMercadoPagoAuthorizedPayment(
+    params.authorizedPaymentId,
+    mpConfig.config.accessToken
+  );
+
+  const linkedPaymentId =
+    getAuthorizedPaymentLinkedPaymentId(authorizedPayment);
+
+  if (linkedPaymentId) {
+    return reconcileMercadoPagoPayment({
+      supabase: params.supabase,
+      organizationId: params.organizationId,
+      settings: params.settings,
+      paymentId: linkedPaymentId,
+      source: "authorized_payment",
+      authorizedPaymentId: params.authorizedPaymentId,
+      subscriptionId: authorizedPayment.preapproval_id || null,
+    });
+  }
+
+  if (authorizedPayment.preapproval_id) {
+    return reconcileMercadoPagoSubscriptionById({
+      supabase: params.supabase,
+      organizationId: params.organizationId,
+      settings: params.settings,
+      subscriptionId: authorizedPayment.preapproval_id,
+      source: "authorized_payment",
+    });
+  }
+
+  return {
+    status: "not_found",
+    source: "authorized_payment",
   };
 }
 
@@ -475,7 +713,9 @@ export async function reconcileMercadoPagoPaymentRecord(params: {
 }): Promise<ReconcileMercadoPagoPaymentResult> {
   const { data: paymentRecord } = await params.supabase
     .from("payments")
-    .select("id, organization_id, conversation_id, mp_payment_id, mp_preference_id")
+    .select(
+      "id, organization_id, conversation_id, mp_payment_id, mp_preference_id, mp_subscription_id, billing_mode"
+    )
     .eq("id", params.paymentRecordId)
     .maybeSingle();
 
@@ -493,6 +733,8 @@ export async function reconcileMercadoPagoPaymentRecord(params: {
     conversation_id: string;
     mp_payment_id: string | null;
     mp_preference_id: string | null;
+    mp_subscription_id: string | null;
+    billing_mode: MercadoPagoBillingMode | null;
   };
 
   if (record.organization_id !== params.organizationId) {
@@ -510,6 +752,19 @@ export async function reconcileMercadoPagoPaymentRecord(params: {
       organizationId: params.organizationId,
       settings: params.settings,
       paymentId: record.mp_payment_id,
+      source: "pending",
+    });
+  }
+
+  if (
+    getBillingMode(record.billing_mode) === "recurring" &&
+    record.mp_subscription_id
+  ) {
+    return reconcileMercadoPagoSubscriptionById({
+      supabase: params.supabase,
+      organizationId: params.organizationId,
+      settings: params.settings,
+      subscriptionId: record.mp_subscription_id,
       source: "pending",
     });
   }

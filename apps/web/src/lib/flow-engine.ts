@@ -35,6 +35,7 @@ import {
   getMercadoPagoConfig,
   createPaymentAndPreference,
   buildPaymentMessage,
+  type MercadoPagoBillingMode,
 } from "@/lib/mercado-pago";
 import { getOrganizationSettingsById } from "@/lib/organization";
 import {
@@ -95,6 +96,14 @@ const AUDIO_MESSAGE_ORDER_DELAY_MS = 350;
 const UPCOMING_AUDIO_PREWARM_LIMIT = 2;
 const preparedMediaUrlCache = new Map<string, string>();
 const pendingMediaUrlPreparations = new Map<string, Promise<string>>();
+const COMMON_PAYMENT_EMAIL_KEYS = [
+  "email",
+  "lead_email",
+  "user_email",
+  "contact_email",
+  "cliente_email",
+  "customer_email",
+];
 
 function findNextNodes(
   nodeId: string,
@@ -199,6 +208,46 @@ function shouldYieldBeforeGeneratePdf(
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getPaymentBillingMode(
+  value: MercadoPagoBillingMode | undefined
+): MercadoPagoBillingMode {
+  return value === "one_time" ? "one_time" : "recurring";
+}
+
+function isValidEmail(value: string | undefined | null) {
+  if (!value) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+function resolvePaymentPayerEmail(
+  paymentData: PaymentNodeData,
+  variables: Record<string, string>
+) {
+  const configuredKey = paymentData.payerEmailVariable?.trim();
+  if (configuredKey) {
+    const configuredValue = variables[configuredKey];
+    if (isValidEmail(configuredValue)) {
+      return configuredValue.trim();
+    }
+  }
+
+  for (const key of COMMON_PAYMENT_EMAIL_KEYS) {
+    const value = variables[key];
+    if (isValidEmail(value)) {
+      return value.trim();
+    }
+  }
+
+  for (const [key, value] of Object.entries(variables)) {
+    if (!key.toLowerCase().endsWith("_email")) continue;
+    if (isValidEmail(value)) {
+      return value.trim();
+    }
+  }
+
+  return null;
 }
 
 function getPostSendDelayMs(sendData: SendMessageNodeData) {
@@ -1895,9 +1944,37 @@ async function runFlowQueue(params: {
         } else {
         const settings = await getOrganizationSettingsById(params.organizationId);
         const mpConfig = getMercadoPagoConfig(settings);
+        const billingMode = getPaymentBillingMode(paymentData.billingMode);
+        const conversationVariables = await getConversationVariables(
+          params.supabase,
+          params.conversationId
+        );
+        const payerEmail =
+          billingMode === "recurring"
+            ? resolvePaymentPayerEmail(paymentData, conversationVariables)
+            : null;
 
         if (!mpConfig.configured || !mpConfig.config) {
           console.error("Flow engine: Mercado Pago not configured for org", params.organizationId);
+        } else if (billingMode === "recurring" && !payerEmail) {
+          const missingEmailMessage =
+            "Para liberar a assinatura recorrente, preciso ter um e-mail valido para o pagamento. Assim que esse e-mail estiver capturado no fluxo, eu gero o link automaticamente.";
+
+          await sendTextAndPersist({
+            supabase: params.supabase,
+            conversationId: params.conversationId,
+            contactPhone: params.contactPhone,
+            nodeId: current.id,
+            text: missingEmailMessage,
+            metaConfig: params.metaConfig,
+            inboundMessageId: params.inboundMessageId,
+          });
+
+          console.error("Flow engine: recurring payment node is missing payer email", {
+            conversationId: params.conversationId,
+            nodeId: current.id,
+          });
+          return "completed" as const;
         } else {
           const result = await createPaymentAndPreference({
             supabase: params.supabase,
@@ -1908,6 +1985,8 @@ async function runFlowQueue(params: {
             durationDays: paymentData.durationDays || 30,
             currency: paymentData.currency || "BRL",
             accessToken: mpConfig.config.accessToken,
+            billingMode,
+            payerEmail,
           });
 
           const paymentUrl = result.initPoint;
@@ -1915,7 +1994,7 @@ async function runFlowQueue(params: {
           if (paymentData.messageText?.trim()) {
             message = interpolateVariables(
               paymentData.messageText.replace(/\{\{payment_link\}\}/g, paymentUrl),
-              await getConversationVariables(params.supabase, params.conversationId)
+              conversationVariables
             );
           } else {
             message = buildPaymentMessage(paymentUrl);
@@ -1926,7 +2005,7 @@ async function runFlowQueue(params: {
             const bodyText = paymentData.messageText?.trim()
               ? interpolateVariables(
                   paymentData.messageText.replace(/\{\{payment_link\}\}/g, "").trim(),
-                  await getConversationVariables(params.supabase, params.conversationId)
+                  conversationVariables
                 )
               : `Para assinar o plano ${paymentData.planName || ""}, clique no botao abaixo:`.trim();
 

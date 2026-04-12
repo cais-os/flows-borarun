@@ -12,9 +12,9 @@ export async function PATCH(
   const body = await request.json();
 
   const status = body.status as string;
-  if (!status || !["active", "trial", "none"].includes(status)) {
+  if (!status || !["active", "trial", "cancelled", "none"].includes(status)) {
     return NextResponse.json(
-      { error: "Status deve ser 'active', 'trial' ou 'none'." },
+      { error: "Status deve ser 'active', 'trial', 'cancelled' ou 'none'." },
       { status: 400 }
     );
   }
@@ -43,6 +43,12 @@ export async function PATCH(
   if (status === "none") {
     update.subscription_plan = null;
     update.subscription_expires_at = null;
+  } else if (status === "cancelled") {
+    if (body.keepCurrentExpiry !== false) {
+      // Keep the current paid-through date; only future renewals should stop.
+    } else {
+      update.subscription_expires_at = null;
+    }
   } else {
     const plan = body.plan || "premium";
     const durationDays = body.durationDays || (status === "trial" ? 1 : 30);

@@ -8,6 +8,7 @@ import {
 import { getOrganizationSettingsById } from "@/lib/organization";
 import { buildStravaCoachContext } from "@/lib/strava";
 import { validateCronAuthorization } from "@/lib/internal-auth";
+import { hasConversationSubscriptionAccess } from "@/lib/subscription-utils";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -19,7 +20,7 @@ Regras:
 - Adapte com base no que realmente foi feito na ultima semana (Strava)
 - Considere o que foi discutido no chat (fadiga, dor, motivacao)
 - Mantenha coerencia com o plano original
-- Seja especifico: dia, tipo de treino, distancia, pace, RPE
+- Seja especifico: dia, tipo de treino, quilometragem em km, duracao quando fizer sentido, pace/ritmo e esforco
 - Use portugues brasileiro, formato conciso para WhatsApp (max 4 paragrafos)
 - Inclua dias de descanso
 
@@ -45,8 +46,10 @@ export async function GET(request: Request) {
   // Find conversations with weekly training enabled and matching today's day
   const { data: conversations } = await supabase
     .from("conversations")
-    .select("id, contact_phone, phone_number_id, organization_id, flow_variables, subscription_status")
-    .eq("subscription_status", "active");
+    .select(
+      "id, contact_phone, phone_number_id, organization_id, flow_variables, subscription_status, subscription_expires_at"
+    )
+    .in("subscription_status", ["active", "cancelled"]);
 
   if (!conversations || conversations.length === 0) {
     return NextResponse.json({ processed: 0 });
@@ -55,6 +58,16 @@ export async function GET(request: Request) {
   let processed = 0;
 
   for (const conv of conversations) {
+    if (
+      !hasConversationSubscriptionAccess(
+        conv.subscription_status as string | null,
+        (conv as { subscription_expires_at?: string | null })
+          .subscription_expires_at || null
+      )
+    ) {
+      continue;
+    }
+
     const vars = (conv.flow_variables as Record<string, string>) || {};
 
     // Check if weekly training is enabled and today is the right day

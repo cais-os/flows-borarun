@@ -2,12 +2,16 @@ import { NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
 import { getOrganizationSettingsById } from "@/lib/organization";
 import {
-  extractMercadoPagoPaymentNotification,
+  extractMercadoPagoNotification,
   getMercadoPagoConfig,
   type MercadoPagoNotificationPayload,
   verifyMercadoPagoWebhookSignature,
 } from "@/lib/mercado-pago";
-import { reconcileMercadoPagoPayment } from "@/lib/mercado-pago-reconciliation";
+import {
+  reconcileMercadoPagoAuthorizedPayment,
+  reconcileMercadoPagoPayment,
+  reconcileMercadoPagoSubscriptionById,
+} from "@/lib/mercado-pago-reconciliation";
 
 function parseLegacyMercadoPagoBody(rawBody: string): MercadoPagoNotificationPayload {
   const formData = new URLSearchParams(rawBody);
@@ -41,18 +45,19 @@ export async function POST(request: Request) {
       }
     }
 
-    const notification = extractMercadoPagoPaymentNotification({
+    const notification = extractMercadoPagoNotification({
       body,
       requestUrl: request.url,
     });
 
     console.log("[MP Webhook] Received:", {
       notificationType: notification.notificationType,
-      paymentId: notification.paymentId,
+      resourceId: notification.resourceId,
+      kind: notification.kind,
       action: body.action || null,
     });
 
-    if (!notification.isPaymentNotification || !notification.paymentId) {
+    if (!notification.isSupportedNotification || !notification.resourceId) {
       return NextResponse.json({ ok: true });
     }
 
@@ -95,7 +100,7 @@ export async function POST(request: Request) {
       if (!signatureVerified) {
         console.error("[MP Webhook] Invalid signature", {
           orgId,
-          paymentId: notification.paymentId,
+          resourceId: notification.resourceId,
         });
         return NextResponse.json(
           { ok: false, error: "Invalid webhook signature" },
@@ -105,17 +110,36 @@ export async function POST(request: Request) {
     }
 
     const supabase = createServerClient();
-    const result = await reconcileMercadoPagoPayment({
-      supabase,
-      organizationId: orgId,
-      settings,
-      paymentId: notification.paymentId,
-      source: "payment",
-    });
+    let result;
+
+    if (notification.kind === "payment") {
+      result = await reconcileMercadoPagoPayment({
+        supabase,
+        organizationId: orgId,
+        settings,
+        paymentId: notification.resourceId,
+        source: "payment",
+      });
+    } else if (notification.kind === "subscription_authorized_payment") {
+      result = await reconcileMercadoPagoAuthorizedPayment({
+        supabase,
+        organizationId: orgId,
+        settings,
+        authorizedPaymentId: notification.resourceId,
+      });
+    } else {
+      result = await reconcileMercadoPagoSubscriptionById({
+        supabase,
+        organizationId: orgId,
+        settings,
+        subscriptionId: notification.resourceId,
+        source: "subscription",
+      });
+    }
 
     console.log("[MP Webhook] Reconciled payment", {
       orgId,
-      paymentId: notification.paymentId,
+      resourceId: notification.resourceId,
       result,
     });
 

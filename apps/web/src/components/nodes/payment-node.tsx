@@ -14,6 +14,10 @@ export function PaymentNode({ id, data, selected }: NodeProps) {
   const amount = nodeData.amount
     ? `R$ ${Number(nodeData.amount).toFixed(2)}`
     : "";
+  const billingLabel =
+    (nodeData.billingMode || "recurring") === "recurring"
+      ? "Mensal recorrente"
+      : "Avulso";
 
   return (
     <NodeWrapper
@@ -29,6 +33,8 @@ export function PaymentNode({ id, data, selected }: NodeProps) {
             {nodeData.planName}
             {nodeData.planName && amount ? " · " : ""}
             {amount}
+            {(nodeData.planName || amount) && billingLabel ? " · " : ""}
+            {billingLabel}
           </div>
         )}
         <p className="text-gray-500 line-clamp-2 text-xs">

@@ -7,6 +7,7 @@ import {
   getMetaConfig,
   getMetaConfigFromSettings,
   markMessageAsRead,
+  sendMetaWhatsAppCtaUrlMessage,
   sendMetaWhatsAppTextMessage,
   type MetaConfig,
   sendTypingIndicator,
@@ -33,6 +34,14 @@ import {
   resolveAppOrigin,
   syncStravaActivitiesForConversation,
 } from "@/lib/strava";
+import {
+  buildSubscriptionCancellationUrl,
+  createSubscriptionCancellationToken,
+  detectSubscriptionCancellationIntent,
+  findCancellableSubscriptionForConversation,
+  formatSubscriptionValidity,
+  hasConversationSubscriptionAccess,
+} from "@/lib/subscription-utils";
 
 async function simulateTyping(
   messageId: string | undefined,
@@ -851,11 +860,120 @@ export async function POST(request: Request) {
             continue;
           }
 
+          if (type === "text" && detectSubscriptionCancellationIntent(content)) {
+            const cancellableSubscription =
+              await findCancellableSubscriptionForConversation({
+                supabase,
+                conversationId,
+                organizationId,
+              });
+
+            if (cancellableSubscription?.subscriptionStatus === "cancelled") {
+              const validUntil = formatSubscriptionValidity(
+                cancellableSubscription.expiresAt
+              );
+              const alreadyCancelledMsg = [
+                "Sua renovacao automatica ja esta cancelada.",
+                validUntil
+                  ? `Seu acesso continua ativo ate ${validUntil}.`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" ");
+              await simulateTyping(message.id, alreadyCancelledMsg, metaConfig);
+              const alreadyCancelledResult = await sendMetaWhatsAppTextMessage(
+                {
+                  to: contactPhone,
+                  body: alreadyCancelledMsg,
+                },
+                metaConfig
+              );
+              await supabase.from("messages").insert({
+                conversation_id: conversationId,
+                content: alreadyCancelledMsg,
+                type: "text",
+                sender: "bot",
+                wa_message_id: alreadyCancelledResult.messageId,
+              });
+              continue;
+            }
+
+            if (cancellableSubscription) {
+              const token = createSubscriptionCancellationToken({
+                paymentRecordId: cancellableSubscription.paymentRecordId,
+                conversationId,
+                organizationId,
+                subscriptionId: cancellableSubscription.subscriptionId,
+              });
+
+              if (token) {
+                const cancellationUrl =
+                  buildSubscriptionCancellationUrl(token);
+                const validUntil = formatSubscriptionValidity(
+                  cancellableSubscription.expiresAt
+                );
+                const cancellationText = [
+                  "Posso te ajudar com isso.",
+                  "Se quiser cancelar a renovacao automatica do Premium, toque no botao abaixo.",
+                  validUntil
+                    ? `Seu acesso atual continua normalmente ate ${validUntil}.`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(" ");
+
+                await simulateTyping(message.id, cancellationText, metaConfig);
+                const cancelResult = await sendMetaWhatsAppCtaUrlMessage(
+                  {
+                    to: contactPhone,
+                    bodyText: cancellationText,
+                    buttonText: "Cancelar assinatura",
+                    url: cancellationUrl,
+                  },
+                  metaConfig
+                );
+
+                await supabase.from("messages").insert({
+                  conversation_id: conversationId,
+                  content: cancellationText,
+                  type: "interactive",
+                  sender: "bot",
+                  wa_message_id: cancelResult.messageId,
+                  metadata: { cancellation_url: cancellationUrl },
+                });
+                continue;
+              }
+            }
+
+            const noCancelableSubscriptionMsg =
+              "No momento nao encontrei uma assinatura recorrente ativa para cancelar por aqui. Se voce quiser, eu posso te orientar pelo status atual da sua assinatura.";
+            await simulateTyping(
+              message.id,
+              noCancelableSubscriptionMsg,
+              metaConfig
+            );
+            const noCancelableResult = await sendMetaWhatsAppTextMessage(
+              {
+                to: contactPhone,
+                body: noCancelableSubscriptionMsg,
+              },
+              metaConfig
+            );
+            await supabase.from("messages").insert({
+              conversation_id: conversationId,
+              content: noCancelableSubscriptionMsg,
+              type: "text",
+              sender: "bot",
+              wa_message_id: noCancelableResult.messageId,
+            });
+            continue;
+          }
+
           // Check subscription for AI access
-          const hasActiveSubscription =
-            (existing?.subscription_status === "active" || existing?.subscription_status === "trial") &&
-            existing?.subscription_expires_at &&
-            new Date(existing.subscription_expires_at as string) > new Date();
+          const hasActiveSubscription = hasConversationSubscriptionAccess(
+            existing?.subscription_status,
+            existing?.subscription_expires_at as string | null | undefined
+          );
 
           if (!hasActiveSubscription) {
             const nudgeMsg = resolvedOrganization.settings?.subscription_nudge_message
