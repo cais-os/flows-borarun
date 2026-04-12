@@ -89,6 +89,12 @@ interface TriggerMatchContext {
 
 const FLOW_CONTINUATION_SOFT_LIMIT_MS = 50_000;
 const PDF_CONTINUATION_BUFFER_MS = 1_000;
+const PDF_POST_SEND_SETTLE_MS = 750;
+const DEFAULT_MESSAGE_ORDER_DELAY_MS = 900;
+const AUDIO_MESSAGE_ORDER_DELAY_MS = 350;
+const UPCOMING_AUDIO_PREWARM_LIMIT = 2;
+const preparedMediaUrlCache = new Map<string, string>();
+const pendingMediaUrlPreparations = new Map<string, Promise<string>>();
 
 function findNextNodes(
   nodeId: string,
@@ -189,6 +195,16 @@ function shouldYieldBeforeGeneratePdf(
     remainingQueue.length > 0 &&
     Date.now() - startedAt >= PDF_CONTINUATION_BUFFER_MS
   );
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getPostSendDelayMs(sendData: SendMessageNodeData) {
+  return sendData.messageType === "audio"
+    ? AUDIO_MESSAGE_ORDER_DELAY_MS
+    : DEFAULT_MESSAGE_ORDER_DELAY_MS;
 }
 
 function interpolateVariables(
@@ -690,6 +706,48 @@ async function generateAiImage(prompt: string): Promise<string> {
   return b64;
 }
 
+function getStorageFileExtension(contentType: string, fileName?: string) {
+  const fileNameExt = fileName?.split(/[?#]/)[0]?.split(".").pop()?.toLowerCase();
+  if (fileNameExt) {
+    return fileNameExt;
+  }
+
+  if (contentType === "audio/ogg") return "ogg";
+
+  const rawExt = contentType.split("/")[1] || "bin";
+  return rawExt.split("+")[0].toLowerCase();
+}
+
+async function doesPublicAssetExist(publicUrl: string) {
+  try {
+    const headResponse = await fetch(publicUrl, {
+      method: "HEAD",
+      cache: "no-store",
+    });
+
+    if (headResponse.ok) {
+      return true;
+    }
+
+    if (headResponse.status !== 405) {
+      return false;
+    }
+
+    const fallbackResponse = await fetch(publicUrl, {
+      method: "GET",
+      headers: {
+        Range: "bytes=0-0",
+      },
+      cache: "no-store",
+    });
+
+    return fallbackResponse.ok;
+  } catch (error) {
+    console.warn("[resolveStorageMediaUrl] failed to verify cached media", error);
+    return false;
+  }
+}
+
 async function resolveStorageMediaUrl(params: {
   supabase: SupabaseClient;
   bucket: string;
@@ -698,73 +756,168 @@ async function resolveStorageMediaUrl(params: {
   mediaUrl: string;
   fallbackContentType: string;
   convertAudioToOgg?: boolean;
+  fileName?: string;
 }) {
   if (!params.mediaUrl.startsWith("data:")) {
     return params.mediaUrl;
   }
 
-  const base64Data = params.mediaUrl.split(",")[1];
   const mimeMatch = params.mediaUrl.match(/data:([^;]+)/);
   const sourceContentType = mimeMatch?.[1] || params.fallbackContentType;
-  const needsAudioConversion =
-    params.convertAudioToOgg &&
+  const shouldConvertAudioToOgg =
+    Boolean(params.convertAudioToOgg) &&
     sourceContentType.startsWith("audio/") &&
-    needsOggConversion(sourceContentType);
-  let contentType = needsAudioConversion ? "audio/ogg" : sourceContentType;
-  let buffer = Buffer.from(base64Data || "", "base64");
-
-  const ext = contentType === "audio/ogg" ? "ogg" : (contentType.split("/")[1] || "bin");
+    needsOggConversion(sourceContentType, params.fileName);
+  const targetContentType = shouldConvertAudioToOgg
+    ? "audio/ogg"
+    : sourceContentType;
   const fileHash = createHash("sha1").update(params.mediaUrl).digest("hex");
   const cachedFolder = `${params.filePrefix}-cache`;
-  const cachedFileName = `${fileHash}.${ext}`;
-  const cachedFilePath = `${cachedFolder}/${cachedFileName}`;
+  const targetPath = `${cachedFolder}/${fileHash}.${getStorageFileExtension(
+    targetContentType,
+    params.fileName
+  )}`;
+  const cacheKey = `${params.bucket}:${targetPath}`;
 
-  const { data: existingFiles, error: listError } = await params.supabase.storage
-    .from(params.bucket)
-    .list(cachedFolder, {
-      search: cachedFileName,
-      limit: 1,
-    });
-
-  if (listError) {
-    console.warn("[resolveStorageMediaUrl] failed to check cached media", listError);
+  const cachedUrl = preparedMediaUrlCache.get(cacheKey);
+  if (cachedUrl) {
+    return cachedUrl;
   }
 
-  if (existingFiles?.some((file) => file.name === cachedFileName)) {
+  const pendingPreparation = pendingMediaUrlPreparations.get(cacheKey);
+  if (pendingPreparation) {
+    return pendingPreparation;
+  }
+
+  const preparation = (async () => {
+    const { data: targetUrlData } = params.supabase.storage
+      .from(params.bucket)
+      .getPublicUrl(targetPath);
+
+    if (await doesPublicAssetExist(targetUrlData.publicUrl)) {
+      preparedMediaUrlCache.set(cacheKey, targetUrlData.publicUrl);
+      return targetUrlData.publicUrl;
+    }
+
+    const base64Data = params.mediaUrl.split(",")[1];
+    let buffer = Buffer.from(base64Data || "", "base64");
+    let uploadPath = targetPath;
+    let uploadContentType = targetContentType;
+
+    if (shouldConvertAudioToOgg) {
+      try {
+        const sourceFormat = getAudioFormat(sourceContentType, params.fileName);
+        buffer = Buffer.from(await convertToOgg(buffer, sourceFormat));
+      } catch (error) {
+        console.error(
+          "[resolveStorageMediaUrl] OGG conversion failed, using original:",
+          error
+        );
+        uploadContentType = sourceContentType;
+        uploadPath = `${cachedFolder}/${fileHash}.${getStorageFileExtension(
+          sourceContentType,
+          params.fileName
+        )}`;
+
+        const { data: fallbackUrlData } = params.supabase.storage
+          .from(params.bucket)
+          .getPublicUrl(uploadPath);
+
+        if (await doesPublicAssetExist(fallbackUrlData.publicUrl)) {
+          preparedMediaUrlCache.set(cacheKey, fallbackUrlData.publicUrl);
+          preparedMediaUrlCache.set(
+            `${params.bucket}:${uploadPath}`,
+            fallbackUrlData.publicUrl
+          );
+          return fallbackUrlData.publicUrl;
+        }
+      }
+    }
+
+    const { error: uploadError } = await params.supabase.storage
+      .from(params.bucket)
+      .upload(uploadPath, buffer, { contentType: uploadContentType, upsert: false });
+
+    if (uploadError && !uploadError.message?.toLowerCase().includes("already")) {
+      throw uploadError;
+    }
+
     const { data: urlData } = params.supabase.storage
       .from(params.bucket)
-      .getPublicUrl(cachedFilePath);
-    return urlData.publicUrl;
-  }
+      .getPublicUrl(uploadPath);
 
-  // Convert audio to OGG/OPUS for WhatsApp voice notes
-  if (needsAudioConversion) {
-    try {
-      const sourceFormat = getAudioFormat(sourceContentType);
-      buffer = Buffer.from(await convertToOgg(buffer, sourceFormat));
-      contentType = "audio/ogg";
-    } catch (error) {
-      console.error("[resolveStorageMediaUrl] OGG conversion failed, using original:", error);
-      contentType = sourceContentType;
+    preparedMediaUrlCache.set(cacheKey, urlData.publicUrl);
+    preparedMediaUrlCache.set(`${params.bucket}:${uploadPath}`, urlData.publicUrl);
+    return urlData.publicUrl;
+  })();
+
+  pendingMediaUrlPreparations.set(cacheKey, preparation);
+
+  try {
+    return await preparation;
+  } finally {
+    pendingMediaUrlPreparations.delete(cacheKey);
+  }
+}
+
+function getUpcomingStaticAudioNodes(queue: FlowNode[], limit: number) {
+  const upcomingAudioNodes: Array<{
+    nodeId: string;
+    data: SendMessageNodeData;
+  }> = [];
+
+  for (const node of queue) {
+    if (node.data.type !== "sendMessage") continue;
+
+    const sendData = node.data as SendMessageNodeData;
+    if (
+      sendData.messageType === "audio" &&
+      sendData.audioSource !== "dynamic" &&
+      typeof sendData.mediaUrl === "string" &&
+      sendData.mediaUrl.startsWith("data:")
+    ) {
+      upcomingAudioNodes.push({
+        nodeId: node.id,
+        data: sendData,
+      });
+    }
+
+    if (upcomingAudioNodes.length >= limit) {
+      break;
     }
   }
 
-  const uploadTargetPath =
-    contentType === sourceContentType ? cachedFilePath : `${cachedFolder}/${fileHash}.${contentType === "audio/ogg" ? "ogg" : (contentType.split("/")[1] || "bin")}`;
+  return upcomingAudioNodes;
+}
 
-  const { error: uploadError } = await params.supabase.storage
-    .from(params.bucket)
-    .upload(uploadTargetPath, buffer, { contentType, upsert: false });
+async function prewarmUpcomingStaticAudioMedia(params: {
+  supabase: SupabaseClient;
+  conversationId: string;
+  queue: FlowNode[];
+}) {
+  const audioNodes = getUpcomingStaticAudioNodes(
+    params.queue,
+    UPCOMING_AUDIO_PREWARM_LIMIT
+  );
 
-  if (uploadError && !uploadError.message?.toLowerCase().includes("already")) {
-    throw uploadError;
+  if (audioNodes.length === 0) {
+    return;
   }
 
-  const { data: urlData } = params.supabase.storage
-    .from(params.bucket)
-    .getPublicUrl(uploadTargetPath);
-
-  return urlData.publicUrl;
+  await Promise.allSettled(
+    audioNodes.map(({ data }) =>
+      resolveStorageMediaUrl({
+        supabase: params.supabase,
+        bucket: "audio",
+        filePrefix: "audio",
+        conversationId: params.conversationId,
+        mediaUrl: data.mediaUrl as string,
+        fallbackContentType: "audio/mpeg",
+        convertAudioToOgg: true,
+        fileName: data.fileName,
+      })
+    )
+  );
 }
 
 async function executeSendMessageNode(params: {
@@ -889,6 +1042,7 @@ async function executeSendMessageNode(params: {
         mediaUrl: params.data.mediaUrl,
         fallbackContentType: "audio/mpeg",
         convertAudioToOgg: true,
+        fileName: params.data.fileName,
       });
 
       const result = await sendMetaWhatsAppAudioMessage(
@@ -968,6 +1122,7 @@ async function executeSendMessageNode(params: {
         conversationId: params.conversationId,
         mediaUrl: params.data.mediaUrl,
         fallbackContentType: "video/mp4",
+        fileName: params.data.fileName,
       });
       const caption = params.data.videoCaption
         ? interpolateVariables(params.data.videoCaption, flowVariables)
@@ -1503,8 +1658,8 @@ async function runFlowQueue(params: {
       }
       // Non-interactive or single-path interactive → continues automatically
 
-      // Small delay between consecutive sends to preserve WhatsApp delivery order
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // Keep a short ordering buffer, but avoid long gaps between audio sends.
+      await delay(getPostSendDelayMs(sendData));
 
       // Touch updated_at so the webhook staleness check knows the flow is still active
       await params.supabase
@@ -1523,6 +1678,12 @@ async function runFlowQueue(params: {
     }
 
     if (data.type === "generatePdf") {
+      const audioWarmupPromise = prewarmUpcomingStaticAudioMedia({
+        supabase: params.supabase,
+        conversationId: params.conversationId,
+        queue,
+      });
+
       await executeGeneratePdfNode({
         supabase: params.supabase,
         organizationId: params.organizationId,
@@ -1533,8 +1694,8 @@ async function runFlowQueue(params: {
         data: data as GeneratePdfNodeData,
         inboundMessageId: params.inboundMessageId,
       });
-      // Wait for WhatsApp to deliver the PDF before sending subsequent messages
-      await new Promise((resolve) => setTimeout(resolve, 5000));
+      // Give WhatsApp a brief settle window and let upcoming audio cache warm up.
+      await Promise.race([audioWarmupPromise, delay(PDF_POST_SEND_SETTLE_MS)]);
 
       // Touch updated_at so the webhook staleness check knows the flow is still active
       await params.supabase

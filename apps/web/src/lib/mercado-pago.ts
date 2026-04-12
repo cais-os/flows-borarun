@@ -36,9 +36,14 @@ export function getMercadoPagoConfig(
 
 type VerifyMercadoPagoWebhookSignatureParams = {
   body: {
+    action?: string;
+    topic?: string;
+    type?: string;
     data?: {
       id?: string | number;
     };
+    id?: string | number;
+    resource?: string;
   };
   requestIdHeader: string | null;
   requestUrl: string;
@@ -82,6 +87,60 @@ function getMercadoPagoWebhookDataId(
   }
 
   return new URL(requestUrl).searchParams.get("data.id");
+}
+
+export type MercadoPagoNotificationPayload = {
+  action?: string;
+  topic?: string;
+  type?: string;
+  data?: {
+    id?: string | number;
+  };
+  id?: string | number;
+  resource?: string;
+};
+
+export function extractMercadoPagoPaymentNotification(params: {
+  body: MercadoPagoNotificationPayload;
+  requestUrl: string;
+}) {
+  const url = new URL(params.requestUrl);
+  const notificationType =
+    params.body.type ||
+    params.body.topic ||
+    url.searchParams.get("type") ||
+    url.searchParams.get("topic") ||
+    null;
+
+  const paymentId =
+    params.body.data?.id !== undefined && params.body.data.id !== null
+      ? String(params.body.data.id)
+      : params.body.id !== undefined && params.body.id !== null
+        ? String(params.body.id)
+        : url.searchParams.get("data.id") ||
+          url.searchParams.get("id") ||
+          params.body.resource?.match(/\/v1\/payments\/(\d+)/)?.[1] ||
+          null;
+
+  const isPaymentNotification =
+    Boolean(paymentId) &&
+    (
+      notificationType === "payment" ||
+      notificationType === "payment.created" ||
+      notificationType === "payment.updated" ||
+      params.body.action?.startsWith("payment.") ||
+      params.body.resource?.includes("/v1/payments/")
+    );
+
+  return {
+    notificationType,
+    paymentId,
+    isPaymentNotification,
+    isSignedWebhookShape:
+      params.body.type === "payment" &&
+      params.body.data?.id !== undefined &&
+      params.body.data?.id !== null,
+  };
 }
 
 function safeCompareHex(expected: string, received: string) {
@@ -183,11 +242,11 @@ export async function createPaymentAndPreference(
       },
     ],
     back_urls: {
-      success: `${origin}/mercadopago/status?s=success`,
-      failure: `${origin}/mercadopago/status?s=failure`,
-      pending: `${origin}/mercadopago/status?s=pending`,
+      success: `${origin}/mercadopago/status?s=success&org=${params.organizationId}`,
+      failure: `${origin}/mercadopago/status?s=failure&org=${params.organizationId}`,
+      pending: `${origin}/mercadopago/status?s=pending&org=${params.organizationId}`,
     },
-    notification_url: `${origin}/api/mercadopago/webhook?org=${params.organizationId}`,
+    notification_url: `${origin}/api/mercadopago/webhook?org=${params.organizationId}&source_news=webhooks`,
     external_reference: externalReference,
     auto_return: "approved",
   };
@@ -235,6 +294,14 @@ export interface MercadoPagoPayment {
   payer: { email: string } | null;
 }
 
+export interface MercadoPagoPreference {
+  id: string;
+  init_point: string;
+  external_reference: string | null;
+  notification_url: string | null;
+  auto_return: string | null;
+}
+
 export async function fetchMercadoPagoPayment(
   paymentId: string,
   accessToken: string
@@ -249,6 +316,54 @@ export async function fetchMercadoPagoPayment(
   }
 
   return (await res.json()) as MercadoPagoPayment;
+}
+
+export async function fetchMercadoPagoPreference(
+  preferenceId: string,
+  accessToken: string
+): Promise<MercadoPagoPreference> {
+  const res = await fetch(`${MP_API_BASE}/checkout/preferences/${preferenceId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(
+      `Failed to fetch MP preference ${preferenceId} (${res.status}): ${errText}`
+    );
+  }
+
+  return (await res.json()) as MercadoPagoPreference;
+}
+
+export async function searchMercadoPagoPaymentsByExternalReference(
+  externalReference: string,
+  accessToken: string
+): Promise<MercadoPagoPayment[]> {
+  const url = new URL(`${MP_API_BASE}/v1/payments/search`);
+  url.searchParams.set("sort", "date_created");
+  url.searchParams.set("criteria", "desc");
+  url.searchParams.set("limit", "10");
+  url.searchParams.set("external_reference", externalReference);
+
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(
+      `Failed to search MP payments by external reference (${res.status}): ${errText}`
+    );
+  }
+
+  const payload = (await res.json()) as {
+    results?: MercadoPagoPayment[];
+  };
+
+  return payload.results || [];
 }
 
 // ---------------------------------------------------------------------------
