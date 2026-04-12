@@ -14,6 +14,7 @@ import type {
   StravaConnectNodeData,
   PaymentNodeData,
   WhatsAppFlowNodeData,
+  WaitForPlayedNodeData,
 } from "@/types/node-data";
 import {
   extractFieldsFromText,
@@ -716,6 +717,7 @@ async function executeSendMessageNode(params: {
         params.metaConfig
       );
 
+
       await params.supabase.from("messages").insert({
         conversation_id: params.conversationId,
         content: params.data.fileName || "Audio",
@@ -758,6 +760,7 @@ async function executeSendMessageNode(params: {
         },
         params.metaConfig
       );
+
 
       await params.supabase.from("messages").insert({
         conversation_id: params.conversationId,
@@ -931,6 +934,7 @@ async function executeSendMessageNode(params: {
       console.error("Flow engine: failed to send image", error);
     }
   }
+
 }
 
 async function executeGeneratePdfNode(params: {
@@ -1207,6 +1211,47 @@ async function runFlowQueue(params: {
         .update({ timeout_at: timeoutAt })
         .eq("id", params.conversationId);
 
+      return "paused" as const;
+    }
+
+    if (data.type === "waitForPlayed") {
+      const playedData = data as WaitForPlayedNodeData;
+      const timeoutMinutes = playedData.timeoutMinutes || 2;
+
+      // Find the last audio message sent by the bot in this conversation
+      const { data: lastAudio } = await params.supabase
+        .from("messages")
+        .select("wa_message_id")
+        .eq("conversation_id", params.conversationId)
+        .eq("sender", "bot")
+        .eq("type", "audio")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const variables = await getConversationVariables(
+        params.supabase,
+        params.conversationId
+      );
+      if (lastAudio?.wa_message_id) {
+        variables.__wait_played_msg_id = lastAudio.wa_message_id;
+      }
+
+      const timeoutAt = new Date(
+        Date.now() + timeoutMinutes * 60 * 1000
+      ).toISOString();
+
+      await params.supabase
+        .from("conversations")
+        .update({ flow_variables: variables, timeout_at: timeoutAt })
+        .eq("id", params.conversationId);
+
+      await pauseFlow({
+        supabase: params.supabase,
+        conversationId: params.conversationId,
+        currentNodeId: current.id,
+        queue,
+      });
       return "paused" as const;
     }
 
@@ -2024,6 +2069,13 @@ export async function resumeFlow(
       nodes,
       "responded"
     );
+  } else if (currentNode.data.type === "waitForPlayed") {
+    // Clean up audio-played wait marker and timeout
+    delete variables.__wait_played_msg_id;
+    await supabase
+      .from("conversations")
+      .update({ timeout_at: null })
+      .eq("id", conversationId);
   } else if (currentNode.data.type === "sendMessage") {
     const sendData = currentNode.data as SendMessageNodeData;
     const interactiveType = getSendMessageInteractiveType(sendData);
@@ -2243,7 +2295,18 @@ export async function resumeFlowOnTimeout(
     (node) => node.id === conversation.current_node_id
   );
 
-  if (!currentNode || currentNode.data.type !== "waitTimer") return;
+  if (!currentNode) return;
+
+  const isWaitTimer = currentNode.data.type === "waitTimer";
+  const isWaitForPlayed = currentNode.data.type === "waitForPlayed";
+
+  if (!isWaitTimer && !isWaitForPlayed) return;
+
+  // Clean up wait-played marker if present
+  const vars = (conversation.flow_variables as Record<string, string>) || {};
+  if (isWaitForPlayed) {
+    delete vars.__wait_played_msg_id;
+  }
 
   // Clear timeout and set running
   await supabase
@@ -2253,13 +2316,15 @@ export async function resumeFlowOnTimeout(
       status: "running",
       current_node_id: null,
       flow_node_queue: null,
-      flow_variables: conversation.flow_variables,
+      flow_variables: vars,
       updated_at: new Date().toISOString(),
     })
     .eq("id", conversationId);
 
-  // Follow "no_response" handle
-  const nextNodes = findNextNodes(currentNode.id, edges, nodes, "no_response");
+  // waitTimer → follow "no_response" handle; waitForPlayed → follow default edges
+  const nextNodes = isWaitTimer
+    ? findNextNodes(currentNode.id, edges, nodes, "no_response")
+    : findNextNodes(currentNode.id, edges, nodes);
 
   const queueFromIds = ((conversation.flow_node_queue as string[]) || [])
     .map((id) => nodes.find((node) => node.id === id))

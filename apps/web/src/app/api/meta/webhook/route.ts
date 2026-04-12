@@ -253,6 +253,9 @@ export async function POST(request: Request) {
       if (!value) continue;
 
       for (const message of value.messages || []) {
+        // Skip reactions (emoji on a message) — they are not real messages
+        if (message.type === "reaction") continue;
+
         const contactPhone = message.from || "";
         const contactName =
           value.contacts?.[0]?.profile?.name || contactPhone;
@@ -669,6 +672,16 @@ export async function POST(request: Request) {
               continue;
             }
 
+            if (currentNodeType === "waitForPlayed") {
+              // User sent a message while waiting for audio to be played — resume
+              await resumeFlow(supabase, conversationId, contactPhone, content, {
+                inboundMessageId: message.id,
+                organizationId,
+                metaConfig,
+              });
+              continue;
+            }
+
             if (currentNodeType === "whatsappFlow") {
               // WhatsApp Flow form response via nfm_reply
               const flowResponseData =
@@ -896,6 +909,50 @@ export async function POST(request: Request) {
           status: status.status,
           recipientId: status.recipient_id,
         });
+
+        // Resume paused flow when user plays an audio we're waiting on
+        if (status.status === "played" && status.id) {
+          try {
+            const { data: msg } = await supabase
+              .from("messages")
+              .select("conversation_id")
+              .eq("wa_message_id", status.id)
+              .maybeSingle();
+
+            if (msg?.conversation_id) {
+              const { data: conv } = await supabase
+                .from("conversations")
+                .select("status, flow_variables, contact_phone, organization_id")
+                .eq("id", msg.conversation_id)
+                .eq("status", "paused")
+                .maybeSingle();
+
+              const vars = (conv?.flow_variables as Record<string, string>) || {};
+              if (conv && vars.__wait_played_msg_id === status.id) {
+                delete vars.__wait_played_msg_id;
+                await supabase
+                  .from("conversations")
+                  .update({ flow_variables: vars, timeout_at: null })
+                  .eq("id", msg.conversation_id);
+
+                const orgId = conv.organization_id as string;
+                const orgSettings = await getOrganizationSettingsById(orgId);
+                const { config: orgMetaConfig } = getMetaConfigFromSettings(orgSettings);
+
+                await resumeFlow(supabase, msg.conversation_id, conv.contact_phone, "", {
+                  organizationId: orgId,
+                  metaConfig: orgMetaConfig,
+                });
+                console.log("[webhook] resumed flow after audio played", {
+                  conversationId: msg.conversation_id,
+                  messageId: status.id,
+                });
+              }
+            }
+          } catch (error) {
+            console.error("[webhook] failed to resume on audio played", error);
+          }
+        }
       }
     }
   }

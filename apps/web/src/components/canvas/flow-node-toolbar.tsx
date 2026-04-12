@@ -14,6 +14,7 @@ import {
   Link,
   CreditCard,
   ListChecks,
+  Headphones,
 } from "lucide-react";
 import { NODE_TYPES } from "@/types/flow";
 import { NODE_CONFIG } from "@/lib/constants";
@@ -86,6 +87,11 @@ const nodeItems = [
     type: NODE_TYPES.WHATSAPP_FLOW,
     icon: <ListChecks size={16} />,
     ...NODE_CONFIG[NODE_TYPES.WHATSAPP_FLOW],
+  },
+  {
+    type: NODE_TYPES.WAIT_FOR_PLAYED,
+    icon: <Headphones size={16} />,
+    ...NODE_CONFIG[NODE_TYPES.WAIT_FOR_PLAYED],
   },
 ];
 

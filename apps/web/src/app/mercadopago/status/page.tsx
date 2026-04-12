@@ -27,7 +27,7 @@ const statusCopy = {
   failure: {
     title: "Pagamento nao aprovado",
     description:
-      "Nao foi possivel concluir o pagamento. Tente novamente pelo link enviado no WhatsApp.",
+      "Nao foi possivel concluir o pagamento. Tente novamente clicando no botao abaixo.",
     icon: CircleAlert,
     tone: "text-rose-600",
   },
@@ -36,13 +36,32 @@ const statusCopy = {
 export default async function MercadoPagoStatusPage({
   searchParams,
 }: {
-  searchParams: Promise<{ s?: string }>;
+  searchParams: Promise<{
+    s?: string;
+    preference_id?: string;
+    external_reference?: string;
+  }>;
 }) {
   const params = await searchParams;
   const current =
     statusCopy[(params.s as keyof typeof statusCopy) || "success"] ||
     statusCopy.success;
   const Icon = current.icon;
+
+  let retryUrl: string | null = null;
+
+  if (params.s === "failure" && params.preference_id && params.external_reference) {
+    try {
+      const ref = JSON.parse(params.external_reference) as {
+        organizationId?: string;
+      };
+      if (ref.organizationId) {
+        retryUrl = `/api/mercadopago/retry?preference_id=${encodeURIComponent(params.preference_id)}&org=${encodeURIComponent(ref.organizationId)}`;
+      }
+    } catch {
+      // invalid external_reference — no retry button
+    }
+  }
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-100 px-4">
@@ -58,10 +77,16 @@ export default async function MercadoPagoStatusPage({
             </CardDescription>
           </div>
         </CardHeader>
-        <CardContent className="flex justify-center">
-          <Button asChild className="rounded-xl bg-slate-900 hover:bg-slate-800">
-            <Link href="/">Fechar</Link>
-          </Button>
+        <CardContent className="flex justify-center gap-3">
+          {retryUrl ? (
+            <Button asChild className="rounded-xl bg-emerald-600 hover:bg-emerald-700">
+              <a href={retryUrl}>Tentar novamente</a>
+            </Button>
+          ) : (
+            <Button asChild className="rounded-xl bg-slate-900 hover:bg-slate-800">
+              <Link href="/">Fechar</Link>
+            </Button>
+          )}
         </CardContent>
       </Card>
     </main>

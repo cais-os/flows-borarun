@@ -10,7 +10,8 @@ export type NodeData =
   | AiCollectorNodeData
   | StravaConnectNodeData
   | PaymentNodeData
-  | WhatsAppFlowNodeData;
+  | WhatsAppFlowNodeData
+  | WaitForPlayedNodeData;
 
 export type CaptureMode = "full" | "summary";
 export type ReplyMatchType = "contains" | "exact" | "startsWith" | "any";
@@ -215,5 +216,12 @@ export type WhatsAppFlowNodeData = {
   firstScreenId?: string;
   /** Draft mode — send as draft for testing */
   draftMode?: boolean;
+  [key: string]: unknown;
+};
+
+export type WaitForPlayedNodeData = {
+  type: "waitForPlayed";
+  label: string;
+  timeoutMinutes?: number;
   [key: string]: unknown;
 };

@@ -129,10 +129,7 @@ export function mergeFlowsWithLocalCache(remoteFlows: Flow[]): Flow[] {
       });
     }
 
-    return normalizeFlow({
-      ...remoteFlow,
-      isActive: cachedFlow.isActive,
-    });
+    return normalizeFlow(remoteFlow);
   });
 
   const localOnlyFlows = cachedFlows.filter(

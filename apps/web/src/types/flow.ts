@@ -25,6 +25,7 @@ export const NODE_TYPES = {
   STRAVA_CONNECT: "stravaConnect",
   PAYMENT: "payment",
   WHATSAPP_FLOW: "whatsappFlow",
+  WAIT_FOR_PLAYED: "waitForPlayed",
 } as const;
 
 export type NodeType = (typeof NODE_TYPES)[keyof typeof NODE_TYPES];

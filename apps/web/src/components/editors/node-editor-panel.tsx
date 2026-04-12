@@ -16,6 +16,7 @@ import { AiCollectorEditor } from "./ai-collector-editor";
 import { StravaConnectEditor } from "./strava-connect-editor";
 import { PaymentEditor } from "./payment-editor";
 import { WhatsAppFlowEditor } from "./whatsapp-flow-editor";
+import { WaitForPlayedEditor } from "./wait-for-played-editor";
 import type {
   NodeData,
   TriggerNodeData,
@@ -30,6 +31,7 @@ import type {
   StravaConnectNodeData,
   PaymentNodeData,
   WhatsAppFlowNodeData,
+  WaitForPlayedNodeData,
 } from "@/types/node-data";
 
 export function NodeEditorPanel() {
@@ -162,6 +164,12 @@ export function NodeEditorPanel() {
             <WhatsAppFlowEditor
               nodeId={selectedNodeId}
               data={nodeData as WhatsAppFlowNodeData}
+            />
+          )}
+          {nodeData.type === "waitForPlayed" && (
+            <WaitForPlayedEditor
+              nodeId={selectedNodeId}
+              data={nodeData as WaitForPlayedNodeData}
             />
           )}
         </div>

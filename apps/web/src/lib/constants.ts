@@ -62,6 +62,11 @@ export const NODE_CONFIG = {
     color: "#075E54",
     description: "Envia um formulario nativo do WhatsApp e captura as respostas",
   },
+  [NODE_TYPES.WAIT_FOR_PLAYED]: {
+    label: "Esperar Audio",
+    color: "#7C3AED",
+    description: "Aguarda o usuario ouvir o ultimo audio antes de continuar",
+  },
 } as const;
 
 export const DEFAULT_SPLITS = [

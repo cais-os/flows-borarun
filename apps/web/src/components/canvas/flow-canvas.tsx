@@ -31,6 +31,7 @@ import { AiCollectorNode } from "@/components/nodes/ai-collector-node";
 import { StravaConnectNode } from "@/components/nodes/strava-connect-node";
 import { PaymentNode } from "@/components/nodes/payment-node";
 import { WhatsAppFlowNode } from "@/components/nodes/whatsapp-flow-node";
+import { WaitForPlayedNode } from "@/components/nodes/wait-for-played-node";
 
 import type {
   TriggerNodeData,
@@ -45,6 +46,7 @@ import type {
   StravaConnectNodeData,
   PaymentNodeData,
   WhatsAppFlowNodeData,
+  WaitForPlayedNodeData,
   NodeData,
 } from "@/types/node-data";
 
@@ -61,6 +63,7 @@ const nodeTypes = {
   [NODE_TYPES.STRAVA_CONNECT]: StravaConnectNode,
   [NODE_TYPES.PAYMENT]: PaymentNode,
   [NODE_TYPES.WHATSAPP_FLOW]: WhatsAppFlowNode,
+  [NODE_TYPES.WAIT_FOR_PLAYED]: WaitForPlayedNode,
 };
 
 export function createNodeId(type: string) {
@@ -132,6 +135,8 @@ export function getDefaultData(type: string) {
         ctaText: "Abrir formulario",
         variablePrefix: "flow",
       } satisfies WhatsAppFlowNodeData;
+    case NODE_TYPES.WAIT_FOR_PLAYED:
+      return { type: "waitForPlayed", label: "Esperar Audio", timeoutMinutes: 2 } satisfies WaitForPlayedNodeData;
     default:
       return {
         type: "sendMessage",
