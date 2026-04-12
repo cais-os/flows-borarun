@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import OpenAI from "openai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Flow } from "@/types/flow";
@@ -87,6 +88,7 @@ interface TriggerMatchContext {
 }
 
 const FLOW_CONTINUATION_SOFT_LIMIT_MS = 50_000;
+const PDF_CONTINUATION_BUFFER_MS = 1_000;
 
 function findNextNodes(
   nodeId: string,
@@ -174,6 +176,18 @@ function shouldYieldFlowExecution(startedAt: number, currentNode: FlowNode) {
   return (
     Date.now() - startedAt + getEstimatedNodeCostMs(currentNode) >=
     FLOW_CONTINUATION_SOFT_LIMIT_MS
+  );
+}
+
+function shouldYieldBeforeGeneratePdf(
+  startedAt: number,
+  currentNode: FlowNode,
+  remainingQueue: FlowNode[]
+) {
+  return (
+    currentNode.data.type === "generatePdf" &&
+    remainingQueue.length > 0 &&
+    Date.now() - startedAt >= PDF_CONTINUATION_BUFFER_MS
   );
 }
 
@@ -440,6 +454,36 @@ function triggerFlowContinuation(params: {
     );
 }
 
+async function yieldFlowExecution(params: {
+  supabase: SupabaseClient;
+  conversationId: string;
+  contactPhone: string;
+  organizationId: string;
+  currentNode: FlowNode;
+  remainingQueue: FlowNode[];
+}) {
+  console.warn("[flow-engine] yielding flow continuation", {
+    conversationId: params.conversationId,
+    currentNodeId: params.currentNode.id,
+    currentNodeType: params.currentNode.data.type,
+    remainingQueueLength: params.remainingQueue.length,
+  });
+
+  await persistFlowContinuation({
+    supabase: params.supabase,
+    conversationId: params.conversationId,
+    queue: params.remainingQueue,
+  });
+
+  triggerFlowContinuation({
+    conversationId: params.conversationId,
+    contactPhone: params.contactPhone,
+    organizationId: params.organizationId,
+  });
+
+  return "continued" as const;
+}
+
 async function completeFlow(
   supabase: SupabaseClient,
   conversationId: string
@@ -661,30 +705,64 @@ async function resolveStorageMediaUrl(params: {
 
   const base64Data = params.mediaUrl.split(",")[1];
   const mimeMatch = params.mediaUrl.match(/data:([^;]+)/);
-  let contentType = mimeMatch?.[1] || params.fallbackContentType;
+  const sourceContentType = mimeMatch?.[1] || params.fallbackContentType;
+  const needsAudioConversion =
+    params.convertAudioToOgg &&
+    sourceContentType.startsWith("audio/") &&
+    needsOggConversion(sourceContentType);
+  let contentType = needsAudioConversion ? "audio/ogg" : sourceContentType;
   let buffer = Buffer.from(base64Data || "", "base64");
 
+  const ext = contentType === "audio/ogg" ? "ogg" : (contentType.split("/")[1] || "bin");
+  const fileHash = createHash("sha1").update(params.mediaUrl).digest("hex");
+  const cachedFolder = `${params.filePrefix}-cache`;
+  const cachedFileName = `${fileHash}.${ext}`;
+  const cachedFilePath = `${cachedFolder}/${cachedFileName}`;
+
+  const { data: existingFiles, error: listError } = await params.supabase.storage
+    .from(params.bucket)
+    .list(cachedFolder, {
+      search: cachedFileName,
+      limit: 1,
+    });
+
+  if (listError) {
+    console.warn("[resolveStorageMediaUrl] failed to check cached media", listError);
+  }
+
+  if (existingFiles?.some((file) => file.name === cachedFileName)) {
+    const { data: urlData } = params.supabase.storage
+      .from(params.bucket)
+      .getPublicUrl(cachedFilePath);
+    return urlData.publicUrl;
+  }
+
   // Convert audio to OGG/OPUS for WhatsApp voice notes
-  if (params.convertAudioToOgg && contentType.startsWith("audio/") && needsOggConversion(contentType)) {
+  if (needsAudioConversion) {
     try {
-      const sourceFormat = getAudioFormat(contentType);
+      const sourceFormat = getAudioFormat(sourceContentType);
       buffer = Buffer.from(await convertToOgg(buffer, sourceFormat));
       contentType = "audio/ogg";
     } catch (error) {
       console.error("[resolveStorageMediaUrl] OGG conversion failed, using original:", error);
+      contentType = sourceContentType;
     }
   }
 
-  const ext = contentType === "audio/ogg" ? "ogg" : (contentType.split("/")[1] || "bin");
-  const fileName = `${params.filePrefix}-${params.conversationId}-${Date.now()}.${ext}`;
+  const uploadTargetPath =
+    contentType === sourceContentType ? cachedFilePath : `${cachedFolder}/${fileHash}.${contentType === "audio/ogg" ? "ogg" : (contentType.split("/")[1] || "bin")}`;
 
-  await params.supabase.storage
+  const { error: uploadError } = await params.supabase.storage
     .from(params.bucket)
-    .upload(fileName, buffer, { contentType });
+    .upload(uploadTargetPath, buffer, { contentType, upsert: false });
+
+  if (uploadError && !uploadError.message?.toLowerCase().includes("already")) {
+    throw uploadError;
+  }
 
   const { data: urlData } = params.supabase.storage
     .from(params.bucket)
-    .getPublicUrl(fileName);
+    .getPublicUrl(uploadTargetPath);
 
   return urlData.publicUrl;
 }
@@ -1216,28 +1294,26 @@ async function runFlowQueue(params: {
     const current = queue.shift()!;
     const data = current.data;
 
-    if (shouldYieldFlowExecution(startedAt, current)) {
-      const remainingQueue = [current, ...queue];
-      console.warn("[flow-engine] yielding flow continuation", {
-        conversationId: params.conversationId,
-        currentNodeId: current.id,
-        currentNodeType: current.data.type,
-        remainingQueueLength: remainingQueue.length,
-      });
-
-      await persistFlowContinuation({
+    if (shouldYieldBeforeGeneratePdf(startedAt, current, queue)) {
+      return yieldFlowExecution({
         supabase: params.supabase,
-        conversationId: params.conversationId,
-        queue: remainingQueue,
-      });
-
-      triggerFlowContinuation({
         conversationId: params.conversationId,
         contactPhone: params.contactPhone,
         organizationId: params.organizationId,
+        currentNode: current,
+        remainingQueue: [current, ...queue],
       });
+    }
 
-      return "continued" as const;
+    if (shouldYieldFlowExecution(startedAt, current)) {
+      return yieldFlowExecution({
+        supabase: params.supabase,
+        conversationId: params.conversationId,
+        contactPhone: params.contactPhone,
+        organizationId: params.organizationId,
+        currentNode: current,
+        remainingQueue: [current, ...queue],
+      });
     }
 
     // Log every node visit for analytics

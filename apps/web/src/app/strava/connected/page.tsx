@@ -1,6 +1,5 @@
-import Link from "next/link";
 import { CheckCircle2, CircleAlert, CircleDashed } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { CloseButton } from "./close-button";
 import {
   Card,
   CardContent,
@@ -59,9 +58,7 @@ export default async function StravaConnectedPage({
           </div>
         </CardHeader>
         <CardContent className="flex justify-center">
-          <Button asChild className="rounded-xl bg-slate-900 hover:bg-slate-800">
-            <Link href="/">Fechar</Link>
-          </Button>
+          <CloseButton />
         </CardContent>
       </Card>
     </main>
