@@ -11,24 +11,21 @@ const statusCopy = {
   success: {
     title: "Strava conectado",
     description:
-      "A integracao foi concluida. Voce ja pode voltar para a conversa no WhatsApp.",
-    hint: "Strava conectado com sucesso! Para voltar ao chat, clique no OK.",
+      "Strava conectado com sucesso! Para voltar ao chat, clique no OK.",
     icon: CheckCircle2,
     tone: "text-emerald-600",
   },
   cancelled: {
     title: "Autorizacao cancelada",
     description:
-      "Nenhuma permissao foi concedida. Se quiser, abra o link novamente pelo WhatsApp.",
-    hint: "Autorizacao cancelada. Para voltar ao chat, clique no OK.",
+      "Autorizacao cancelada. Para voltar ao chat, clique no OK e, se quiser, abra o link novamente pelo WhatsApp.",
     icon: CircleDashed,
     tone: "text-amber-600",
   },
   error: {
     title: "Nao foi possivel conectar",
     description:
-      "Houve uma falha ao concluir a integracao. Tente novamente pelo link enviado no WhatsApp.",
-    hint: "Nao foi possivel conectar o Strava. Para voltar ao chat, clique no OK.",
+      "Nao foi possivel conectar o Strava. Para voltar ao chat, clique no OK e tente novamente pelo link enviado no WhatsApp.",
     icon: CircleAlert,
     tone: "text-rose-600",
   },
@@ -47,8 +44,8 @@ export default async function StravaConnectedPage({
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-10">
-      <div className="w-full max-w-lg space-y-6">
-        <EmbeddedWhatsAppOkHint message={current.hint} />
+      <div className="w-full max-w-lg space-y-3">
+        <EmbeddedWhatsAppOkHint />
         <Card className="border-slate-200 bg-white shadow-[0_24px_60px_-40px_rgba(15,23,42,0.35)]">
           <CardHeader className="space-y-4 text-center">
             <Icon className={`mx-auto h-12 w-12 ${current.tone}`} />

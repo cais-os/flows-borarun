@@ -1,43 +1,43 @@
-type EmbeddedWhatsAppOkHintProps = {
-  message: string;
-};
-
-export function EmbeddedWhatsAppOkHint({
-  message,
-}: EmbeddedWhatsAppOkHintProps) {
+export function EmbeddedWhatsAppOkHint() {
   return (
-    <div className="relative mx-auto flex w-full max-w-lg items-start px-2 pt-2">
-      <div className="pointer-events-none absolute left-0 top-0 h-24 w-28 text-emerald-400">
+    <div
+      aria-hidden="true"
+      className="pointer-events-none relative mx-auto h-24 w-full max-w-lg overflow-visible"
+    >
+      <div className="absolute left-2 top-1 h-24 w-40 text-emerald-500 drop-shadow-[0_10px_20px_rgba(16,185,129,0.22)]">
         <svg
-          aria-hidden="true"
           className="h-full w-full"
           fill="none"
-          viewBox="0 0 140 110"
+          viewBox="0 0 180 120"
         >
+          <defs>
+            <linearGradient id="ok-arrow-gradient" x1="18" x2="142" y1="20" y2="114">
+              <stop offset="0%" stopColor="#34d399" />
+              <stop offset="100%" stopColor="#10b981" />
+            </linearGradient>
+          </defs>
           <path
-            d="M104 98C88 76 76 57 62 42C52 31 40 23 24 18"
-            stroke="currentColor"
+            d="M138 108C125 92 114 78 100 64C84 48 64 32 26 12"
+            stroke="url(#ok-arrow-gradient)"
             strokeLinecap="round"
+            strokeLinejoin="round"
             strokeWidth="8"
           />
           <path
-            d="M24 18L42 18"
-            stroke="currentColor"
+            d="M40 8L18 10L30 30"
+            stroke="url(#ok-arrow-gradient)"
             strokeLinecap="round"
+            strokeLinejoin="round"
             strokeWidth="8"
           />
           <path
-            d="M24 18L32 36"
-            stroke="currentColor"
+            d="M138 108C126 95 116 84 107 74"
+            stroke="#a7f3d0"
             strokeLinecap="round"
-            strokeWidth="8"
+            strokeLinejoin="round"
+            strokeWidth="3"
           />
         </svg>
-      </div>
-      <div className="ml-20 rounded-3xl border border-emerald-200 bg-emerald-50 px-4 py-3 shadow-sm shadow-emerald-100/80">
-        <p className="text-sm font-medium leading-6 text-emerald-950">
-          {message}
-        </p>
       </div>
     </div>
   );

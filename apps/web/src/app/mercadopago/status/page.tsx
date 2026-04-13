@@ -24,8 +24,6 @@ const statusCopy = {
   success: {
     title: "Pagamento confirmado",
     description:
-      "Sua assinatura foi ativada com sucesso. Voce ja pode voltar para a conversa no WhatsApp.",
-    hint:
       "Pagamento realizado com sucesso! Para voltar ao chat, clique no OK.",
     icon: CheckCircle2,
     tone: "text-emerald-600",
@@ -33,8 +31,7 @@ const statusCopy = {
   pending: {
     title: "Pagamento em processamento",
     description:
-      "Seu pagamento esta sendo processado. Voce sera notificado pelo WhatsApp assim que for confirmado.",
-    hint: "Pagamento em processamento. Para voltar ao chat, clique no OK.",
+      "Pagamento em processamento. Para voltar ao chat, clique no OK. Voce sera notificado pelo WhatsApp assim que for confirmado.",
     icon: Clock,
     tone: "text-amber-600",
   },
@@ -42,7 +39,6 @@ const statusCopy = {
     title: "Pagamento nao aprovado",
     description:
       "Nao foi possivel concluir o pagamento. Tente novamente clicando no botao abaixo.",
-    hint: null,
     icon: CircleAlert,
     tone: "text-rose-600",
   },
@@ -246,8 +242,8 @@ export default async function MercadoPagoStatusPage({
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-10">
-      <div className="w-full max-w-lg space-y-6">
-        {current.hint ? <EmbeddedWhatsAppOkHint message={current.hint} /> : null}
+      <div className="w-full max-w-lg space-y-3">
+        {currentStatusKey !== "failure" ? <EmbeddedWhatsAppOkHint /> : null}
         <Card className="border-slate-200 bg-white shadow-[0_24px_60px_-40px_rgba(15,23,42,0.35)]">
           <CardHeader className="space-y-4 text-center">
             <Icon className={`mx-auto h-12 w-12 ${current.tone}`} />
