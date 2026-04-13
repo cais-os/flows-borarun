@@ -253,11 +253,14 @@ type StoredPaymentRecord = {
   duration_days: number | null;
   currency: string | null;
   status: string | null;
+  mp_payment_id: string | null;
   billing_mode: MercadoPagoBillingMode | null;
   payer_email: string | null;
   mp_preference_id: string | null;
   mp_subscription_id: string | null;
   mp_subscription_status: string | null;
+  mp_authorized_payment_id: string | null;
+  schemaMode: "current" | "legacy";
 };
 
 type PaymentReference = {
@@ -289,6 +292,17 @@ function getBillingMode(value: MercadoPagoBillingMode | null | undefined) {
   return value === "one_time" ? "one_time" : "recurring";
 }
 
+function isMissingPaymentsColumnError(error: { message?: string } | null | undefined) {
+  const message = error?.message || "";
+  return (
+    message.includes("column payments.billing_mode does not exist") ||
+    message.includes("column payments.payer_email does not exist") ||
+    message.includes("column payments.mp_subscription_id does not exist") ||
+    message.includes("column payments.mp_subscription_status does not exist") ||
+    message.includes("column payments.mp_authorized_payment_id does not exist")
+  );
+}
+
 export function isValidMercadoPagoPayerEmail(
   value: string | null | undefined
 ) {
@@ -299,7 +313,7 @@ export function isValidMercadoPagoPayerEmail(
 async function createPaymentRecord(params: CreatePaymentParams) {
   const billingMode = params.billingMode || "recurring";
 
-  const { data: payment, error: insertErr } = await params.supabase
+  const modernInsert = await params.supabase
     .from("payments")
     .insert({
       organization_id: params.organizationId,
@@ -316,30 +330,100 @@ async function createPaymentRecord(params: CreatePaymentParams) {
     .select("id")
     .single();
 
-  if (insertErr || !payment) {
-    throw new Error(`Failed to create payment record: ${insertErr?.message}`);
+  if (!modernInsert.error && modernInsert.data) {
+    return modernInsert.data.id as string;
   }
 
-  return payment.id as string;
+  if (!isMissingPaymentsColumnError(modernInsert.error)) {
+    throw new Error(
+      `Failed to create payment record: ${modernInsert.error?.message}`
+    );
+  }
+
+  const legacyInsert = await params.supabase
+    .from("payments")
+    .insert({
+      organization_id: params.organizationId,
+      conversation_id: params.conversationId,
+      mp_preference_id: "pending",
+      plan_name: params.planName,
+      amount: params.amount,
+      duration_days: params.durationDays,
+      currency: params.currency,
+      status: "pending",
+    })
+    .select("id")
+    .single();
+
+  if (legacyInsert.error || !legacyInsert.data) {
+    throw new Error(
+      `Failed to create legacy payment record: ${legacyInsert.error?.message}`
+    );
+  }
+
+  return legacyInsert.data.id as string;
 }
 
-async function getStoredPaymentRecord(params: {
+export async function loadMercadoPagoPaymentRecord(params: {
   supabase: SupabaseClient;
   paymentRecordId: string;
 }) {
-  const { data, error } = await params.supabase
+  const modernSelect = await params.supabase
     .from("payments")
     .select(
-      "id, organization_id, conversation_id, plan_name, amount, duration_days, currency, status, billing_mode, payer_email, mp_preference_id, mp_subscription_id, mp_subscription_status"
+      "id, organization_id, conversation_id, plan_name, amount, duration_days, currency, status, mp_payment_id, billing_mode, payer_email, mp_preference_id, mp_subscription_id, mp_subscription_status, mp_authorized_payment_id"
     )
     .eq("id", params.paymentRecordId)
     .maybeSingle();
 
-  if (error) {
-    throw new Error(`Failed to load payment record: ${error.message}`);
+  if (!modernSelect.error) {
+    const data = modernSelect.data as Omit<StoredPaymentRecord, "schemaMode"> | null;
+    return data ? { ...data, schemaMode: "current" as const } : null;
   }
 
-  return (data as StoredPaymentRecord | null) || null;
+  if (!isMissingPaymentsColumnError(modernSelect.error)) {
+    throw new Error(`Failed to load payment record: ${modernSelect.error.message}`);
+  }
+
+  const legacySelect = await params.supabase
+    .from("payments")
+    .select(
+      "id, organization_id, conversation_id, plan_name, amount, duration_days, currency, status, mp_payment_id, mp_preference_id"
+    )
+    .eq("id", params.paymentRecordId)
+    .maybeSingle();
+
+  if (legacySelect.error) {
+    throw new Error(
+      `Failed to load legacy payment record: ${legacySelect.error.message}`
+    );
+  }
+
+  const legacyData = legacySelect.data as {
+    id: string;
+    organization_id: string;
+    conversation_id: string;
+    plan_name: string | null;
+    amount: number | string | null;
+    duration_days: number | null;
+    currency: string | null;
+    status: string | null;
+    mp_payment_id: string | null;
+    mp_preference_id: string | null;
+  } | null;
+
+  if (!legacyData) return null;
+
+  return {
+    ...legacyData,
+    mp_payment_id: legacyData.mp_payment_id,
+    billing_mode: null,
+    payer_email: null,
+    mp_subscription_id: null,
+    mp_subscription_status: null,
+    mp_authorized_payment_id: null,
+    schemaMode: "legacy" as const,
+  } satisfies StoredPaymentRecord;
 }
 
 async function createRecurringCheckoutForRecord(params: {
@@ -397,16 +481,24 @@ async function createRecurringCheckoutForRecord(params: {
     status?: string;
   };
 
+  const recurringUpdate =
+    params.paymentRecord.schemaMode === "current"
+      ? {
+          mp_preference_id: subscription.id,
+          mp_subscription_id: subscription.id,
+          mp_subscription_status: subscription.status || "pending",
+          billing_mode: "recurring",
+          payer_email: params.payerEmail,
+          updated_at: new Date().toISOString(),
+        }
+      : {
+          mp_preference_id: subscription.id,
+          updated_at: new Date().toISOString(),
+        };
+
   await params.supabase
     .from("payments")
-    .update({
-      mp_preference_id: subscription.id,
-      mp_subscription_id: subscription.id,
-      mp_subscription_status: subscription.status || "pending",
-      billing_mode: "recurring",
-      payer_email: params.payerEmail,
-      updated_at: new Date().toISOString(),
-    })
+    .update(recurringUpdate)
     .eq("id", params.paymentRecord.id);
 
   return {
@@ -486,14 +578,22 @@ async function createOneTimeCheckoutForRecord(params: {
     init_point: string;
   };
 
+  const oneTimeUpdate =
+    params.paymentRecord.schemaMode === "current"
+      ? {
+          mp_preference_id: preference.id,
+          billing_mode: "one_time",
+          payer_email: params.payerEmail || null,
+          updated_at: new Date().toISOString(),
+        }
+      : {
+          mp_preference_id: preference.id,
+          updated_at: new Date().toISOString(),
+        };
+
   await params.supabase
     .from("payments")
-    .update({
-      mp_preference_id: preference.id,
-      billing_mode: "one_time",
-      payer_email: params.payerEmail || null,
-      updated_at: new Date().toISOString(),
-    })
+    .update(oneTimeUpdate)
     .eq("id", params.paymentRecord.id);
 
   return {
@@ -516,7 +616,7 @@ export async function ensureMercadoPagoCheckoutForRecord(params: {
   checkoutId: string;
   checkoutType: "preference" | "subscription";
 }> {
-  const paymentRecord = await getStoredPaymentRecord({
+  const paymentRecord = await loadMercadoPagoPaymentRecord({
     supabase: params.supabase,
     paymentRecordId: params.paymentRecordId,
   });
@@ -531,7 +631,11 @@ export async function ensureMercadoPagoCheckoutForRecord(params: {
     : null;
   const effectiveEmail = normalizedEmail || paymentRecord.payer_email || null;
 
-  if (normalizedEmail && normalizedEmail !== paymentRecord.payer_email) {
+  if (
+    paymentRecord.schemaMode === "current" &&
+    normalizedEmail &&
+    normalizedEmail !== paymentRecord.payer_email
+  ) {
     await params.supabase
       .from("payments")
       .update({
@@ -549,13 +653,25 @@ export async function ensureMercadoPagoCheckoutForRecord(params: {
       );
     }
 
-    if (paymentRecord.mp_subscription_id) {
+    const knownSubscriptionId =
+      paymentRecord.mp_subscription_id ||
+      (paymentRecord.schemaMode === "legacy" &&
+      paymentRecord.mp_preference_id &&
+      paymentRecord.mp_preference_id !== "pending"
+        ? paymentRecord.mp_preference_id
+        : null);
+
+    if (knownSubscriptionId) {
       const subscription = await fetchMercadoPagoSubscription(
-        paymentRecord.mp_subscription_id,
+        knownSubscriptionId,
         params.accessToken
       );
 
-      if (!paymentRecord.mp_subscription_status && subscription.status) {
+      if (
+        paymentRecord.schemaMode === "current" &&
+        !paymentRecord.mp_subscription_status &&
+        subscription.status
+      ) {
         await params.supabase
           .from("payments")
           .update({
@@ -572,7 +688,7 @@ export async function ensureMercadoPagoCheckoutForRecord(params: {
       return {
         initPoint: subscription.init_point,
         paymentRecordId: paymentRecord.id,
-        checkoutId: paymentRecord.mp_subscription_id,
+        checkoutId: knownSubscriptionId,
         checkoutType: "subscription",
       };
     }

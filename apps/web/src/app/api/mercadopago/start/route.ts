@@ -5,6 +5,7 @@ import {
   ensureMercadoPagoCheckoutForRecord,
   getMercadoPagoConfig,
   isValidMercadoPagoPayerEmail,
+  loadMercadoPagoPaymentRecord,
 } from "@/lib/mercado-pago";
 import { createServerClient } from "@/lib/supabase/server";
 
@@ -24,28 +25,19 @@ export async function POST(request: Request) {
     }
 
     const supabase = createServerClient();
-    const { data: paymentRecord } = await supabase
-      .from("payments")
-      .select(
-        "id, organization_id, conversation_id, billing_mode, payer_email, conversation:conversations(flow_variables)"
-      )
-      .eq("id", payload.paymentRecordId)
+    const record = await loadMercadoPagoPaymentRecord({
+      supabase,
+      paymentRecordId: payload.paymentRecordId,
+    });
+    const { data: conversationRecord } = await supabase
+      .from("conversations")
+      .select("flow_variables")
+      .eq("id", payload.conversationId)
+      .eq("organization_id", payload.organizationId)
       .maybeSingle();
 
-    const record = paymentRecord as {
-      id: string;
-      organization_id: string;
-      conversation_id: string;
-      billing_mode: string | null;
-      payer_email: string | null;
-      conversation:
-        | {
-            flow_variables?: Record<string, string> | null;
-          }
-        | {
-            flow_variables?: Record<string, string> | null;
-          }[]
-        | null;
+    const conversation = conversationRecord as {
+      flow_variables?: Record<string, string> | null;
     } | null;
 
     if (
@@ -73,9 +65,6 @@ export async function POST(request: Request) {
     }
 
     if (billingMode === "recurring" && payerEmail) {
-      const conversation = Array.isArray(record.conversation)
-        ? record.conversation[0] || null
-        : record.conversation;
       const vars = {
         ...((conversation?.flow_variables as Record<string, string>) || {}),
       };

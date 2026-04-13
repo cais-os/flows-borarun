@@ -4,7 +4,7 @@ import {
   ensureMercadoPagoCheckoutForRecord,
   fetchMercadoPagoPreference,
   getMercadoPagoConfig,
-  type MercadoPagoBillingMode,
+  loadMercadoPagoPaymentRecord,
 } from "@/lib/mercado-pago";
 import {
   buildMercadoPagoStartUrl,
@@ -37,30 +37,17 @@ export async function GET(request: Request) {
 
   if (paymentRecordId) {
     const supabase = createServerClient();
-    const { data: paymentRecord } = await supabase
-      .from("payments")
-      .select(
-        "id, organization_id, conversation_id, billing_mode, payer_email, mp_preference_id, mp_subscription_id"
-      )
-      .eq("id", paymentRecordId)
-      .maybeSingle();
+    const record = await loadMercadoPagoPaymentRecord({
+      supabase,
+      paymentRecordId,
+    });
 
-    if (!paymentRecord) {
+    if (!record) {
       return NextResponse.json(
         { error: "Payment record not found" },
         { status: 404 }
       );
     }
-
-    const record = paymentRecord as {
-      id: string;
-      organization_id: string;
-      conversation_id: string;
-      billing_mode: MercadoPagoBillingMode | null;
-      payer_email: string | null;
-      mp_preference_id: string | null;
-      mp_subscription_id: string | null;
-    };
 
     if (record.organization_id !== orgId) {
       return NextResponse.json({ error: "Payment record not found" }, { status: 404 });

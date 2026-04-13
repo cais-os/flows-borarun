@@ -7,6 +7,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { CloseButton } from "@/app/strava/connected/close-button";
+import { loadMercadoPagoPaymentRecord } from "@/lib/mercado-pago";
 import { createServerClient } from "@/lib/supabase/server";
 import { verifyMercadoPagoStartToken } from "@/lib/mercado-pago-start";
 import { StartCard } from "./start-card";
@@ -54,24 +55,10 @@ export default async function MercadoPagoStartPage({
   }
 
   const supabase = createServerClient();
-  const { data: paymentRecord } = await supabase
-    .from("payments")
-    .select(
-      "id, organization_id, conversation_id, plan_name, amount, currency, billing_mode, payer_email"
-    )
-    .eq("id", payload.paymentRecordId)
-    .maybeSingle();
-
-  const payment = paymentRecord as {
-    id: string;
-    organization_id: string;
-    conversation_id: string;
-    plan_name: string | null;
-    amount: number | string | null;
-    currency: string | null;
-    billing_mode: string | null;
-    payer_email: string | null;
-  } | null;
+  const payment = await loadMercadoPagoPaymentRecord({
+    supabase,
+    paymentRecordId: payload.paymentRecordId,
+  });
 
   if (
     !payment ||

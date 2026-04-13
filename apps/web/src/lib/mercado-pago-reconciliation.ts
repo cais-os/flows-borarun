@@ -6,6 +6,7 @@ import {
   fetchMercadoPagoPreference,
   fetchMercadoPagoSubscription,
   getMercadoPagoConfig,
+  loadMercadoPagoPaymentRecord,
   searchMercadoPagoPaymentsByExternalReference,
   type MercadoPagoAuthorizedPayment,
   type MercadoPagoBillingMode,
@@ -33,8 +34,8 @@ type PaymentRecordRow = {
   id: string;
   organization_id: string;
   conversation_id: string;
-  amount: number;
-  currency: string;
+  amount: number | string | null;
+  currency: string | null;
   status: string | null;
   mp_payment_id: string | null;
   mp_preference_id: string | null;
@@ -45,6 +46,7 @@ type PaymentRecordRow = {
   payer_email: string | null;
   plan_name: string | null;
   duration_days: number | null;
+  schemaMode?: "current" | "legacy";
 };
 
 type ConversationRow = {
@@ -118,10 +120,6 @@ function pickBestMercadoPagoPayment(
     payments.find((payment) => payment.status === "pending") ||
     payments[0]
   );
-}
-
-function getBillingMode(value: MercadoPagoBillingMode | null | undefined) {
-  return value === "one_time" ? "one_time" : "recurring";
 }
 
 async function persistConversationFlowVariables(params: {
@@ -275,40 +273,59 @@ async function sendPostPaymentMessages(params: {
 
 async function updatePaymentRecordStatus(params: {
   supabase: SupabaseClient;
+  paymentRecord: PaymentRecordRow;
   paymentRecordId: string;
   mpPayment: MercadoPagoPayment;
   mpAuthorizedPaymentId?: string | null;
   mpSubscriptionId?: string | null;
   mpSubscriptionStatus?: string | null;
 }) {
+  const baseUpdate = {
+    mp_payment_id: String(params.mpPayment.id),
+    status: params.mpPayment.status,
+    paid_at: params.mpPayment.date_approved || null,
+    updated_at: new Date().toISOString(),
+  };
+
+  const extendedUpdate =
+    params.paymentRecord.schemaMode === "current"
+      ? {
+          ...baseUpdate,
+          mp_authorized_payment_id: params.mpAuthorizedPaymentId || null,
+          mp_subscription_id: params.mpSubscriptionId || undefined,
+          mp_subscription_status: params.mpSubscriptionStatus || undefined,
+          payer_email: params.mpPayment.payer?.email || undefined,
+        }
+      : baseUpdate;
+
   await params.supabase
     .from("payments")
-    .update({
-      mp_payment_id: String(params.mpPayment.id),
-      mp_authorized_payment_id: params.mpAuthorizedPaymentId || null,
-      mp_subscription_id: params.mpSubscriptionId || undefined,
-      mp_subscription_status: params.mpSubscriptionStatus || undefined,
-      payer_email: params.mpPayment.payer?.email || undefined,
-      status: params.mpPayment.status,
-      paid_at: params.mpPayment.date_approved || null,
-      updated_at: new Date().toISOString(),
-    })
+    .update(extendedUpdate)
     .eq("id", params.paymentRecordId);
 }
 
 async function syncPaymentRecordSubscription(params: {
   supabase: SupabaseClient;
+  paymentRecord: PaymentRecordRow;
   paymentRecordId: string;
   subscription: MercadoPagoSubscription;
 }) {
+  const update =
+    params.paymentRecord.schemaMode === "current"
+      ? {
+          mp_subscription_id: params.subscription.id,
+          mp_subscription_status: params.subscription.status || null,
+          payer_email: params.subscription.payer_email || undefined,
+          updated_at: new Date().toISOString(),
+        }
+      : {
+          mp_preference_id: params.subscription.id,
+          updated_at: new Date().toISOString(),
+        };
+
   await params.supabase
     .from("payments")
-    .update({
-      mp_subscription_id: params.subscription.id,
-      mp_subscription_status: params.subscription.status || null,
-      payer_email: params.subscription.payer_email || undefined,
-      updated_at: new Date().toISOString(),
-    })
+    .update(update)
     .eq("id", params.paymentRecordId);
 }
 
@@ -365,13 +382,10 @@ export async function reconcileMercadoPagoPayment(params: {
     };
   }
 
-  const { data: paymentRecord } = await params.supabase
-    .from("payments")
-    .select(
-      "id, organization_id, conversation_id, amount, currency, status, mp_payment_id, mp_preference_id, mp_subscription_id, mp_subscription_status, mp_authorized_payment_id, billing_mode, payer_email, plan_name, duration_days"
-    )
-    .eq("id", paymentRef.paymentRecordId)
-    .maybeSingle();
+  const paymentRecord = await loadMercadoPagoPaymentRecord({
+    supabase: params.supabase,
+    paymentRecordId: paymentRef.paymentRecordId,
+  });
 
   if (!paymentRecord) {
     return {
@@ -442,6 +456,7 @@ export async function reconcileMercadoPagoPayment(params: {
   if (mpPayment.status !== "approved") {
     await updatePaymentRecordStatus({
       supabase: params.supabase,
+      paymentRecord: record,
       paymentRecordId: record.id,
       mpPayment,
       mpAuthorizedPaymentId: params.authorizedPaymentId,
@@ -464,6 +479,7 @@ export async function reconcileMercadoPagoPayment(params: {
   if (!alreadyProcessed || needsConversationActivation) {
     await updatePaymentRecordStatus({
       supabase: params.supabase,
+      paymentRecord: record,
       paymentRecordId: record.id,
       mpPayment,
       mpAuthorizedPaymentId: params.authorizedPaymentId,
@@ -547,8 +563,33 @@ export async function reconcileMercadoPagoSubscriptionById(params: {
     };
   }
 
+  const paymentRecord = await loadMercadoPagoPaymentRecord({
+    supabase: params.supabase,
+    paymentRecordId: paymentRef.paymentRecordId,
+  });
+
   await syncPaymentRecordSubscription({
     supabase: params.supabase,
+    paymentRecord:
+      paymentRecord ||
+      ({
+        id: paymentRef.paymentRecordId,
+        organization_id: paymentRef.organizationId,
+        conversation_id: paymentRef.conversationId,
+        amount: 0,
+        currency: "BRL",
+        status: null,
+        mp_payment_id: null,
+        mp_preference_id: params.subscriptionId,
+        mp_subscription_id: params.subscriptionId,
+        mp_subscription_status: null,
+        mp_authorized_payment_id: null,
+        billing_mode: null,
+        payer_email: null,
+        plan_name: null,
+        duration_days: null,
+        schemaMode: "legacy",
+      } satisfies PaymentRecordRow),
     paymentRecordId: paymentRef.paymentRecordId,
     subscription,
   });
@@ -711,13 +752,10 @@ export async function reconcileMercadoPagoPaymentRecord(params: {
   settings: OrganizationSettings | null;
   paymentRecordId: string;
 }): Promise<ReconcileMercadoPagoPaymentResult> {
-  const { data: paymentRecord } = await params.supabase
-    .from("payments")
-    .select(
-      "id, organization_id, conversation_id, mp_payment_id, mp_preference_id, mp_subscription_id, billing_mode"
-    )
-    .eq("id", params.paymentRecordId)
-    .maybeSingle();
+  const paymentRecord = await loadMercadoPagoPaymentRecord({
+    supabase: params.supabase,
+    paymentRecordId: params.paymentRecordId,
+  });
 
   if (!paymentRecord) {
     return {
@@ -727,15 +765,7 @@ export async function reconcileMercadoPagoPaymentRecord(params: {
     };
   }
 
-  const record = paymentRecord as {
-    id: string;
-    organization_id: string;
-    conversation_id: string;
-    mp_payment_id: string | null;
-    mp_preference_id: string | null;
-    mp_subscription_id: string | null;
-    billing_mode: MercadoPagoBillingMode | null;
-  };
+  const record = paymentRecord as PaymentRecordRow;
 
   if (record.organization_id !== params.organizationId) {
     return {
@@ -756,10 +786,7 @@ export async function reconcileMercadoPagoPaymentRecord(params: {
     });
   }
 
-  if (
-    getBillingMode(record.billing_mode) === "recurring" &&
-    record.mp_subscription_id
-  ) {
+  if (record.billing_mode === "recurring" && record.mp_subscription_id) {
     return reconcileMercadoPagoSubscriptionById({
       supabase: params.supabase,
       organizationId: params.organizationId,
@@ -770,12 +797,31 @@ export async function reconcileMercadoPagoPaymentRecord(params: {
   }
 
   if (record.mp_preference_id && record.mp_preference_id !== "pending") {
-    return reconcileMercadoPagoPaymentByPreferenceId({
-      supabase: params.supabase,
-      organizationId: params.organizationId,
-      settings: params.settings,
-      preferenceId: record.mp_preference_id,
-    });
+    if (record.billing_mode === "one_time") {
+      return reconcileMercadoPagoPaymentByPreferenceId({
+        supabase: params.supabase,
+        organizationId: params.organizationId,
+        settings: params.settings,
+        preferenceId: record.mp_preference_id,
+      });
+    }
+
+    try {
+      return reconcileMercadoPagoPaymentByPreferenceId({
+        supabase: params.supabase,
+        organizationId: params.organizationId,
+        settings: params.settings,
+        preferenceId: record.mp_preference_id,
+      });
+    } catch {
+      return reconcileMercadoPagoSubscriptionById({
+        supabase: params.supabase,
+        organizationId: params.organizationId,
+        settings: params.settings,
+        subscriptionId: record.mp_preference_id,
+        source: "pending",
+      });
+    }
   }
 
   return reconcileMercadoPagoPaymentByExternalReference({

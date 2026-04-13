@@ -2064,6 +2064,22 @@ async function runFlowQueue(params: {
         } // end: paymentAmount > 0
       } catch (error) {
         console.error("Flow engine: failed to send payment link", error);
+        await sendTextAndPersist({
+          supabase: params.supabase,
+          conversationId: params.conversationId,
+          contactPhone: params.contactPhone,
+          nodeId: current.id,
+          text:
+            "Tive um problema ao preparar seu link de pagamento agora. Ja estamos verificando isso e em instantes voce pode tentar novamente.",
+          metaConfig: params.metaConfig,
+          inboundMessageId: params.inboundMessageId,
+        }).catch((messageError) => {
+          console.error(
+            "Flow engine: failed to send payment failure notification",
+            messageError
+          );
+        });
+        return "completed" as const;
       }
       // Delay to preserve delivery order
       await new Promise((resolve) => setTimeout(resolve, 1500));
