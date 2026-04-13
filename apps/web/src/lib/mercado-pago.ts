@@ -1,6 +1,10 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { OrganizationSettings } from "./organization";
+import {
+  buildMercadoPagoStartUrl,
+  createMercadoPagoStartToken,
+} from "./mercado-pago-start";
 import { resolveAppOrigin } from "./strava";
 
 const MP_API_BASE = "https://api.mercadopago.com";
@@ -240,6 +244,22 @@ export interface CreatePaymentParams {
   payerEmail?: string | null;
 }
 
+type StoredPaymentRecord = {
+  id: string;
+  organization_id: string;
+  conversation_id: string;
+  plan_name: string | null;
+  amount: number | string | null;
+  duration_days: number | null;
+  currency: string | null;
+  status: string | null;
+  billing_mode: MercadoPagoBillingMode | null;
+  payer_email: string | null;
+  mp_preference_id: string | null;
+  mp_subscription_id: string | null;
+  mp_subscription_status: string | null;
+};
+
 type PaymentReference = {
   paymentRecordId: string;
   conversationId: string;
@@ -265,14 +285,18 @@ function getStatusPageUrl(params: {
   return url.toString();
 }
 
-export async function createPaymentAndPreference(
-  params: CreatePaymentParams
-): Promise<{
-  initPoint: string;
-  paymentRecordId: string;
-  checkoutId: string;
-  checkoutType: "preference" | "subscription";
-}> {
+function getBillingMode(value: MercadoPagoBillingMode | null | undefined) {
+  return value === "one_time" ? "one_time" : "recurring";
+}
+
+export function isValidMercadoPagoPayerEmail(
+  value: string | null | undefined
+) {
+  if (!value) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+async function createPaymentRecord(params: CreatePaymentParams) {
   const billingMode = params.billingMode || "recurring";
 
   const { data: payment, error: insertErr } = await params.supabase
@@ -296,115 +320,149 @@ export async function createPaymentAndPreference(
     throw new Error(`Failed to create payment record: ${insertErr?.message}`);
   }
 
-  const paymentRecordId = payment.id as string;
-  const externalReference = buildPaymentReference({
-    paymentRecordId,
-    conversationId: params.conversationId,
-    organizationId: params.organizationId,
-  });
-  const origin = resolveAppOrigin();
+  return payment.id as string;
+}
 
-  if (billingMode === "recurring") {
-    if (!params.payerEmail) {
-      throw new Error(
-        "Mercado Pago recurring subscriptions require payer_email. Capture the contact email before this node."
-      );
-    }
+async function getStoredPaymentRecord(params: {
+  supabase: SupabaseClient;
+  paymentRecordId: string;
+}) {
+  const { data, error } = await params.supabase
+    .from("payments")
+    .select(
+      "id, organization_id, conversation_id, plan_name, amount, duration_days, currency, status, billing_mode, payer_email, mp_preference_id, mp_subscription_id, mp_subscription_status"
+    )
+    .eq("id", params.paymentRecordId)
+    .maybeSingle();
 
-    const body = {
-      reason: params.planName,
-      external_reference: externalReference,
-      payer_email: params.payerEmail,
-      back_url: getStatusPageUrl({
-        origin,
-        organizationId: params.organizationId,
-        paymentRecordId,
-        status: "pending",
-      }),
-      notification_url: `${origin}/api/mercadopago/webhook?org=${params.organizationId}&source_news=webhooks`,
-      status: "pending",
-      auto_recurring: {
-        frequency: 1,
-        frequency_type: "months",
-        transaction_amount: params.amount,
-        currency_id: params.currency,
-      },
-    };
-
-    const res = await fetch(`${MP_API_BASE}/preapproval`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${params.accessToken}`,
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(
-        `Mercado Pago subscription creation failed (${res.status}): ${errText}`
-      );
-    }
-
-    const subscription = (await res.json()) as {
-      id: string;
-      init_point: string;
-      status?: string;
-    };
-
-    await params.supabase
-      .from("payments")
-      .update({
-        mp_preference_id: subscription.id,
-        mp_subscription_id: subscription.id,
-        mp_subscription_status: subscription.status || "pending",
-        billing_mode: billingMode,
-        payer_email: params.payerEmail,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", paymentRecordId);
-
-    return {
-      initPoint: subscription.init_point,
-      paymentRecordId,
-      checkoutId: subscription.id,
-      checkoutType: "subscription",
-    };
+  if (error) {
+    throw new Error(`Failed to load payment record: ${error.message}`);
   }
+
+  return (data as StoredPaymentRecord | null) || null;
+}
+
+async function createRecurringCheckoutForRecord(params: {
+  supabase: SupabaseClient;
+  paymentRecord: StoredPaymentRecord;
+  accessToken: string;
+  payerEmail: string;
+}) {
+  const origin = resolveAppOrigin();
+  const externalReference = buildPaymentReference({
+    paymentRecordId: params.paymentRecord.id,
+    conversationId: params.paymentRecord.conversation_id,
+    organizationId: params.paymentRecord.organization_id,
+  });
+
+  const body = {
+    reason: params.paymentRecord.plan_name || "Assinatura",
+    external_reference: externalReference,
+    payer_email: params.payerEmail,
+    back_url: getStatusPageUrl({
+      origin,
+      organizationId: params.paymentRecord.organization_id,
+      paymentRecordId: params.paymentRecord.id,
+      status: "pending",
+    }),
+    notification_url: `${origin}/api/mercadopago/webhook?org=${params.paymentRecord.organization_id}&source_news=webhooks`,
+    status: "pending",
+    auto_recurring: {
+      frequency: 1,
+      frequency_type: "months",
+      transaction_amount: Number(params.paymentRecord.amount) || 0,
+      currency_id: params.paymentRecord.currency || "BRL",
+    },
+  };
+
+  const res = await fetch(`${MP_API_BASE}/preapproval`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${params.accessToken}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(
+      `Mercado Pago subscription creation failed (${res.status}): ${errText}`
+    );
+  }
+
+  const subscription = (await res.json()) as {
+    id: string;
+    init_point: string;
+    status?: string;
+  };
+
+  await params.supabase
+    .from("payments")
+    .update({
+      mp_preference_id: subscription.id,
+      mp_subscription_id: subscription.id,
+      mp_subscription_status: subscription.status || "pending",
+      billing_mode: "recurring",
+      payer_email: params.payerEmail,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", params.paymentRecord.id);
+
+  return {
+    initPoint: subscription.init_point,
+    paymentRecordId: params.paymentRecord.id,
+    checkoutId: subscription.id,
+    checkoutType: "subscription" as const,
+  };
+}
+
+async function createOneTimeCheckoutForRecord(params: {
+  supabase: SupabaseClient;
+  paymentRecord: StoredPaymentRecord;
+  accessToken: string;
+  payerEmail?: string | null;
+}) {
+  const origin = resolveAppOrigin();
+  const externalReference = buildPaymentReference({
+    paymentRecordId: params.paymentRecord.id,
+    conversationId: params.paymentRecord.conversation_id,
+    organizationId: params.paymentRecord.organization_id,
+  });
 
   const body = {
     items: [
       {
-        title: params.planName,
-        unit_price: params.amount,
+        title: params.paymentRecord.plan_name || "Assinatura",
+        unit_price: Number(params.paymentRecord.amount) || 0,
         quantity: 1,
-        currency_id: params.currency,
+        currency_id: params.paymentRecord.currency || "BRL",
       },
     ],
     back_urls: {
       success: getStatusPageUrl({
         origin,
-        organizationId: params.organizationId,
-        paymentRecordId,
+        organizationId: params.paymentRecord.organization_id,
+        paymentRecordId: params.paymentRecord.id,
         status: "success",
       }),
       failure: getStatusPageUrl({
         origin,
-        organizationId: params.organizationId,
-        paymentRecordId,
+        organizationId: params.paymentRecord.organization_id,
+        paymentRecordId: params.paymentRecord.id,
         status: "failure",
       }),
       pending: getStatusPageUrl({
         origin,
-        organizationId: params.organizationId,
-        paymentRecordId,
+        organizationId: params.paymentRecord.organization_id,
+        paymentRecordId: params.paymentRecord.id,
         status: "pending",
       }),
     },
-    notification_url: `${origin}/api/mercadopago/webhook?org=${params.organizationId}&source_news=webhooks`,
+    notification_url: `${origin}/api/mercadopago/webhook?org=${params.paymentRecord.organization_id}&source_news=webhooks`,
     external_reference: externalReference,
     auto_return: "approved",
+    payer: params.payerEmail ? { email: params.payerEmail } : undefined,
   };
 
   const res = await fetch(`${MP_API_BASE}/checkout/preferences`, {
@@ -432,18 +490,168 @@ export async function createPaymentAndPreference(
     .from("payments")
     .update({
       mp_preference_id: preference.id,
-      billing_mode: billingMode,
+      billing_mode: "one_time",
       payer_email: params.payerEmail || null,
       updated_at: new Date().toISOString(),
     })
-    .eq("id", paymentRecordId);
+    .eq("id", params.paymentRecord.id);
 
   return {
     initPoint: preference.init_point,
-    paymentRecordId,
+    paymentRecordId: params.paymentRecord.id,
     checkoutId: preference.id,
-    checkoutType: "preference",
+    checkoutType: "preference" as const,
   };
+}
+
+export async function ensureMercadoPagoCheckoutForRecord(params: {
+  supabase: SupabaseClient;
+  paymentRecordId: string;
+  organizationId: string;
+  accessToken: string;
+  payerEmail?: string | null;
+}): Promise<{
+  initPoint: string;
+  paymentRecordId: string;
+  checkoutId: string;
+  checkoutType: "preference" | "subscription";
+}> {
+  const paymentRecord = await getStoredPaymentRecord({
+    supabase: params.supabase,
+    paymentRecordId: params.paymentRecordId,
+  });
+
+  if (!paymentRecord || paymentRecord.organization_id !== params.organizationId) {
+    throw new Error("Payment record not found");
+  }
+
+  const billingMode = getBillingMode(paymentRecord.billing_mode);
+  const normalizedEmail = isValidMercadoPagoPayerEmail(params.payerEmail)
+    ? params.payerEmail!.trim()
+    : null;
+  const effectiveEmail = normalizedEmail || paymentRecord.payer_email || null;
+
+  if (normalizedEmail && normalizedEmail !== paymentRecord.payer_email) {
+    await params.supabase
+      .from("payments")
+      .update({
+        payer_email: normalizedEmail,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", paymentRecord.id);
+    paymentRecord.payer_email = normalizedEmail;
+  }
+
+  if (billingMode === "recurring") {
+    if (!effectiveEmail) {
+      throw new Error(
+        "Mercado Pago recurring subscriptions require payer_email before checkout."
+      );
+    }
+
+    if (paymentRecord.mp_subscription_id) {
+      const subscription = await fetchMercadoPagoSubscription(
+        paymentRecord.mp_subscription_id,
+        params.accessToken
+      );
+
+      if (!paymentRecord.mp_subscription_status && subscription.status) {
+        await params.supabase
+          .from("payments")
+          .update({
+            mp_subscription_status: subscription.status,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", paymentRecord.id);
+      }
+
+      if (!subscription.init_point) {
+        throw new Error("Subscription checkout link is not available.");
+      }
+
+      return {
+        initPoint: subscription.init_point,
+        paymentRecordId: paymentRecord.id,
+        checkoutId: paymentRecord.mp_subscription_id,
+        checkoutType: "subscription",
+      };
+    }
+
+    return createRecurringCheckoutForRecord({
+      supabase: params.supabase,
+      paymentRecord,
+      accessToken: params.accessToken,
+      payerEmail: effectiveEmail,
+    });
+  }
+
+  if (
+    paymentRecord.mp_preference_id &&
+    paymentRecord.mp_preference_id !== "pending"
+  ) {
+    const preference = await fetchMercadoPagoPreference(
+      paymentRecord.mp_preference_id,
+      params.accessToken
+    );
+
+    return {
+      initPoint: preference.init_point,
+      paymentRecordId: paymentRecord.id,
+      checkoutId: paymentRecord.mp_preference_id,
+      checkoutType: "preference",
+    };
+  }
+
+  return createOneTimeCheckoutForRecord({
+    supabase: params.supabase,
+    paymentRecord,
+    accessToken: params.accessToken,
+    payerEmail: effectiveEmail,
+  });
+}
+
+export async function createPaymentAndPreference(
+  params: CreatePaymentParams
+): Promise<{
+  initPoint: string;
+  paymentRecordId: string;
+  checkoutId: string;
+  checkoutType: "preference" | "subscription" | "email_capture";
+}> {
+  const billingMode = params.billingMode || "recurring";
+  const paymentRecordId = await createPaymentRecord(params);
+
+  if (
+    billingMode === "recurring" &&
+    !isValidMercadoPagoPayerEmail(params.payerEmail)
+  ) {
+    const token = createMercadoPagoStartToken({
+      paymentRecordId,
+      conversationId: params.conversationId,
+      organizationId: params.organizationId,
+    });
+
+    if (!token) {
+      throw new Error(
+        "CRON_SECRET is required to create the Mercado Pago email capture link."
+      );
+    }
+
+    return {
+      initPoint: buildMercadoPagoStartUrl(token),
+      paymentRecordId,
+      checkoutId: paymentRecordId,
+      checkoutType: "email_capture",
+    };
+  }
+
+  return ensureMercadoPagoCheckoutForRecord({
+    supabase: params.supabase,
+    paymentRecordId,
+    organizationId: params.organizationId,
+    accessToken: params.accessToken,
+    payerEmail: params.payerEmail,
+  });
 }
 
 export interface MercadoPagoPayment {

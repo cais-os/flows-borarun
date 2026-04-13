@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { getOrganizationSettingsById } from "@/lib/organization";
 import {
+  ensureMercadoPagoCheckoutForRecord,
   fetchMercadoPagoPreference,
-  fetchMercadoPagoSubscription,
   getMercadoPagoConfig,
   type MercadoPagoBillingMode,
 } from "@/lib/mercado-pago";
+import {
+  buildMercadoPagoStartUrl,
+  createMercadoPagoStartToken,
+} from "@/lib/mercado-pago-start";
 import { createServerClient } from "@/lib/supabase/server";
 
 export async function GET(request: Request) {
@@ -35,7 +39,9 @@ export async function GET(request: Request) {
     const supabase = createServerClient();
     const { data: paymentRecord } = await supabase
       .from("payments")
-      .select("organization_id, billing_mode, mp_preference_id, mp_subscription_id")
+      .select(
+        "id, organization_id, conversation_id, billing_mode, payer_email, mp_preference_id, mp_subscription_id"
+      )
       .eq("id", paymentRecordId)
       .maybeSingle();
 
@@ -47,8 +53,11 @@ export async function GET(request: Request) {
     }
 
     const record = paymentRecord as {
+      id: string;
       organization_id: string;
+      conversation_id: string;
       billing_mode: MercadoPagoBillingMode | null;
+      payer_email: string | null;
       mp_preference_id: string | null;
       mp_subscription_id: string | null;
     };
@@ -59,30 +68,37 @@ export async function GET(request: Request) {
 
     if (
       (record.billing_mode || "recurring") === "recurring" &&
-      record.mp_subscription_id
+      !record.payer_email &&
+      !record.mp_subscription_id
     ) {
-      const subscription = await fetchMercadoPagoSubscription(
-        record.mp_subscription_id,
-        mpConfig.config.accessToken
-      );
+      const token = createMercadoPagoStartToken({
+        paymentRecordId: record.id,
+        conversationId: record.conversation_id,
+        organizationId: record.organization_id,
+      });
 
-      if (!subscription.init_point) {
+      if (!token) {
         return NextResponse.json(
-          { error: "Failed to fetch subscription checkout link" },
-          { status: 502 }
+          { error: "Failed to create payment start link" },
+          { status: 500 }
         );
       }
 
-      return NextResponse.redirect(subscription.init_point);
+      return NextResponse.redirect(buildMercadoPagoStartUrl(token));
     }
 
-    if (record.mp_preference_id && record.mp_preference_id !== "pending") {
-      const preference = await fetchMercadoPagoPreference(
-        record.mp_preference_id,
-        mpConfig.config.accessToken
-      );
+    if (
+      (record.billing_mode || "recurring") === "recurring" ||
+      (record.mp_preference_id && record.mp_preference_id !== "pending")
+    ) {
+      const checkout = await ensureMercadoPagoCheckoutForRecord({
+        supabase,
+        paymentRecordId: record.id,
+        organizationId: orgId,
+        accessToken: mpConfig.config.accessToken,
+      });
 
-      return NextResponse.redirect(preference.init_point);
+      return NextResponse.redirect(checkout.initPoint);
     }
 
     return NextResponse.json(

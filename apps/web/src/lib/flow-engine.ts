@@ -1956,25 +1956,6 @@ async function runFlowQueue(params: {
 
         if (!mpConfig.configured || !mpConfig.config) {
           console.error("Flow engine: Mercado Pago not configured for org", params.organizationId);
-        } else if (billingMode === "recurring" && !payerEmail) {
-          const missingEmailMessage =
-            "Para liberar a assinatura recorrente, preciso ter um e-mail valido para o pagamento. Assim que esse e-mail estiver capturado no fluxo, eu gero o link automaticamente.";
-
-          await sendTextAndPersist({
-            supabase: params.supabase,
-            conversationId: params.conversationId,
-            contactPhone: params.contactPhone,
-            nodeId: current.id,
-            text: missingEmailMessage,
-            metaConfig: params.metaConfig,
-            inboundMessageId: params.inboundMessageId,
-          });
-
-          console.error("Flow engine: recurring payment node is missing payer email", {
-            conversationId: params.conversationId,
-            nodeId: current.id,
-          });
-          return "completed" as const;
         } else {
           const result = await createPaymentAndPreference({
             supabase: params.supabase,
@@ -1990,12 +1971,16 @@ async function runFlowQueue(params: {
           });
 
           const paymentUrl = result.initPoint;
+          const isEmailCaptureStep = result.checkoutType === "email_capture";
           let message: string;
           if (paymentData.messageText?.trim()) {
             message = interpolateVariables(
               paymentData.messageText.replace(/\{\{payment_link\}\}/g, paymentUrl),
               conversationVariables
             );
+          } else if (isEmailCaptureStep) {
+            message =
+              `Para continuar a assinatura do plano ${paymentData.planName || "Premium"}, clique no link abaixo.\n\n${paymentUrl}\n\nAntes de abrir o checkout do Mercado Pago, vou te pedir um e-mail rapido para ativar a cobranca recorrente.`;
           } else {
             message = buildPaymentMessage(paymentUrl);
           }
@@ -2007,6 +1992,8 @@ async function runFlowQueue(params: {
                   paymentData.messageText.replace(/\{\{payment_link\}\}/g, "").trim(),
                   conversationVariables
                 )
+              : isEmailCaptureStep
+                ? `Para assinar o plano ${paymentData.planName || ""}, clique no botao abaixo. Primeiro vou confirmar seu e-mail e depois abrir o Mercado Pago.`.trim()
               : `Para assinar o plano ${paymentData.planName || ""}, clique no botao abaixo:`.trim();
 
             const ctaResult = await sendMetaWhatsAppCtaUrlMessage(
