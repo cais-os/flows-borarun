@@ -33,14 +33,35 @@ export async function PUT(
   const supabase = await createSupabaseServer();
   const body = await request.json();
 
+  const { data: existingFlow, error: existingError } = await supabase
+    .from("flows")
+    .select("name, description, is_active, nodes, edges")
+    .eq("organization_id", context.organizationId)
+    .eq("id", flowId)
+    .single();
+
+  if (existingError || !existingFlow) {
+    return NextResponse.json(
+      { error: existingError?.message || "Flow not found" },
+      { status: 404 }
+    );
+  }
+
+  const hasOwn = (key: string) =>
+    Object.prototype.hasOwnProperty.call(body, key);
+
   const { data, error } = await supabase
     .from("flows")
     .update({
-      name: body.name,
-      description: body.description,
-      is_active: body.is_active ?? false,
-      nodes: body.nodes,
-      edges: body.edges,
+      name: hasOwn("name") ? body.name : existingFlow.name,
+      description: hasOwn("description")
+        ? body.description
+        : existingFlow.description,
+      is_active: hasOwn("is_active")
+        ? body.is_active
+        : existingFlow.is_active,
+      nodes: hasOwn("nodes") ? body.nodes : existingFlow.nodes,
+      edges: hasOwn("edges") ? body.edges : existingFlow.edges,
       updated_at: new Date().toISOString(),
     })
     .eq("organization_id", context.organizationId)
