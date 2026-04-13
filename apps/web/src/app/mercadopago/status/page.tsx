@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { CheckCircle2, CircleAlert, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -8,6 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { EmbeddedWhatsAppOkHint } from "@/components/embedded-whatsapp-ok-hint";
 import { getOrganizationSettingsById } from "@/lib/organization";
 import {
   reconcileMercadoPagoPayment,
@@ -25,6 +25,8 @@ const statusCopy = {
     title: "Pagamento confirmado",
     description:
       "Sua assinatura foi ativada com sucesso. Voce ja pode voltar para a conversa no WhatsApp.",
+    hint:
+      "Pagamento realizado com sucesso! Para voltar ao chat, clique no OK.",
     icon: CheckCircle2,
     tone: "text-emerald-600",
   },
@@ -32,6 +34,7 @@ const statusCopy = {
     title: "Pagamento em processamento",
     description:
       "Seu pagamento esta sendo processado. Voce sera notificado pelo WhatsApp assim que for confirmado.",
+    hint: "Pagamento em processamento. Para voltar ao chat, clique no OK.",
     icon: Clock,
     tone: "text-amber-600",
   },
@@ -39,6 +42,7 @@ const statusCopy = {
     title: "Pagamento nao aprovado",
     description:
       "Nao foi possivel concluir o pagamento. Tente novamente clicando no botao abaixo.",
+    hint: null,
     icon: CircleAlert,
     tone: "text-rose-600",
   },
@@ -241,31 +245,33 @@ export default async function MercadoPagoStatusPage({
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-100 px-4">
-      <Card className="w-full max-w-lg border-slate-200 bg-white shadow-[0_24px_60px_-40px_rgba(15,23,42,0.35)]">
-        <CardHeader className="space-y-4 text-center">
-          <Icon className={`mx-auto h-12 w-12 ${current.tone}`} />
-          <div className="space-y-2">
-            <CardTitle className="text-2xl text-slate-900">
-              {current.title}
-            </CardTitle>
-            <CardDescription className="text-base text-slate-600">
-              {current.description}
-            </CardDescription>
-          </div>
-        </CardHeader>
-        <CardContent className="flex justify-center gap-3">
+    <main className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-10">
+      <div className="w-full max-w-lg space-y-6">
+        {current.hint ? <EmbeddedWhatsAppOkHint message={current.hint} /> : null}
+        <Card className="border-slate-200 bg-white shadow-[0_24px_60px_-40px_rgba(15,23,42,0.35)]">
+          <CardHeader className="space-y-4 text-center">
+            <Icon className={`mx-auto h-12 w-12 ${current.tone}`} />
+            <div className="space-y-2">
+              <CardTitle className="text-2xl text-slate-900">
+                {current.title}
+              </CardTitle>
+              <CardDescription className="text-base text-slate-600">
+                {current.description}
+              </CardDescription>
+            </div>
+          </CardHeader>
           {retryUrl ? (
-            <Button asChild className="rounded-xl bg-emerald-600 hover:bg-emerald-700">
-              <a href={retryUrl}>Tentar novamente</a>
-            </Button>
-          ) : (
-            <Button asChild className="rounded-xl bg-slate-900 hover:bg-slate-800">
-              <Link href="/">Fechar</Link>
-            </Button>
-          )}
-        </CardContent>
-      </Card>
+            <CardContent className="flex justify-center gap-3">
+              <Button
+                asChild
+                className="rounded-xl bg-emerald-600 hover:bg-emerald-700"
+              >
+                <a href={retryUrl}>Tentar novamente</a>
+              </Button>
+            </CardContent>
+          ) : null}
+        </Card>
+      </div>
     </main>
   );
 }
