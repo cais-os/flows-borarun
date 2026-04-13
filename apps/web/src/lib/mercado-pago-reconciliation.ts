@@ -209,13 +209,20 @@ async function sendPostPaymentMessages(params: {
         ),
     });
 
-    await params.supabase.from("messages").insert({
-      conversation_id: params.conversation.id,
-      content: congratsMsg,
-      type: "text",
-      sender: "bot",
-      wa_message_id: sent.messageId,
-    });
+    try {
+      await params.supabase.from("messages").insert({
+        conversation_id: params.conversation.id,
+        content: congratsMsg,
+        type: "text",
+        sender: "bot",
+        wa_message_id: sent.messageId,
+      });
+    } catch (error) {
+      console.warn(
+        "[mercado-pago] Failed to persist premium confirmation message",
+        error
+      );
+    }
 
     flowVariables[PREMIUM_CONFIRMATION_PAYMENT_KEY] = params.paymentId;
     await persistConversationFlowVariables({
@@ -255,20 +262,28 @@ async function sendPostPaymentMessages(params: {
       ),
   });
 
-  await params.supabase.from("messages").insert({
-    conversation_id: params.conversation.id,
-    content: dayMsg,
-    type: "interactive",
-    sender: "bot",
-    wa_message_id: sent.messageId,
-  });
-
   flowVariables[AWAITING_WEEKLY_DAY_KEY] = "true";
   await persistConversationFlowVariables({
     supabase: params.supabase,
     conversationId: params.conversation.id,
     flowVariables,
   });
+
+  try {
+    await params.supabase.from("messages").insert({
+      conversation_id: params.conversation.id,
+      content: dayMsg,
+      // Production still has a legacy enum/check here, so persist as text.
+      type: "text",
+      sender: "bot",
+      wa_message_id: sent.messageId,
+    });
+  } catch (error) {
+    console.warn(
+      "[mercado-pago] Failed to persist weekly day prompt message",
+      error
+    );
+  }
 }
 
 async function updatePaymentRecordStatus(params: {
