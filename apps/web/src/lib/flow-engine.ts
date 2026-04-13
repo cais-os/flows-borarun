@@ -43,6 +43,7 @@ import {
   getMatchedWaitRoute,
   normalizeWaitForReplyNodeData,
 } from "@/lib/wait-for-reply";
+import { persistConversationMessage } from "@/lib/conversation-messages";
 import { convertToOgg, getAudioFormat, needsOggConversion } from "@/lib/audio-converter";
 import { getCronSecret } from "@/lib/internal-auth";
 import {
@@ -312,13 +313,14 @@ async function sendTextAndPersist(params: {
     params.metaConfig
   );
 
-  await params.supabase.from("messages").insert({
-    conversation_id: params.conversationId,
+  await persistConversationMessage({
+    supabase: params.supabase,
+    conversationId: params.conversationId,
     content: params.text,
     type: "text",
     sender: "bot",
-    node_id: params.nodeId,
-    wa_message_id: result.messageId,
+    nodeId: params.nodeId,
+    waMessageId: result.messageId,
   });
 }
 
@@ -1838,14 +1840,19 @@ async function runFlowQueue(params: {
             params.metaConfig
           );
 
-          await params.supabase.from("messages").insert({
-            conversation_id: params.conversationId,
+          await persistConversationMessage({
+            supabase: params.supabase,
+            conversationId: params.conversationId,
             content: bodyText,
             type: "interactive",
             sender: "bot",
-            node_id: current.id,
-            wa_message_id: ctaResult.messageId,
-            metadata: { strava_connect_url: connectUrl },
+            nodeId: current.id,
+            waMessageId: ctaResult.messageId,
+            metadata: {
+              strava_connect_url: connectUrl,
+              whatsapp_interactive_kind: "cta_url",
+              whatsapp_button_text: stravaData.ctaButtonText,
+            },
           });
         } else if (stravaData.mediaUrl) {
           // Send image with the text as caption (single message)
@@ -1913,13 +1920,18 @@ async function runFlowQueue(params: {
           },
           params.metaConfig
         );
-        await params.supabase.from("messages").insert({
-          conversation_id: params.conversationId,
-          content: "Seguir sem Strava?",
+        await persistConversationMessage({
+          supabase: params.supabase,
+          conversationId: params.conversationId,
+          content: skipBody,
           type: "interactive",
           sender: "bot",
-          node_id: current.id,
-          wa_message_id: skipResult.messageId,
+          nodeId: current.id,
+          waMessageId: skipResult.messageId,
+          metadata: {
+            whatsapp_interactive_kind: "buttons",
+            whatsapp_button_text: skipBtnText,
+          },
         });
       } catch (error) {
         console.error("Flow engine: failed to send Strava skip button", error);
@@ -2006,14 +2018,19 @@ async function runFlowQueue(params: {
               params.metaConfig
             );
 
-            await params.supabase.from("messages").insert({
-              conversation_id: params.conversationId,
+            await persistConversationMessage({
+              supabase: params.supabase,
+              conversationId: params.conversationId,
               content: bodyText,
               type: "interactive",
               sender: "bot",
-              node_id: current.id,
-              wa_message_id: ctaResult.messageId,
-              metadata: { payment_url: paymentUrl },
+              nodeId: current.id,
+              waMessageId: ctaResult.messageId,
+              metadata: {
+                payment_url: paymentUrl,
+                whatsapp_interactive_kind: "cta_url",
+                whatsapp_button_text: paymentData.ctaButtonText,
+              },
             });
           } else if (paymentData.mediaUrl) {
             let imageUrl: string;
@@ -2158,7 +2175,7 @@ async function runFlowQueue(params: {
             ? interpolateVariables(flowData.bodyText, variables)
             : "Preencha o formulario abaixo:";
 
-          await sendMetaWhatsAppFlowMessage(
+          const flowResult = await sendMetaWhatsAppFlowMessage(
             {
               to: params.contactPhone,
               flowId,
@@ -2172,13 +2189,20 @@ async function runFlowQueue(params: {
             params.metaConfig
           );
 
-          await params.supabase.from("messages").insert({
-            conversation_id: params.conversationId,
+          await persistConversationMessage({
+            supabase: params.supabase,
+            conversationId: params.conversationId,
             content: bodyText,
             type: "interactive",
             sender: "bot",
-            node_id: current.id,
-            metadata: { whatsapp_flow_id: flowId, flow_token: flowToken },
+            nodeId: current.id,
+            waMessageId: flowResult.messageId,
+            metadata: {
+              whatsapp_flow_id: flowId,
+              flow_token: flowToken,
+              whatsapp_interactive_kind: "flow",
+              whatsapp_button_text: flowData.ctaText || "Abrir formulario",
+            },
           });
 
           // Store the flow_token so the data endpoint can look it up

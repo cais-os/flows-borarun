@@ -19,6 +19,7 @@ import { createServerClient } from "@/lib/supabase/server";
 import { findMatchingFlow, executeFlow, resumeFlow } from "@/lib/flow-engine";
 import { generateCoachResponse, validateProfileUpdates } from "@/lib/ai-coach";
 import { classifyFlowIntent } from "@/lib/intent-classifier";
+import { persistConversationMessage } from "@/lib/conversation-messages";
 import {
   getOrganizationSettingsById,
   getOrganizationSettingsByPhoneNumberId,
@@ -538,10 +539,11 @@ export async function POST(request: Request) {
                 await supabase.from("conversations").update({ flow_variables: prefVars }).eq("id", conversationId);
 
                 // Ask for preferred hour
-                await sendMetaWhatsAppInteractiveListMessage(
+                const hourPrompt = "E em qual horario prefere receber?";
+                const hourResult = await sendMetaWhatsAppInteractiveListMessage(
                   {
                     to: contactPhone,
-                    body: "E em qual horario prefere receber?",
+                    body: hourPrompt,
                     buttonText: "Escolher horario",
                     sectionTitle: "Horarios",
                     items: [
@@ -556,6 +558,19 @@ export async function POST(request: Request) {
                   },
                   metaConfig
                 );
+
+                await persistConversationMessage({
+                  supabase,
+                  conversationId,
+                  content: hourPrompt,
+                  type: "interactive",
+                  sender: "bot",
+                  waMessageId: hourResult.messageId,
+                  metadata: {
+                    whatsapp_interactive_kind: "list",
+                    whatsapp_button_text: "Escolher horario",
+                  },
+                });
                 continue;
               }
             }
@@ -569,10 +584,20 @@ export async function POST(request: Request) {
                 delete prefVars._awaiting_weekly_hour;
                 await supabase.from("conversations").update({ flow_variables: prefVars }).eq("id", conversationId);
 
-                await sendMetaWhatsAppTextMessage(
-                  { to: contactPhone, body: "Perfeito! Voce vai receber seus treinos atualizados toda semana. Agora pode me mandar qualquer duvida sobre corrida!" },
+                const weeklyReadyText =
+                  "Perfeito! Voce vai receber seus treinos atualizados toda semana. Agora pode me mandar qualquer duvida sobre corrida!";
+                const weeklyReadyResult = await sendMetaWhatsAppTextMessage(
+                  { to: contactPhone, body: weeklyReadyText },
                   metaConfig
                 );
+                await persistConversationMessage({
+                  supabase,
+                  conversationId,
+                  content: weeklyReadyText,
+                  type: "text",
+                  sender: "bot",
+                  waMessageId: weeklyReadyResult.messageId,
+                });
                 continue;
               }
             }
@@ -933,13 +958,18 @@ export async function POST(request: Request) {
                   metaConfig
                 );
 
-                await supabase.from("messages").insert({
-                  conversation_id: conversationId,
+                await persistConversationMessage({
+                  supabase,
+                  conversationId,
                   content: cancellationText,
                   type: "interactive",
                   sender: "bot",
-                  wa_message_id: cancelResult.messageId,
-                  metadata: { cancellation_url: cancellationUrl },
+                  waMessageId: cancelResult.messageId,
+                  metadata: {
+                    cancellation_url: cancellationUrl,
+                    whatsapp_interactive_kind: "cta_url",
+                    whatsapp_button_text: "Cancelar assinatura",
+                  },
                 });
                 continue;
               }

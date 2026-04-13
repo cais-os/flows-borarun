@@ -20,6 +20,7 @@ import {
   sendMetaWhatsAppTextMessage,
   type MetaConfig,
 } from "@/lib/meta";
+import { persistConversationMessage } from "@/lib/conversation-messages";
 
 const PREMIUM_CONFIRMATION_PAYMENT_KEY = "_premium_confirmation_payment_id";
 const AWAITING_WEEKLY_DAY_KEY = "_awaiting_weekly_day";
@@ -210,12 +211,13 @@ async function sendPostPaymentMessages(params: {
     });
 
     try {
-      await params.supabase.from("messages").insert({
-        conversation_id: params.conversation.id,
+      await persistConversationMessage({
+        supabase: params.supabase,
+        conversationId: params.conversation.id,
         content: congratsMsg,
         type: "text",
         sender: "bot",
-        wa_message_id: sent.messageId,
+        waMessageId: sent.messageId,
       });
     } catch (error) {
       console.warn(
@@ -270,13 +272,17 @@ async function sendPostPaymentMessages(params: {
   });
 
   try {
-    await params.supabase.from("messages").insert({
-      conversation_id: params.conversation.id,
+    await persistConversationMessage({
+      supabase: params.supabase,
+      conversationId: params.conversation.id,
       content: dayMsg,
-      // Production still has a legacy enum/check here, so persist as text.
-      type: "text",
+      type: "interactive",
       sender: "bot",
-      wa_message_id: sent.messageId,
+      waMessageId: sent.messageId,
+      metadata: {
+        whatsapp_interactive_kind: "list",
+        whatsapp_button_text: "Escolher dia",
+      },
     });
   } catch (error) {
     console.warn(

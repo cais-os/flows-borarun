@@ -8,6 +8,7 @@ import {
   sendMetaWhatsAppTextMessage,
   sendMetaWhatsAppInteractiveButtonsMessage,
 } from "@/lib/meta";
+import { persistConversationMessage } from "@/lib/conversation-messages";
 import {
   createOrUpdateStravaConnection,
   exchangeStravaCode,
@@ -69,7 +70,7 @@ export async function GET(request: Request) {
       if (conv?.contact_phone) {
         try {
           // Send failure message with retry/skip buttons
-          await sendMetaWhatsAppInteractiveButtonsMessage(
+          const result = await sendMetaWhatsAppInteractiveButtonsMessage(
             {
               to: conv.contact_phone,
               body: "Nao foi possivel sincronizar com o Strava. O que deseja fazer?",
@@ -80,6 +81,19 @@ export async function GET(request: Request) {
             },
             metaConfig
           );
+
+          await persistConversationMessage({
+            supabase,
+            conversationId: state.conversationId,
+            content: "Nao foi possivel sincronizar com o Strava. O que deseja fazer?",
+            type: "interactive",
+            sender: "bot",
+            waMessageId: result.messageId,
+            metadata: {
+              whatsapp_interactive_kind: "buttons",
+              whatsapp_button_text: "Tentar novamente / Seguir sem Strava",
+            },
+          });
         } catch (e) {
           console.error("Failed to send Strava failure buttons:", e);
         }
@@ -198,7 +212,7 @@ export async function GET(request: Request) {
         .single();
 
       if (conv?.contact_phone) {
-        await sendMetaWhatsAppInteractiveButtonsMessage(
+        const result = await sendMetaWhatsAppInteractiveButtonsMessage(
           {
             to: conv.contact_phone,
             body: "Nao foi possivel sincronizar com Strava por problemas tecnicos. O que deseja fazer?",
@@ -209,6 +223,19 @@ export async function GET(request: Request) {
           },
           metaConfig
         );
+
+        await persistConversationMessage({
+          supabase,
+          conversationId: state.conversationId,
+          content: "Nao foi possivel sincronizar com Strava por problemas tecnicos. O que deseja fazer?",
+          type: "interactive",
+          sender: "bot",
+          waMessageId: result.messageId,
+          metadata: {
+            whatsapp_interactive_kind: "buttons",
+            whatsapp_button_text: "Tentar novamente / Seguir sem Strava",
+          },
+        });
       }
     } catch (btnError) {
       console.error("Failed to send Strava failure buttons:", btnError);

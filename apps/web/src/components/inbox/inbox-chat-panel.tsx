@@ -31,6 +31,32 @@ type Shortcut = {
 function MessageBubble({ message }: { message: DbMessage }) {
   const isContact = message.sender === "contact";
   const isSystem = message.sender === "system";
+  const metadata =
+    message.metadata && typeof message.metadata === "object"
+      ? (message.metadata as Record<string, unknown>)
+      : null;
+  const interactiveKind =
+    typeof metadata?.whatsapp_interactive_kind === "string"
+      ? metadata.whatsapp_interactive_kind
+      : typeof metadata?.whatsapp_message_type === "string"
+        ? metadata.whatsapp_message_type
+        : null;
+  const interactiveButtonText =
+    typeof metadata?.whatsapp_button_text === "string"
+      ? metadata.whatsapp_button_text
+      : null;
+  const interactiveLabel =
+    interactiveKind === "flow"
+      ? "Formulario do WhatsApp"
+      : interactiveKind === "list"
+        ? "Lista interativa"
+        : interactiveKind === "buttons"
+          ? "Botoes interativos"
+          : interactiveKind === "cta_url"
+            ? "Botao com link"
+            : interactiveKind === "interactive"
+              ? "Mensagem interativa"
+              : null;
 
   if (isSystem) {
     return (
@@ -52,6 +78,12 @@ function MessageBubble({ message }: { message: DbMessage }) {
         {!isContact && (
           <p className="text-[10px] font-medium text-green-700 mb-0.5">
             {message.sender === "human" ? "Operador" : "Bot"}
+          </p>
+        )}
+        {!isContact && interactiveLabel && (
+          <p className="mb-1 text-[10px] font-medium text-slate-500">
+            {interactiveLabel}
+            {interactiveButtonText ? ` • ${interactiveButtonText}` : ""}
           </p>
         )}
         {message.type === "video" && message.media_url && (
