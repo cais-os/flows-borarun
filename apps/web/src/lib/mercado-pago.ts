@@ -293,14 +293,25 @@ function getBillingMode(value: MercadoPagoBillingMode | null | undefined) {
 }
 
 function isMissingPaymentsColumnError(error: { message?: string } | null | undefined) {
-  const message = error?.message || "";
-  return (
-    message.includes("column payments.billing_mode does not exist") ||
-    message.includes("column payments.payer_email does not exist") ||
-    message.includes("column payments.mp_subscription_id does not exist") ||
-    message.includes("column payments.mp_subscription_status does not exist") ||
-    message.includes("column payments.mp_authorized_payment_id does not exist")
-  );
+  const message = (error?.message || "").toLowerCase();
+  const missingColumns = [
+    "billing_mode",
+    "payer_email",
+    "mp_subscription_id",
+    "mp_subscription_status",
+    "mp_authorized_payment_id",
+  ];
+
+  return missingColumns.some((column) => {
+    return (
+      message.includes(`column payments.${column} does not exist`) ||
+      message.includes(`column \"payments.${column}\" does not exist`) ||
+      message.includes(`could not find the '${column}' column of 'payments'`) ||
+      (message.includes(column) &&
+        message.includes("payments") &&
+        message.includes("schema cache"))
+    );
+  });
 }
 
 export function isValidMercadoPagoPayerEmail(
