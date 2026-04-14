@@ -294,7 +294,19 @@ function buildUserProfileContext(vars: Record<string, string>, conv: Conversatio
   );
 
   if (conv.subscription_status === "trial") {
-    lines.push("\nIMPORTANTE - PERÍODO DE TESTE: Este aluno está em teste gratuito. Responda com qualidade, mas mencione naturalmente os benefícios do premium (ajustes semanais, análise do Strava, acompanhamento contínuo). Seja sutil.");
+    lines.push(`\nIMPORTANTE - PERÍODO DE TESTE: Este aluno está em teste gratuito de 1 dia.
+Responda com qualidade total, mas em momentos naturais da conversa, mencione
+que com o plano Premium ele terá acesso contínuo a benefícios como:
+- adaptação semanal do plano: o treino muda conforme o feedback real do atleta
+  (cansaço, facilidade, dor, rotina), sem ficar preso a uma planilha estática;
+- dicas de alimentação pré e pós-treino adequadas ao tipo de sessão;
+- organização de treinos de força complementares à corrida;
+- análise dos dados do Strava (pace, frequência cardíaca, tendência de carga);
+- revisão semanal completa com decisão técnica de progredir, manter ou reduzir;
+- orientações de recuperação, sono e hidratação;
+- monitoramento contínuo de sinais de risco e overtraining.
+Seja sutil e natural — não liste tudo de uma vez. Mencione 1 ou 2 benefícios
+por conversa, conforme o contexto. Nunca pareça um vendedor.`);
   }
 
   return lines.join("\n");
