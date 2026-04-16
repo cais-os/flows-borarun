@@ -7,6 +7,7 @@ export const DEFAULT_FLOW_NAME = "Novo Flow";
 
 type FlowDraft = Omit<Partial<Flow>, "nodes"> &
   Pick<Flow, "id"> & {
+    is_active?: boolean | null;
     nodes?: Array<{ data: NodeData }>;
   };
 
@@ -16,12 +17,18 @@ function hasWindow() {
 
 export function normalizeFlow(flow: FlowDraft): Flow {
   const now = new Date().toISOString();
+  const isActive =
+    typeof flow.isActive === "boolean"
+      ? flow.isActive
+      : typeof flow.is_active === "boolean"
+        ? flow.is_active
+        : false;
 
   return {
     id: flow.id,
     name: flow.name || DEFAULT_FLOW_NAME,
     description: flow.description,
-    isActive: Boolean(flow.isActive),
+    isActive,
     nodes: (flow.nodes as Flow["nodes"]) || [],
     edges: flow.edges || [],
     created_at: flow.created_at || now,
