@@ -26,12 +26,10 @@ import {
   PanelsTopLeft,
   Tag,
   Timer,
-  TrendingDown,
   Users,
   Zap,
 } from "lucide-react";
 import { NODE_CONFIG } from "@/lib/constants";
-import { cn } from "@/lib/utils";
 import type {
   FlowAnalyticsLayoutNode,
   FlowFunnelData,
@@ -84,35 +82,10 @@ function getNodeConfig(nodeType: string) {
   };
 }
 
-function getPerformanceTone(percentage: number) {
-  if (percentage >= 70) {
-    return {
-      badgeClass: "bg-emerald-50 text-emerald-700",
-      barClass: "bg-emerald-500",
-      edgeColor: "#10B981",
-    };
-  }
-
-  if (percentage >= 35) {
-    return {
-      badgeClass: "bg-amber-50 text-amber-700",
-      barClass: "bg-amber-500",
-      edgeColor: "#F59E0B",
-    };
-  }
-
-  return {
-    badgeClass: "bg-rose-50 text-rose-700",
-    barClass: "bg-rose-500",
-    edgeColor: "#F43F5E",
-  };
-}
-
 function AnalyticsFlowNode({ data }: NodeProps) {
   const nodeData = data as AnalyticsNodeData;
   const nodeConfig = getNodeConfig(nodeData.nodeType);
   const Icon = NODE_ICONS[nodeData.nodeType] || Zap;
-  const tone = getPerformanceTone(nodeData.percentage);
 
   return (
     <div
@@ -146,51 +119,17 @@ function AnalyticsFlowNode({ data }: NodeProps) {
             </div>
           </div>
         </div>
-
-        <span
-          className={cn(
-            "rounded-full px-2 py-1 text-[11px] font-semibold",
-            tone.badgeClass
-          )}
-        >
-          {nodeData.percentage}%
-        </span>
       </div>
 
-      <div className="space-y-3 px-4 pb-4">
-        <div className="grid grid-cols-2 gap-2">
-          <div className="rounded-2xl border border-slate-100 bg-white/90 px-3 py-2">
-            <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
-              <Users size={12} />
-              Alcance
-            </div>
-            <p className="mt-1 text-lg font-semibold text-slate-800">
-              {nodeData.visits}
-            </p>
+      <div className="px-4 pb-4">
+        <div className="rounded-2xl border border-slate-100 bg-white/90 px-3 py-3">
+          <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+            <Users size={12} />
+            Avancaram ate este no
           </div>
-
-          <div className="rounded-2xl border border-slate-100 bg-white/90 px-3 py-2">
-            <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
-              <TrendingDown size={12} />
-              Perda
-            </div>
-            <p className="mt-1 text-lg font-semibold text-slate-800">
-              {nodeData.cumulativeDropOff}
-            </p>
-          </div>
-        </div>
-
-        <div>
-          <div className="mb-1.5 flex items-center justify-between text-[11px] text-slate-500">
-            <span>Conversao ate esta etapa</span>
-            <span>{nodeData.percentage}% do total</span>
-          </div>
-          <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-            <div
-              className={cn("h-full rounded-full transition-all", tone.barClass)}
-              style={{ width: `${Math.max(nodeData.percentage, 4)}%` }}
-            />
-          </div>
+          <p className="mt-1 text-2xl font-semibold text-slate-800">
+            {nodeData.visits}
+          </p>
         </div>
       </div>
 
@@ -225,7 +164,7 @@ export function FlowAnalyticsMap({ funnel }: { funnel: FlowFunnelData }) {
 
   const edges: Edge[] = funnel.layoutEdges.map((edge) => {
     const targetNode = nodeMetricsById.get(edge.target);
-    const tone = getPerformanceTone(targetNode?.percentage || 0);
+    const targetConfig = getNodeConfig(targetNode?.nodeType || "unknown");
     const opacity = targetNode?.visits ? 0.8 : 0.28;
 
     return {
@@ -235,7 +174,7 @@ export function FlowAnalyticsMap({ funnel }: { funnel: FlowFunnelData }) {
       type: "smoothstep",
       sourceHandle: null,
       style: {
-        stroke: tone.edgeColor,
+        stroke: targetConfig.color,
         strokeWidth: 2.5,
         opacity,
       },
@@ -243,7 +182,7 @@ export function FlowAnalyticsMap({ funnel }: { funnel: FlowFunnelData }) {
         type: MarkerType.ArrowClosed,
         width: 18,
         height: 18,
-        color: tone.edgeColor,
+        color: targetConfig.color,
       },
     };
   });
@@ -256,21 +195,9 @@ export function FlowAnalyticsMap({ funnel }: { funnel: FlowFunnelData }) {
             Mapa do flow
           </h3>
           <p className="mt-1 text-xs text-slate-500">
-            Mesmo layout do flow real, com intensidade visual baseada no percentual
-            de usuarios que chegaram em cada etapa.
+            Mesmo layout do flow real, mostrando somente quantos usuarios
+            avancaram ate cada no.
           </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 text-[11px]">
-          <span className="rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-700">
-            Alta conversao
-          </span>
-          <span className="rounded-full bg-amber-50 px-2.5 py-1 font-medium text-amber-700">
-            Conversao media
-          </span>
-          <span className="rounded-full bg-rose-50 px-2.5 py-1 font-medium text-rose-700">
-            Baixa conversao
-          </span>
         </div>
       </div>
 
