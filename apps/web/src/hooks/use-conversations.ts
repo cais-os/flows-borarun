@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 const supabase = createClient();
+const PAGE_SIZE = 500;
 
 export interface DbMessage {
   id: string;
@@ -41,129 +42,163 @@ export interface DbConversation {
   tags: DbConversationTag[];
 }
 
+async function fetchAllPages<T>(
+  loadPage: (from: number, to: number) => PromiseLike<{ data: T[] | null }>
+) {
+  const rows: T[] = [];
+
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const to = from + PAGE_SIZE - 1;
+    const { data } = await loadPage(from, to);
+
+    if (!data || data.length === 0) {
+      break;
+    }
+
+    rows.push(...data);
+
+    if (data.length < PAGE_SIZE) {
+      break;
+    }
+  }
+
+  return rows;
+}
+
 export function useConversations() {
   const [conversations, setConversations] = useState<DbConversation[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIdState, setSelectedIdState] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const orgIdRef = useRef<string | null>(null);
+  const selectedIdRef = useRef<string | null>(null);
 
-  const fetchConversationsSnapshot = useCallback(async (currentSelectedId: string | null) => {
-    // RLS already filters by org, but we fetch orgId for realtime scoping
-    if (!orgIdRef.current) {
-      try {
-        const res = await fetch("/api/me");
-        if (res.ok) {
-          const me = (await res.json()) as { organizationId: string };
-          orgIdRef.current = me.organizationId;
-        }
-      } catch {
-        // ignore — RLS still protects the queries below
-      }
-    }
-
-    const { data: convs } = await supabase
-      .from("conversations")
-      .select("*")
-      .order("updated_at", { ascending: false });
-
-    if (!convs) return null;
-
-    if (convs.length === 0) {
-      return {
-        conversations: [] as DbConversation[],
-        nextSelectedId: null as string | null,
-      };
-    }
-
-    const { data: msgs } = await supabase
-      .from("messages")
-      .select("*")
-      .in(
-        "conversation_id",
-        convs.map((c) => c.id)
-      )
-      .order("created_at", { ascending: true });
-
-    const { data: tagAssignments } = await supabase
-      .from("conversation_tag_assignments")
-      .select("conversation_id, tag_id")
-      .in(
-        "conversation_id",
-        convs.map((c) => c.id)
-      );
-
-    const tagIds = Array.from(
-      new Set((tagAssignments || []).map((assignment) => assignment.tag_id as string))
-    );
-
-    const { data: tagRows } = tagIds.length > 0
-      ? await supabase
-          .from("conversation_tags")
-          .select("id, name")
-          .in("id", tagIds)
-      : { data: [] as DbConversationTag[] };
-
-    const messagesByConv = new Map<string, DbMessage[]>();
-    for (const msg of msgs || []) {
-      const list = messagesByConv.get(msg.conversation_id) || [];
-      list.push(msg as DbMessage);
-      messagesByConv.set(msg.conversation_id, list);
-    }
-
-    const tagsById = new Map<string, DbConversationTag>();
-    for (const tag of tagRows || []) {
-      tagsById.set(tag.id as string, tag as DbConversationTag);
-    }
-
-    const tagsByConv = new Map<string, DbConversationTag[]>();
-    for (const assignment of tagAssignments || []) {
-      const tag = tagsById.get(assignment.tag_id as string);
-      if (!tag) continue;
-
-      const list = tagsByConv.get(assignment.conversation_id as string) || [];
-      list.push(tag);
-      tagsByConv.set(assignment.conversation_id as string, list);
-    }
-
-    const result: DbConversation[] = convs.map((c) => ({
-      ...(c as Omit<DbConversation, "messages" | "tags">),
-      messages: messagesByConv.get(c.id) || [],
-      tags: (tagsByConv.get(c.id) || []).sort((left, right) =>
-        left.name.localeCompare(right.name, "pt-BR")
-      ),
-    }));
-
-    const nextSelectedId =
-      currentSelectedId && result.some((conversation) => conversation.id === currentSelectedId)
-        ? currentSelectedId
-        : result[0]?.id || null;
-
-    return {
-      conversations: result,
-      nextSelectedId,
-    };
+  const setSelectedId = useCallback((nextSelectedId: string | null) => {
+    selectedIdRef.current = nextSelectedId;
+    setSelectedIdState(nextSelectedId);
   }, []);
 
+  const fetchConversationsSnapshot = useCallback(
+    async (currentSelectedId: string | null) => {
+      // RLS already filters by org, but we fetch orgId for realtime scoping.
+      if (!orgIdRef.current) {
+        try {
+          const res = await fetch("/api/me");
+          if (res.ok) {
+            const me = (await res.json()) as { organizationId: string };
+            orgIdRef.current = me.organizationId;
+          }
+        } catch {
+          // Ignore errors here because the data queries are still protected by RLS.
+        }
+      }
+
+      const convs = await fetchAllPages<DbConversation>((from, to) =>
+        supabase
+          .from("conversations")
+          .select("*")
+          .order("updated_at", { ascending: false })
+          .range(from, to)
+      );
+
+      if (convs.length === 0) {
+        return {
+          conversations: [] as DbConversation[],
+          nextSelectedId: null as string | null,
+        };
+      }
+
+      const conversationIds = convs.map((conversation) => conversation.id);
+
+      const msgs = await fetchAllPages<DbMessage>((from, to) =>
+        supabase
+          .from("messages")
+          .select("*")
+          .in("conversation_id", conversationIds)
+          .order("created_at", { ascending: true })
+          .range(from, to)
+      );
+
+      const { data: tagAssignments } = await supabase
+        .from("conversation_tag_assignments")
+        .select("conversation_id, tag_id")
+        .in("conversation_id", conversationIds);
+
+      const tagIds = Array.from(
+        new Set((tagAssignments || []).map((assignment) => assignment.tag_id as string))
+      );
+
+      const { data: tagRows } =
+        tagIds.length > 0
+          ? await supabase
+              .from("conversation_tags")
+              .select("id, name")
+              .in("id", tagIds)
+          : { data: [] as DbConversationTag[] };
+
+      const messagesByConv = new Map<string, DbMessage[]>();
+      for (const msg of msgs) {
+        const list = messagesByConv.get(msg.conversation_id) || [];
+        list.push(msg as DbMessage);
+        messagesByConv.set(msg.conversation_id, list);
+      }
+
+      const tagsById = new Map<string, DbConversationTag>();
+      for (const tag of tagRows || []) {
+        tagsById.set(tag.id as string, tag as DbConversationTag);
+      }
+
+      const tagsByConv = new Map<string, DbConversationTag[]>();
+      for (const assignment of tagAssignments || []) {
+        const tag = tagsById.get(assignment.tag_id as string);
+        if (!tag) continue;
+
+        const list = tagsByConv.get(assignment.conversation_id as string) || [];
+        list.push(tag);
+        tagsByConv.set(assignment.conversation_id as string, list);
+      }
+
+      const result: DbConversation[] = convs.map((conversation) => ({
+        ...(conversation as Omit<DbConversation, "messages" | "tags">),
+        messages: messagesByConv.get(conversation.id) || [],
+        tags: (tagsByConv.get(conversation.id) || []).sort((left, right) =>
+          left.name.localeCompare(right.name, "pt-BR")
+        ),
+      }));
+
+      const nextSelectedId =
+        currentSelectedId &&
+        result.some((conversation) => conversation.id === currentSelectedId)
+          ? currentSelectedId
+          : result[0]?.id || null;
+
+      return {
+        conversations: result,
+        nextSelectedId,
+      };
+    },
+    []
+  );
+
   const fetchConversations = useCallback(async () => {
-    const snapshot = await fetchConversationsSnapshot(selectedId);
+    const snapshot = await fetchConversationsSnapshot(selectedIdRef.current);
     if (!snapshot) return;
 
     setConversations(snapshot.conversations);
-    if (snapshot.nextSelectedId !== selectedId) {
+    if (snapshot.nextSelectedId !== selectedIdRef.current) {
       setSelectedId(snapshot.nextSelectedId);
     }
     setLoading(false);
-  }, [fetchConversationsSnapshot, selectedId]);
+  }, [fetchConversationsSnapshot, setSelectedId]);
 
   useEffect(() => {
     let active = true;
 
     (async () => {
-      const snapshot = await fetchConversationsSnapshot(selectedId);
+      const snapshot = await fetchConversationsSnapshot(selectedIdRef.current);
       if (!active || !snapshot) return;
 
       setConversations(snapshot.conversations);
-      if (snapshot.nextSelectedId !== selectedId) {
+      if (snapshot.nextSelectedId !== selectedIdRef.current) {
         setSelectedId(snapshot.nextSelectedId);
       }
       setLoading(false);
@@ -172,14 +207,12 @@ export function useConversations() {
     return () => {
       active = false;
     };
-  }, [fetchConversationsSnapshot, selectedId]);
+  }, [fetchConversationsSnapshot, setSelectedId]);
 
-  // Realtime subscriptions — scoped by organization_id when available
+  // Realtime subscriptions are scoped by organization_id when available.
   useEffect(() => {
     const orgId = orgIdRef.current;
-    const convFilter = orgId
-      ? `organization_id=eq.${orgId}`
-      : undefined;
+    const convFilter = orgId ? `organization_id=eq.${orgId}` : undefined;
 
     const convChannel = supabase
       .channel("conversations-changes")
@@ -192,7 +225,7 @@ export function useConversations() {
           ...(convFilter ? { filter: convFilter } : {}),
         },
         () => {
-          fetchConversations();
+          void fetchConversations();
         }
       )
       .subscribe();
@@ -210,11 +243,16 @@ export function useConversations() {
         (payload) => {
           const newMsg = payload.new as DbMessage;
           setConversations((prev) =>
-            prev.map((c) => {
-              if (c.id !== newMsg.conversation_id) return c;
-              // Deduplicate — avoid adding if already present
-              if (c.messages.some((m) => m.id === newMsg.id)) return c;
-              return { ...c, messages: [...c.messages, newMsg] };
+            prev.map((conversation) => {
+              if (conversation.id !== newMsg.conversation_id) return conversation;
+              if (conversation.messages.some((message) => message.id === newMsg.id)) {
+                return conversation;
+              }
+
+              return {
+                ...conversation,
+                messages: [...conversation.messages, newMsg],
+              };
             })
           );
         }
@@ -232,7 +270,7 @@ export function useConversations() {
           ...(convFilter ? { filter: convFilter } : {}),
         },
         () => {
-          fetchConversations();
+          void fetchConversations();
         }
       )
       .subscribe();
@@ -247,24 +285,25 @@ export function useConversations() {
           table: "conversation_tag_assignments",
         },
         () => {
-          fetchConversations();
+          void fetchConversations();
         }
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(convChannel);
-      supabase.removeChannel(msgChannel);
-      supabase.removeChannel(tagsChannel);
-      supabase.removeChannel(tagAssignmentsChannel);
+      void supabase.removeChannel(convChannel);
+      void supabase.removeChannel(msgChannel);
+      void supabase.removeChannel(tagsChannel);
+      void supabase.removeChannel(tagAssignmentsChannel);
     };
   }, [fetchConversations]);
 
-  const selectedConversation = conversations.find((c) => c.id === selectedId) || null;
+  const selectedConversation =
+    conversations.find((conversation) => conversation.id === selectedIdState) || null;
 
   return {
     conversations,
-    selectedId,
+    selectedId: selectedIdState,
     setSelectedId,
     selectedConversation,
     loading,
