@@ -8,7 +8,7 @@ export function AnalyticsView() {
   return (
     <section className="flex min-w-0 flex-1 flex-col overflow-hidden">
       <div className="border-b border-slate-200 bg-white/80 px-6 py-6 backdrop-blur">
-        <div className="mx-auto w-full max-w-5xl">
+        <div className="mx-auto w-full max-w-[1400px]">
           <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-slate-500">
             Analytics
           </p>
@@ -23,7 +23,7 @@ export function AnalyticsView() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
-        <div className="mx-auto w-full max-w-5xl">
+        <div className="mx-auto w-full max-w-[1400px]">
           <Tabs defaultValue="flows">
             <TabsList className="mb-6">
               <TabsTrigger value="flows">Flows</TabsTrigger>

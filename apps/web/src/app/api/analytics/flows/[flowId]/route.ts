@@ -1,15 +1,26 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabase/server";
 import { getCurrentOrganizationContext } from "@/lib/organization";
-import type { FlowFunnelData, FlowFunnelNode } from "@/types/analytics";
+import type {
+  FlowAnalyticsLayoutEdge,
+  FlowAnalyticsLayoutNode,
+  FlowFunnelData,
+  FlowFunnelNode,
+} from "@/types/analytics";
 import type { NodeData, TriggerNodeData } from "@/types/node-data";
 
 interface FlowNode {
   id: string;
+  type?: string;
   data: NodeData;
+  position?: {
+    x?: number;
+    y?: number;
+  };
 }
 
 interface FlowEdge {
+  id?: string;
   source: string;
   target: string;
   sourceHandle?: string | null;
@@ -95,7 +106,7 @@ export async function GET(
     // Load flow definition
     const { data: flow } = await supabase
       .from("flows")
-      .select("nodes, edges")
+      .select("name, nodes, edges")
       .eq("id", flowId)
       .eq("organization_id", context.organizationId)
       .single();
@@ -171,11 +182,42 @@ export async function GET(
       };
     });
 
+    const layoutNodes: FlowAnalyticsLayoutNode[] = nodes.map((node) => {
+      const visits = visitCounts.get(node.id) || 0;
+      const percentage =
+        totalExecutions > 0
+          ? Math.round((visits / totalExecutions) * 1000) / 10
+          : 0;
+
+      return {
+        nodeId: node.id,
+        nodeType: node.data.type,
+        label: getNodeLabel(node.data),
+        visits,
+        percentage,
+        cumulativeDropOff: Math.max(0, totalExecutions - visits),
+        position: {
+          x: node.position?.x || 0,
+          y: node.position?.y || 0,
+        },
+      };
+    });
+
+    const layoutEdges: FlowAnalyticsLayoutEdge[] = edges.map((edge, index) => ({
+      id: edge.id || `${edge.source}-${edge.target}-${index}`,
+      source: edge.source,
+      target: edge.target,
+      sourceHandle: edge.sourceHandle || null,
+    }));
+
     const result: FlowFunnelData = {
+      flowName: (flow.name as string) || "Sem nome",
       totalExecutions,
       completed,
       abandoned,
       nodes: funnelNodes,
+      layoutNodes,
+      layoutEdges,
     };
 
     return NextResponse.json(result);
