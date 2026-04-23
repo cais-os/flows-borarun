@@ -10,7 +10,7 @@ import { NodeWrapper } from "./node-wrapper";
 export function AgenticLoopNode({ id, data, selected }: NodeProps) {
   const nodeData = data as AgenticLoopNodeData;
   const config = NODE_CONFIG[NODE_TYPES.AGENTIC_LOOP];
-  const handoffCount = nodeData.handoffTargets?.length ?? 0;
+  const paymentToolEnabled = nodeData.paymentTool?.enabled;
 
   return (
     <NodeWrapper
@@ -24,8 +24,12 @@ export function AgenticLoopNode({ id, data, selected }: NodeProps) {
         modelo: {nodeData.model || "gpt-4o"}
       </div>
       <div className="mt-1 text-[10px] text-gray-500">
-        {handoffCount} handoff{handoffCount !== 1 ? "s" : ""} | max{" "}
-        {nodeData.maxTurns ?? 10} turnos
+        max {nodeData.maxTurns ?? 10} turnos
+      </div>
+      <div className="mt-1 text-[10px] text-gray-500">
+        {paymentToolEnabled
+          ? "tool de pagamento embutida ativa"
+          : "sem tool de pagamento embutida"}
       </div>
     </NodeWrapper>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Trash2 } from "lucide-react";
+import { FileText, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -22,6 +22,34 @@ function createField(): AiCollectorField {
   };
 }
 
+const PDF_COMPATIBLE_FIELDS: Array<Omit<AiCollectorField, "id">> = [
+  {
+    name: "nome",
+    description: "Nome do corredor",
+    required: true,
+  },
+  {
+    name: "objetivo",
+    description: "Objetivo principal com a corrida",
+    required: true,
+  },
+  {
+    name: "frequencia",
+    description: "Frequencia ou quantidade de treinos por semana",
+    required: true,
+  },
+  {
+    name: "ritmo_atual",
+    description: "Ritmo atual, pace medio ou referencia de desempenho atual",
+    required: false,
+  },
+  {
+    name: "prova_alvo",
+    description: "Prova-alvo ou evento principal, se houver",
+    required: false,
+  },
+];
+
 export function AiCollectorEditor({ nodeId, data }: AiCollectorEditorProps) {
   const updateNodeData = useFlowStore((state) => state.updateNodeData);
 
@@ -41,9 +69,38 @@ export function AiCollectorEditor({ nodeId, data }: AiCollectorEditorProps) {
     update({ fields: [...fields, createField()] });
   };
 
+  const addPdfFields = () => {
+    const existingFieldNames = new Set(
+      fields
+        .map((field) => field.name.trim().toLowerCase())
+        .filter(Boolean)
+    );
+
+    const nextFields = PDF_COMPATIBLE_FIELDS.filter(
+      (field) => !existingFieldNames.has(field.name.toLowerCase())
+    ).map((field) => ({
+      id: crypto.randomUUID(),
+      name: field.name,
+      description: field.description,
+      required: field.required,
+    }));
+
+    if (nextFields.length === 0) return;
+
+    update({ fields: [...fields, ...nextFields] });
+  };
+
   const removeField = (fieldId: string) => {
     update({ fields: fields.filter((f) => f.id !== fieldId) });
   };
+
+  const missingPdfFieldsCount = PDF_COMPATIBLE_FIELDS.filter(
+    (field) =>
+      !fields.some(
+        (existingField) =>
+          existingField.name.trim().toLowerCase() === field.name.toLowerCase()
+      )
+  ).length;
 
   return (
     <div className="space-y-6">
@@ -92,16 +149,31 @@ export function AiCollectorEditor({ nodeId, data }: AiCollectorEditorProps) {
 
       {/* Fields */}
       <div className="space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <Label>Campos a coletar</Label>
-          <Button variant="outline" size="sm" onClick={addField}>
-            <Plus size={14} className="mr-1" />
-            Adicionar
-          </Button>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={addPdfFields}
+              disabled={missingPdfFieldsCount === 0}
+            >
+              <FileText size={14} className="mr-1" />
+              Campos do PDF
+            </Button>
+            <Button variant="outline" size="sm" onClick={addField}>
+              <Plus size={14} className="mr-1" />
+              Adicionar
+            </Button>
+          </div>
         </div>
 
         <p className="text-xs text-muted-foreground">
-          O nome da variavel e usado para armazenar o dado coletado. Para onboarding de corrida, use o prefixo <strong>onb_</strong> (ex: onb_idade, onb_peso, onb_objetivo) para manter compatibilidade com o gerador de plano e o coach IA.
+          O nome da variavel e usado para armazenar o dado coletado. Para compatibilidade imediata com o layout padrao do PDF, prefira os nomes canônicos <strong>nome</strong>, <strong>objetivo</strong>, <strong>frequencia</strong>, <strong>ritmo_atual</strong> e <strong>prova_alvo</strong>.
+        </p>
+
+        <p className="text-xs text-muted-foreground">
+          O botao <strong>Campos do PDF</strong> adiciona esse conjunto padrao com um clique e ignora duplicados.
         </p>
 
         {fields.length === 0 && (

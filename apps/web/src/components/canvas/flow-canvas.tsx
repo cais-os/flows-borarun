@@ -173,6 +173,14 @@ export function getDefaultData(type: string, preset?: PaletteNodePreset) {
           { name: "capture_variable", enabled: true },
           { name: "end_conversation", enabled: false },
         ],
+        paymentTool: {
+          enabled: false,
+          planName: "",
+          amount: 0,
+          durationDays: 30,
+          billingMode: "recurring",
+          currency: "BRL",
+        },
       } satisfies AgenticLoopNodeData;
     default:
       return {

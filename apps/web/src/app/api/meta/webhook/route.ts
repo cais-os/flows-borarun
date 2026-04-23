@@ -584,8 +584,17 @@ export async function POST(request: Request) {
                 delete prefVars._awaiting_weekly_hour;
                 await supabase.from("conversations").update({ flow_variables: prefVars }).eq("id", conversationId);
 
-                const weeklyReadyText =
-                  "Perfeito! Voce vai receber seus treinos atualizados toda semana. Agora pode me mandar qualquer duvida sobre corrida!";
+                const weeklyReadyText = [
+                  "Perfeito! Voce vai receber seus treinos atualizados toda semana.",
+                  "",
+                  "Com a assistencia de corrida, voce pode:",
+                  "- tirar duvidas sobre os seus treinos",
+                  "- pedir ajustes quando estiver cansado, com dor ou sem tempo",
+                  "- entender melhor ritmo, pace, volume e estrategia de prova",
+                  "- conversar sobre recuperacao, consistencia e evolucao",
+                  "",
+                  "Quando quiser, ja pode comecar a me chamar por aqui.",
+                ].join("\n");
                 const weeklyReadyResult = await sendMetaWhatsAppTextMessage(
                   { to: contactPhone, body: weeklyReadyText },
                   metaConfig
@@ -672,6 +681,15 @@ export async function POST(request: Request) {
             }
 
             if (currentNodeType === "aiCollector") {
+              await resumeFlow(supabase, conversationId, contactPhone, content, {
+                inboundMessageId: message.id,
+                organizationId,
+                metaConfig,
+              });
+              continue;
+            }
+
+            if (currentNodeType === "agenticLoop") {
               await resumeFlow(supabase, conversationId, contactPhone, content, {
                 inboundMessageId: message.id,
                 organizationId,

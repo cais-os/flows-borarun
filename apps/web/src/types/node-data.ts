@@ -26,6 +26,23 @@ export type AgenticLoopTool =
   | { name: "send_message"; enabled: true }
   | { name: "end_conversation"; enabled: boolean };
 
+export type PaymentConfigFields = {
+  planName: string;
+  amount: number;
+  durationDays: number;
+  billingMode?: PaymentBillingMode;
+  payerEmailVariable?: string;
+  currency?: string;
+  messageText?: string;
+  ctaButtonText?: string;
+  mediaUrl?: string;
+  mediaFileName?: string;
+};
+
+export type AgenticLoopPaymentToolConfig = PaymentConfigFields & {
+  enabled: boolean;
+};
+
 export type AgenticLoopNodeData = {
   type: "agenticLoop";
   label: string;
@@ -36,6 +53,7 @@ export type AgenticLoopNodeData = {
   handoffTargets: AgenticLoopHandoff[];
   tools: AgenticLoopTool[];
   fallbackHandoffNodeId?: string;
+  paymentTool?: AgenticLoopPaymentToolConfig;
 };
 
 export type CaptureMode = "full" | "summary";
@@ -179,19 +197,9 @@ export type StravaConnectNodeData = {
   [key: string]: unknown;
 };
 
-export type PaymentNodeData = {
+export type PaymentNodeData = PaymentConfigFields & {
   type: "payment";
   label: string;
-  planName: string;
-  amount: number;
-  durationDays: number;
-  billingMode?: PaymentBillingMode;
-  payerEmailVariable?: string;
-  currency?: string;
-  messageText?: string;
-  ctaButtonText?: string;
-  mediaUrl?: string;
-  mediaFileName?: string;
   [key: string]: unknown;
 };
 

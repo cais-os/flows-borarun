@@ -49,7 +49,7 @@ export function PaymentEditor({ nodeId, data }: PaymentEditorProps) {
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+      <div className="space-y-3">
         <div className="space-y-2">
           <Label>Tipo de cobranca</Label>
           <Select
@@ -58,7 +58,7 @@ export function PaymentEditor({ nodeId, data }: PaymentEditorProps) {
               update({ billingMode: value as PaymentNodeData["billingMode"] })
             }
           >
-            <SelectTrigger>
+            <SelectTrigger className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -67,7 +67,9 @@ export function PaymentEditor({ nodeId, data }: PaymentEditorProps) {
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-2">
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="min-w-0 space-y-2">
           <Label>Valor (R$)</Label>
           <Input
             type="number"
@@ -79,22 +81,23 @@ export function PaymentEditor({ nodeId, data }: PaymentEditorProps) {
             }
             placeholder="49.90"
           />
-        </div>
-        <div className="space-y-2">
-          <Label>
-            {billingMode === "recurring"
-              ? "Validade por ciclo (dias)"
-              : "Duracao (dias)"}
-          </Label>
-          <Input
-            type="number"
-            min={1}
-            value={data.durationDays || 30}
-            onChange={(e) =>
-              update({ durationDays: parseInt(e.target.value) || 30 })
-            }
-            placeholder="30"
-          />
+          </div>
+          <div className="min-w-0 space-y-2">
+            <Label>
+              {billingMode === "recurring"
+                ? "Validade por ciclo (dias)"
+                : "Duracao (dias)"}
+            </Label>
+            <Input
+              type="number"
+              min={1}
+              value={data.durationDays || 30}
+              onChange={(e) =>
+                update({ durationDays: parseInt(e.target.value) || 30 })
+              }
+              placeholder="30"
+            />
+          </div>
         </div>
       </div>
 

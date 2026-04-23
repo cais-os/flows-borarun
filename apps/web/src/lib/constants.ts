@@ -71,7 +71,7 @@ export const NODE_CONFIG = {
     label: "Agente IA",
     color: "#8B5CF6",
     description:
-      "Loop de IA com handoff - conversa multi-turno ate o modelo decidir continuar o flow",
+      "Conversa com o usuario e pode enviar o link de pagamento configurado no proprio no",
   },
 } as const;
 

@@ -13,6 +13,7 @@ import type {
   WaitTimerNodeData,
   AiCollectorNodeData,
   StravaConnectNodeData,
+  PaymentConfigFields,
   PaymentNodeData,
   WhatsAppFlowNodeData,
   WaitForPlayedNodeData,
@@ -34,9 +35,14 @@ import {
 } from "@/lib/strava";
 import {
   createStripePaymentCheckout,
+  ensureStripeCheckoutForRecord,
   buildPaymentMessage,
   type StripePaymentBillingMode,
 } from "@/lib/stripe-payments";
+import {
+  AGENTIC_LOOP_ACTIVE_NODE_ID_KEY,
+  AGENTIC_LOOP_SALES_MODE_KEY,
+} from "@/lib/agentic-loop";
 import {
   buildNoMatchResponseMessage,
   getMatchedWaitRoute,
@@ -104,6 +110,8 @@ const COMMON_PAYMENT_EMAIL_KEYS = [
   "cliente_email",
   "customer_email",
 ];
+const REUSABLE_PAYMENT_RECORD_MAX_AGE_MS = 1000 * 60 * 60 * 48;
+const MAX_AGENTIC_CONTEXT_VARIABLES = 25;
 
 function findNextNodes(
   nodeId: string,
@@ -222,7 +230,7 @@ function isValidEmail(value: string | undefined | null) {
 }
 
 function resolvePaymentPayerEmail(
-  paymentData: PaymentNodeData,
+  paymentData: PaymentConfigFields,
   variables: Record<string, string>
 ) {
   const configuredKey = paymentData.payerEmailVariable?.trim();
@@ -248,6 +256,503 @@ function resolvePaymentPayerEmail(
   }
 
   return null;
+}
+
+function findConnectedPaymentNode(
+  nodeId: string,
+  edges: FlowEdge[],
+  nodes: FlowNode[]
+) {
+  return findNextNodes(nodeId, edges, nodes).find(
+    (node): node is FlowNode => node.data.type === "payment"
+  );
+}
+
+function buildAgenticFlowVariableContext(variables: Record<string, string>) {
+  const entries = Object.entries(variables)
+    .filter(([key, value]) => {
+      if (!value?.trim()) return false;
+      if (key.startsWith("__")) return false;
+      if (key.startsWith("_")) return false;
+      return true;
+    })
+    .slice(0, MAX_AGENTIC_CONTEXT_VARIABLES);
+
+  if (entries.length === 0) {
+    return "Nenhuma variavel relevante do flow foi encontrada.";
+  }
+
+  return entries
+    .map(([key, value]) => `- ${key}: ${value}`)
+    .join("\n");
+}
+
+async function loadAgenticConversationHistory(params: {
+  supabase: SupabaseClient;
+  conversationId: string;
+  limit: number;
+}) {
+  const safeLimit = Math.max(1, Math.min(50, params.limit || 20));
+  const { data } = await params.supabase
+    .from("messages")
+    .select("content, sender, type, created_at")
+    .eq("conversation_id", params.conversationId)
+    .neq("type", "system")
+    .order("created_at", { ascending: false })
+    .limit(safeLimit);
+
+  const history = ((data as Array<{
+    content: string;
+    sender: string;
+    type: string;
+    created_at: string;
+  }> | null) || []).reverse();
+
+  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
+
+  for (const message of history) {
+    if (!message.content?.trim()) continue;
+
+    if (message.sender === "contact") {
+      messages.push({ role: "user", content: message.content });
+      continue;
+    }
+
+    if (message.sender === "bot" || message.sender === "human") {
+      messages.push({ role: "assistant", content: message.content });
+    }
+  }
+
+  return messages;
+}
+
+type SendStripePaymentLinkResult =
+  | { status: "sent"; paymentRecordId: string; paymentUrl: string }
+  | { status: "already_active"; message: string }
+  | { status: "invalid_config"; message: string }
+  | { status: "error"; message: string };
+
+type ResolvedAgenticLoopPaymentConfig = {
+  paymentData: PaymentConfigFields;
+  nodeId: string;
+  source: "embedded" | "connected_node";
+};
+
+function resolveAgenticLoopPaymentConfig(params: {
+  currentNode: FlowNode;
+  loopData: AgenticLoopNodeData;
+  nodes: FlowNode[];
+  edges: FlowEdge[];
+}) {
+  if (params.loopData.paymentTool?.enabled) {
+    return {
+      paymentData: params.loopData.paymentTool,
+      nodeId: params.currentNode.id,
+      source: "embedded",
+    } satisfies ResolvedAgenticLoopPaymentConfig;
+  }
+
+  const paymentNode = findConnectedPaymentNode(
+    params.currentNode.id,
+    params.edges,
+    params.nodes
+  );
+
+  if (!paymentNode) {
+    return null;
+  }
+
+  return {
+    paymentData: paymentNode.data as PaymentNodeData,
+    nodeId: paymentNode.id,
+    source: "connected_node",
+  } satisfies ResolvedAgenticLoopPaymentConfig;
+}
+
+async function findReusableStripePaymentRecordId(params: {
+  supabase: SupabaseClient;
+  organizationId: string;
+  conversationId: string;
+  paymentData: PaymentConfigFields;
+  billingMode: StripePaymentBillingMode;
+}) {
+  const cutoffIso = new Date(
+    Date.now() - REUSABLE_PAYMENT_RECORD_MAX_AGE_MS
+  ).toISOString();
+
+  const { data, error } = await params.supabase
+    .from("payments")
+    .select("id, created_at")
+    .eq("organization_id", params.organizationId)
+    .eq("conversation_id", params.conversationId)
+    .eq("provider", "stripe")
+    .eq("status", "pending")
+    .eq("plan_name", params.paymentData.planName || "Assinatura")
+    .eq("amount", params.paymentData.amount)
+    .eq("duration_days", params.paymentData.durationDays || 30)
+    .eq("currency", params.paymentData.currency || "BRL")
+    .eq("billing_mode", params.billingMode)
+    .gte("created_at", cutoffIso)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error(
+      "Flow engine: failed to load reusable Stripe payment record",
+      error
+    );
+    return null;
+  }
+
+  return typeof data?.id === "string" ? data.id : null;
+}
+
+async function sendStripePaymentLinkForNode(params: {
+  supabase: SupabaseClient;
+  organizationId: string;
+  conversationId: string;
+  contactPhone: string;
+  nodeId: string;
+  paymentData: PaymentConfigFields;
+  metaConfig: MetaConfig;
+  inboundMessageId?: string;
+  flowVariables?: Record<string, string>;
+}) {
+  const paymentAmount = Number(params.paymentData.amount) || 0;
+  if (paymentAmount <= 0) {
+    return {
+      status: "invalid_config",
+      message:
+        "Eu consigo te enviar o link, mas o valor desse pagamento ainda nao foi configurado corretamente.",
+    } satisfies SendStripePaymentLinkResult;
+  }
+
+  const { data: conversation } = await params.supabase
+    .from("conversations")
+    .select("subscription_status, subscription_plan")
+    .eq("id", params.conversationId)
+    .maybeSingle();
+
+  if (
+    conversation?.subscription_status === "active" &&
+    conversation?.subscription_plan === "premium"
+  ) {
+    return {
+      status: "already_active",
+      message:
+        "Seu plano Premium ja esta ativo. Se quiser, posso te orientar sobre como aproveitar melhor a assessoria.",
+    } satisfies SendStripePaymentLinkResult;
+  }
+
+  const flowVariables =
+    params.flowVariables ||
+    (await getConversationVariables(params.supabase, params.conversationId));
+  const billingMode = getPaymentBillingMode(params.paymentData.billingMode);
+  const payerEmail =
+    billingMode === "recurring"
+      ? resolvePaymentPayerEmail(params.paymentData, flowVariables)
+      : null;
+
+  const reusablePaymentRecordId = await findReusableStripePaymentRecordId({
+    supabase: params.supabase,
+    organizationId: params.organizationId,
+    conversationId: params.conversationId,
+    paymentData: params.paymentData,
+    billingMode,
+  });
+
+  const checkout = reusablePaymentRecordId
+    ? await ensureStripeCheckoutForRecord({
+        supabase: params.supabase,
+        paymentRecordId: reusablePaymentRecordId,
+        organizationId: params.organizationId,
+        payerEmail,
+      })
+    : await createStripePaymentCheckout({
+        supabase: params.supabase,
+        organizationId: params.organizationId,
+        conversationId: params.conversationId,
+        planName: params.paymentData.planName || "Assinatura",
+        amount: paymentAmount,
+        durationDays: params.paymentData.durationDays || 30,
+        currency: params.paymentData.currency || "BRL",
+        billingMode,
+        payerEmail,
+      });
+
+  const paymentUrl = checkout.initPoint;
+  if (!paymentUrl) {
+    return {
+      status: "error",
+      message:
+        "Tive um problema ao preparar seu link de pagamento agora. Podemos tentar novamente em instantes.",
+    } satisfies SendStripePaymentLinkResult;
+  }
+
+  if (params.inboundMessageId) {
+    await sendTypingIndicator(params.inboundMessageId, params.metaConfig).catch(
+      () => {}
+    );
+  }
+
+  let message: string;
+  if (params.paymentData.messageText?.trim()) {
+    message = interpolateVariables(
+      params.paymentData.messageText.replace(/\{\{payment_link\}\}/g, paymentUrl),
+      flowVariables
+    );
+  } else {
+    message = buildPaymentMessage(paymentUrl);
+  }
+
+  if (params.paymentData.ctaButtonText?.trim()) {
+    const bodyText = params.paymentData.messageText?.trim()
+      ? interpolateVariables(
+          params.paymentData.messageText.replace(/\{\{payment_link\}\}/g, "").trim(),
+          flowVariables
+        )
+      : `Para assinar o plano ${params.paymentData.planName || ""}, clique no botao abaixo:`.trim();
+
+    const ctaResult = await sendMetaWhatsAppCtaUrlMessage(
+      {
+        to: params.contactPhone,
+        bodyText,
+        buttonText: params.paymentData.ctaButtonText,
+        url: paymentUrl,
+      },
+      params.metaConfig
+    );
+
+    await persistConversationMessage({
+      supabase: params.supabase,
+      conversationId: params.conversationId,
+      content: bodyText,
+      type: "interactive",
+      sender: "bot",
+      nodeId: params.nodeId,
+      waMessageId: ctaResult.messageId,
+      metadata: {
+        payment_url: paymentUrl,
+        whatsapp_interactive_kind: "cta_url",
+        whatsapp_button_text: params.paymentData.ctaButtonText,
+      },
+    });
+  } else if (params.paymentData.mediaUrl) {
+    let imageUrl: string;
+    if (params.paymentData.mediaUrl.startsWith("data:")) {
+      const base64Data = params.paymentData.mediaUrl.split(",")[1];
+      const mimeMatch = params.paymentData.mediaUrl.match(/data:([^;]+)/);
+      const contentType = mimeMatch?.[1] || "image/png";
+      const ext = contentType.split("/")[1] || "png";
+      const buffer = Buffer.from(base64Data || "", "base64");
+      const fileName = `payment-${params.conversationId}-${Date.now()}.${ext}`;
+      await params.supabase.storage
+        .from("images")
+        .upload(fileName, buffer, { contentType });
+      const { data: urlData } = params.supabase.storage
+        .from("images")
+        .getPublicUrl(fileName);
+      imageUrl = urlData.publicUrl;
+    } else {
+      imageUrl = params.paymentData.mediaUrl;
+    }
+
+    const imageResult = await sendMetaWhatsAppImageMessage(
+      { to: params.contactPhone, imageUrl, caption: message },
+      params.metaConfig
+    );
+
+    await params.supabase.from("messages").insert({
+      conversation_id: params.conversationId,
+      content: message,
+      type: "image",
+      sender: "bot",
+      media_url: imageUrl,
+      node_id: params.nodeId,
+      wa_message_id: imageResult.messageId,
+    });
+  } else {
+    await sendTextAndPersist({
+      supabase: params.supabase,
+      conversationId: params.conversationId,
+      contactPhone: params.contactPhone,
+      nodeId: params.nodeId,
+      text: message,
+      metaConfig: params.metaConfig,
+      inboundMessageId: params.inboundMessageId,
+    });
+  }
+
+  return {
+    status: "sent",
+    paymentRecordId: checkout.paymentRecordId,
+    paymentUrl,
+  } satisfies SendStripePaymentLinkResult;
+}
+
+async function runAgenticLoopTurn(params: {
+  supabase: SupabaseClient;
+  organizationId: string;
+  metaConfig: MetaConfig;
+  conversationId: string;
+  contactPhone: string;
+  currentNode: FlowNode;
+  loopData: AgenticLoopNodeData;
+  nodes: FlowNode[];
+  edges: FlowEdge[];
+  inboundMessageId?: string;
+}) {
+  const flowVariables = await getConversationVariables(
+    params.supabase,
+    params.conversationId
+  );
+  const paymentConfig = resolveAgenticLoopPaymentConfig({
+    currentNode: params.currentNode,
+    loopData: params.loopData,
+    nodes: params.nodes,
+    edges: params.edges,
+  });
+  const { data: conversation } = await params.supabase
+    .from("conversations")
+    .select("subscription_status, subscription_plan")
+    .eq("id", params.conversationId)
+    .maybeSingle();
+
+  const conversationHistory = await loadAgenticConversationHistory({
+    supabase: params.supabase,
+    conversationId: params.conversationId,
+    limit: params.loopData.historyWindowMessages || 20,
+  });
+
+  const paymentContext = paymentConfig
+    ? [
+        `Plano disponivel para pagamento: ${paymentConfig.paymentData.planName || "Assinatura Premium"}.`,
+        `Valor: R$ ${Number(paymentConfig.paymentData.amount || 0).toFixed(2)}.`,
+        paymentConfig.paymentData.billingMode === "one_time"
+          ? `Tipo de cobranca: pagamento avulso com duracao de ${paymentConfig.paymentData.durationDays || 30} dias.`
+          : `Tipo de cobranca: assinatura recorrente mensal com ciclo de ${paymentConfig.paymentData.durationDays || 30} dias.`,
+      ].join("\n")
+    : "Nenhuma tool de pagamento foi configurada neste Agente IA.";
+
+  const currentSubscriptionContext =
+    conversation?.subscription_status === "active" &&
+    conversation?.subscription_plan === "premium"
+      ? "O usuario ja esta com a assinatura Premium ativa."
+      : "O usuario ainda nao esta com a assinatura Premium ativa.";
+
+  const systemPrompt = [
+    "Voce e um agente comercial dentro de um flow de WhatsApp.",
+    "Responda em portugues brasileiro, de forma natural, curta e consultiva.",
+    "O PDF inicial do plano de corrida ja foi entregue anteriormente nesta conversa.",
+    currentSubscriptionContext,
+    paymentContext,
+    "Contexto conhecido do usuario no flow:",
+    buildAgenticFlowVariableContext(flowVariables),
+    "Regras obrigatorias:",
+    "- So use a tool send_payment_link quando o usuario demonstrar intencao clara de assinar ou pedir explicitamente o link para pagamento.",
+    "- Sinais fracos como curiosidade, perguntas sobre preco, pedido de explicacao ou duvidas nao autorizam o envio do link.",
+    "- Se usar a tool send_payment_link, nao escreva nenhuma mensagem adicional nessa mesma resposta.",
+    "- Se o usuario ainda estiver em duvida, responda a objecao e convide para o proximo passo de forma natural.",
+    params.loopData.systemPrompt?.trim() || "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = paymentConfig
+    ? [
+        {
+          type: "function",
+          function: {
+            name: "send_payment_link",
+            description:
+              "Envia o link de pagamento quando o usuario disser claramente que quer assinar ou receber o link.",
+            parameters: {
+              type: "object",
+              properties: {},
+              additionalProperties: false,
+            },
+          },
+        },
+      ]
+    : [];
+
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const completion = await openai.chat.completions.create({
+    model: params.loopData.model || "gpt-4o",
+    temperature: 0.6,
+    max_tokens: 400,
+    tools,
+    tool_choice: tools.length > 0 ? "auto" : undefined,
+    messages: [
+      {
+        role: "system",
+        content: systemPrompt,
+      },
+      ...conversationHistory,
+    ],
+  });
+
+  const assistantMessage = completion.choices[0]?.message;
+  const toolCall = assistantMessage?.tool_calls?.find(
+    (item) =>
+      item.type === "function" &&
+      item.function.name === "send_payment_link"
+  );
+
+  if (toolCall && paymentConfig) {
+    const result = await sendStripePaymentLinkForNode({
+      supabase: params.supabase,
+      organizationId: params.organizationId,
+      conversationId: params.conversationId,
+      contactPhone: params.contactPhone,
+      nodeId: paymentConfig.nodeId,
+      paymentData: paymentConfig.paymentData,
+      metaConfig: params.metaConfig,
+      inboundMessageId: params.inboundMessageId,
+      flowVariables,
+    });
+
+    if (result.status === "already_active") {
+      await sendTextAndPersist({
+        supabase: params.supabase,
+        conversationId: params.conversationId,
+        contactPhone: params.contactPhone,
+        nodeId: params.currentNode.id,
+        text: result.message,
+        metaConfig: params.metaConfig,
+        inboundMessageId: params.inboundMessageId,
+      });
+    } else if (result.status === "invalid_config" || result.status === "error") {
+      await sendTextAndPersist({
+        supabase: params.supabase,
+        conversationId: params.conversationId,
+        contactPhone: params.contactPhone,
+        nodeId: params.currentNode.id,
+        text: result.message,
+        metaConfig: params.metaConfig,
+        inboundMessageId: params.inboundMessageId,
+      });
+    }
+
+    return { status: "waiting" as const };
+  }
+
+  const responseText =
+    assistantMessage?.content?.trim() ||
+    "Se fizer sentido para voce, posso te explicar melhor como funciona o plano mensal.";
+
+  await sendTextAndPersist({
+    supabase: params.supabase,
+    conversationId: params.conversationId,
+    contactPhone: params.contactPhone,
+    nodeId: params.currentNode.id,
+    text: responseText,
+    metaConfig: params.metaConfig,
+    inboundMessageId: params.inboundMessageId,
+  });
+
+  return { status: "waiting" as const };
 }
 
 function getPostSendDelayMs(sendData: SendMessageNodeData) {
@@ -1805,14 +2310,39 @@ async function runFlowQueue(params: {
 
     if (data.type === "agenticLoop") {
       const loopData = data as AgenticLoopNodeData;
+      const variables = await getConversationVariables(
+        params.supabase,
+        params.conversationId
+      );
+      const paymentConfig = resolveAgenticLoopPaymentConfig({
+        currentNode: current,
+        loopData,
+        nodes: params.nodes,
+        edges: params.edges,
+      });
+      const nextVariables: Record<string, string> = {
+        ...variables,
+        [AGENTIC_LOOP_ACTIVE_NODE_ID_KEY]: current.id,
+      };
+
+      if (paymentConfig) {
+        nextVariables[AGENTIC_LOOP_SALES_MODE_KEY] = "true";
+      } else {
+        delete nextVariables[AGENTIC_LOOP_SALES_MODE_KEY];
+      }
 
       console.log("[flow-engine] entering agenticLoop", {
         conversationId: params.conversationId,
         nodeId: current.id,
         model: loopData.model,
         maxTurns: loopData.maxTurns,
-        handoffs: loopData.handoffTargets?.length ?? 0,
+        paymentSource: paymentConfig?.source || null,
       });
+
+      await params.supabase
+        .from("conversations")
+        .update({ flow_variables: nextVariables })
+        .eq("id", params.conversationId);
 
       await pauseFlow({
         supabase: params.supabase,
@@ -1969,125 +2499,33 @@ async function runFlowQueue(params: {
     if (data.type === "payment") {
       const paymentData = data as PaymentNodeData;
       try {
-        const paymentAmount = Number(paymentData.amount) || 0;
-        if (paymentAmount <= 0) {
-          console.error("Flow engine: Payment node has invalid amount:", paymentAmount, "— skipping. Configure a value > 0 in the node editor.");
-        } else {
-          const billingMode = getPaymentBillingMode(paymentData.billingMode);
-          const conversationVariables = await getConversationVariables(
-            params.supabase,
-            params.conversationId
-          );
-          const payerEmail =
-            billingMode === "recurring"
-              ? resolvePaymentPayerEmail(paymentData, conversationVariables)
-              : null;
+        const result = await sendStripePaymentLinkForNode({
+          supabase: params.supabase,
+          organizationId: params.organizationId,
+          conversationId: params.conversationId,
+          contactPhone: params.contactPhone,
+          nodeId: current.id,
+          paymentData,
+          metaConfig: params.metaConfig,
+          inboundMessageId: params.inboundMessageId,
+        });
 
-          try {
-            const result = await createStripePaymentCheckout({
-              supabase: params.supabase,
-              organizationId: params.organizationId,
+        if (result.status === "invalid_config") {
+          console.error("Flow engine: Payment node has invalid config", {
+            nodeId: current.id,
+            message: result.message,
+          });
+        }
+
+        if (result.status === "already_active") {
+          console.log(
+            "[flow-engine] payment link skipped because the conversation is already premium",
+            {
               conversationId: params.conversationId,
-              planName: paymentData.planName || "Assinatura",
-              amount: paymentAmount,
-              durationDays: paymentData.durationDays || 30,
-              currency: paymentData.currency || "BRL",
-              billingMode,
-              payerEmail,
-            });
-
-            const paymentUrl = result.initPoint!;
-            let message: string;
-            if (paymentData.messageText?.trim()) {
-              message = interpolateVariables(
-                paymentData.messageText.replace(/\{\{payment_link\}\}/g, paymentUrl),
-                conversationVariables
-              );
-            } else {
-              message = buildPaymentMessage(paymentUrl);
+              nodeId: current.id,
             }
-
-            if (paymentData.ctaButtonText?.trim()) {
-              const bodyText = paymentData.messageText?.trim()
-                ? interpolateVariables(
-                    paymentData.messageText.replace(/\{\{payment_link\}\}/g, "").trim(),
-                    conversationVariables
-                  )
-                : `Para assinar o plano ${paymentData.planName || ""}, clique no botao abaixo:`.trim();
-
-              const ctaResult = await sendMetaWhatsAppCtaUrlMessage(
-                {
-                  to: params.contactPhone,
-                  bodyText,
-                  buttonText: paymentData.ctaButtonText,
-                  url: paymentUrl,
-                },
-                params.metaConfig
-              );
-
-              await persistConversationMessage({
-                supabase: params.supabase,
-                conversationId: params.conversationId,
-                content: bodyText,
-                type: "interactive",
-                sender: "bot",
-                nodeId: current.id,
-                waMessageId: ctaResult.messageId,
-                metadata: {
-                  payment_url: paymentUrl,
-                  whatsapp_interactive_kind: "cta_url",
-                  whatsapp_button_text: paymentData.ctaButtonText,
-                },
-              });
-            } else if (paymentData.mediaUrl) {
-              let imageUrl: string;
-              if (paymentData.mediaUrl.startsWith("data:")) {
-                const base64Data = paymentData.mediaUrl.split(",")[1];
-                const mimeMatch = paymentData.mediaUrl.match(/data:([^;]+)/);
-                const contentType = mimeMatch?.[1] || "image/png";
-                const ext = contentType.split("/")[1] || "png";
-                const buffer = Buffer.from(base64Data!, "base64");
-                const fileName = `payment-${params.conversationId}-${Date.now()}.${ext}`;
-                await params.supabase.storage
-                  .from("images")
-                  .upload(fileName, buffer, { contentType });
-                const { data: urlData } = params.supabase.storage
-                  .from("images")
-                  .getPublicUrl(fileName);
-                imageUrl = urlData.publicUrl;
-              } else {
-                imageUrl = paymentData.mediaUrl;
-              }
-
-              const imgResult = await sendMetaWhatsAppImageMessage(
-                { to: params.contactPhone, imageUrl, caption: message },
-                params.metaConfig
-              );
-
-              await params.supabase.from("messages").insert({
-                conversation_id: params.conversationId,
-                content: message,
-                type: "image",
-                sender: "bot",
-                media_url: imageUrl,
-                node_id: current.id,
-                wa_message_id: imgResult.messageId,
-              });
-            } else {
-              await sendTextAndPersist({
-                supabase: params.supabase,
-                conversationId: params.conversationId,
-                contactPhone: params.contactPhone,
-                nodeId: current.id,
-                text: message,
-                metaConfig: params.metaConfig,
-                inboundMessageId: params.inboundMessageId,
-              });
-            }
-          } catch (error) {
-            console.error("Flow engine: failed to create Stripe checkout", error);
-          }
-        } // end: paymentAmount > 0
+          );
+        }
       } catch (error) {
         console.error("Flow engine: failed to send payment link", error);
         await sendTextAndPersist({
@@ -2775,6 +3213,46 @@ export async function resumeFlow(
 
       return { status: "waiting" };
     }
+  } else if (currentNode.data.type === "agenticLoop") {
+    try {
+      await runAgenticLoopTurn({
+        supabase,
+        organizationId: options.organizationId,
+        metaConfig: options.metaConfig,
+        conversationId,
+        contactPhone,
+        currentNode,
+        loopData: currentNode.data as AgenticLoopNodeData,
+        nodes,
+        edges,
+        inboundMessageId: options.inboundMessageId,
+      });
+    } catch (error) {
+      console.error("Flow engine: failed to execute agentic loop turn", error);
+
+      await sendTextAndPersist({
+        supabase,
+        conversationId,
+        contactPhone,
+        nodeId: currentNode.id,
+        text:
+          "Tive um problema para continuar essa conversa agora. Pode me mandar sua mensagem novamente em instantes?",
+        metaConfig: options.metaConfig,
+        inboundMessageId: options.inboundMessageId,
+      }).catch((messageError) => {
+        console.error(
+          "Flow engine: failed to send agentic loop failure message",
+          messageError
+        );
+      });
+    }
+
+    await supabase
+      .from("conversations")
+      .update({ updated_at: new Date().toISOString() })
+      .eq("id", conversationId);
+
+    return { status: "waiting" };
   } else if (currentNode.data.type === "stravaConnect") {
     // Strava connected (via callback) or user chose to skip — just advance
     // No special variable injection needed

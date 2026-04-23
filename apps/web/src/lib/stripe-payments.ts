@@ -11,6 +11,10 @@ import {
 } from "@/lib/meta";
 import { resolveAppOrigin } from "@/lib/strava";
 import { getStripeClient } from "@/lib/stripe";
+import {
+  clearAgenticLoopState,
+  isAgenticLoopSalesModeActive,
+} from "@/lib/agentic-loop";
 
 const PREMIUM_CONFIRMATION_PAYMENT_KEY = "_premium_confirmation_payment_id";
 const AWAITING_WEEKLY_DAY_KEY = "_awaiting_weekly_day";
@@ -44,6 +48,10 @@ type ConversationRow = {
   subscription_renewed_count: number | null;
   subscription_status: string | null;
   subscription_plan: string | null;
+  status: string | null;
+  active_flow_id: string | null;
+  current_node_id: string | null;
+  ai_enabled: boolean | null;
 };
 
 export type ReconcileStripePaymentResult = {
@@ -501,7 +509,7 @@ async function approvePaymentRecord(params: {
   const { data: conversation } = await params.supabase
     .from("conversations")
     .select(
-      "id, contact_phone, flow_variables, subscription_renewed_count, subscription_status, subscription_plan"
+      "id, contact_phone, flow_variables, subscription_renewed_count, subscription_status, subscription_plan, status, active_flow_id, current_node_id, ai_enabled"
     )
     .eq("id", params.paymentRecord.conversation_id)
     .single();
@@ -528,6 +536,9 @@ async function approvePaymentRecord(params: {
   const needsConversationActivation =
     conversationRow.subscription_status !== "active" ||
     conversationRow.subscription_plan !== "premium";
+  const shouldDisableAgenticSalesMode = isAgenticLoopSalesModeActive(
+    conversationRow.flow_variables
+  );
 
   await updatePaymentRecordFromStripe({
     supabase: params.supabase,
@@ -550,11 +561,18 @@ async function approvePaymentRecord(params: {
     },
   });
 
-  if (!alreadyProcessed || needsConversationActivation) {
+  if (
+    !alreadyProcessed ||
+    needsConversationActivation ||
+    shouldDisableAgenticSalesMode
+  ) {
     const expiresAt = new Date();
     expiresAt.setDate(
       expiresAt.getDate() + (Number(params.paymentRecord.duration_days) || 30)
     );
+    const nextFlowVariables = shouldDisableAgenticSalesMode
+      ? clearAgenticLoopState(conversationRow.flow_variables)
+      : conversationRow.flow_variables;
 
     await params.supabase
       .from("conversations")
@@ -567,6 +585,19 @@ async function approvePaymentRecord(params: {
           alreadyProcessed && !needsConversationActivation
             ? conversationRow.subscription_renewed_count || 0
             : (conversationRow.subscription_renewed_count || 0) + 1,
+        flow_variables: nextFlowVariables,
+        status: shouldDisableAgenticSalesMode ? "ai" : conversationRow.status,
+        ai_enabled: shouldDisableAgenticSalesMode
+          ? true
+          : conversationRow.ai_enabled,
+        active_flow_id: shouldDisableAgenticSalesMode
+          ? null
+          : conversationRow.active_flow_id,
+        current_node_id: shouldDisableAgenticSalesMode
+          ? null
+          : conversationRow.current_node_id,
+        flow_node_queue: shouldDisableAgenticSalesMode ? null : undefined,
+        timeout_at: shouldDisableAgenticSalesMode ? null : undefined,
         updated_at: new Date().toISOString(),
       })
       .eq("id", params.paymentRecord.conversation_id);
