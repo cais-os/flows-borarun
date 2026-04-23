@@ -44,6 +44,7 @@ const messageLabels = {
 export function SendMessageNode({ id, data, selected }: NodeProps) {
   const nodeData = data as SendMessageNodeData;
   const config = NODE_CONFIG[NODE_TYPES.SEND_MESSAGE];
+  const nodeColor = nodeData.variant === "freeAi" ? "#8B5CF6" : config.color;
   const updateNodeInternals = useUpdateNodeInternals();
   const containerRef = useRef<HTMLDivElement>(null);
   const optionRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -156,7 +157,7 @@ export function SendMessageNode({ id, data, selected }: NodeProps) {
       id={id}
       label={nodeData.label || config.label}
       icon={messageIcons[nodeData.messageType] || <MessageSquare size={14} />}
-      color={config.color}
+      color={nodeColor}
       selected={selected}
       sourceHandles={sourceHandles}
       containerRef={containerRef}

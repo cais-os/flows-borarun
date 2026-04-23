@@ -26,6 +26,7 @@ export const NODE_TYPES = {
   PAYMENT: "payment",
   WHATSAPP_FLOW: "whatsappFlow",
   WAIT_FOR_PLAYED: "waitForPlayed",
+  AGENTIC_LOOP: "agenticLoop",
 } as const;
 
 export type NodeType = (typeof NODE_TYPES)[keyof typeof NODE_TYPES];

@@ -1,6 +1,6 @@
 "use client";
 
-import { type DragEvent } from "react";
+import { type DragEvent, type ReactNode } from "react";
 import {
   Zap,
   MessageSquare,
@@ -15,6 +15,8 @@ import {
   CreditCard,
   ListChecks,
   Headphones,
+  Sparkles,
+  BrainCircuit,
 } from "lucide-react";
 import { NODE_TYPES } from "@/types/flow";
 import { NODE_CONFIG } from "@/lib/constants";
@@ -27,7 +29,16 @@ import {
 } from "@/components/ui/tooltip";
 import { createNodeId } from "@/components/canvas/flow-canvas";
 
-const nodeItems = [
+type PaletteNodeItem = {
+  type: string;
+  preset?: "freeAi";
+  icon: ReactNode;
+  label: string;
+  color: string;
+  description: string;
+};
+
+const nodeItems: PaletteNodeItem[] = [
   {
     type: NODE_TYPES.TRIGGER,
     icon: <Zap size={16} />,
@@ -37,6 +48,14 @@ const nodeItems = [
     type: NODE_TYPES.SEND_MESSAGE,
     icon: <MessageSquare size={16} />,
     ...NODE_CONFIG[NODE_TYPES.SEND_MESSAGE],
+  },
+  {
+    type: NODE_TYPES.SEND_MESSAGE,
+    preset: "freeAi",
+    icon: <Sparkles size={16} />,
+    label: "IA Livre",
+    color: "#8B5CF6",
+    description: "Gera e envia uma resposta livre com IA",
   },
   {
     type: NODE_TYPES.TAG_CONVERSATION,
@@ -93,10 +112,22 @@ const nodeItems = [
     icon: <Headphones size={16} />,
     ...NODE_CONFIG[NODE_TYPES.WAIT_FOR_PLAYED],
   },
+  {
+    type: NODE_TYPES.AGENTIC_LOOP,
+    icon: <BrainCircuit size={16} />,
+    ...NODE_CONFIG[NODE_TYPES.AGENTIC_LOOP],
+  },
 ];
 
-function onDragStart(event: DragEvent, nodeType: string) {
-  event.dataTransfer.setData("application/reactflow", nodeType);
+function onDragStart(
+  event: DragEvent,
+  nodeType: string,
+  preset?: "freeAi"
+) {
+  event.dataTransfer.setData(
+    "application/reactflow",
+    JSON.stringify({ type: nodeType, preset })
+  );
   event.dataTransfer.effectAllowed = "move";
 }
 
@@ -104,7 +135,7 @@ export function FlowNodeToolbar() {
   const addNode = useFlowStore((s) => s.addNode);
   const nodes = useFlowStore((s) => s.nodes);
 
-  const handleClick = (type: string) => {
+  const handleClick = (type: string, preset?: "freeAi") => {
     const maxY = nodes.length > 0
       ? Math.max(...nodes.map((n) => n.position.y)) + 120
       : 100;
@@ -116,19 +147,19 @@ export function FlowNodeToolbar() {
       id: createNodeId(type),
       type,
       position: { x: centerX, y: maxY },
-      data: getDefaultData(type),
+      data: getDefaultData(type, preset),
     });
   };
 
   return (
     <div className="absolute left-3 top-3 z-10 flex items-center gap-1 rounded-xl border border-slate-200 bg-white/90 px-2 py-1.5 shadow-sm backdrop-blur">
       {nodeItems.map((item) => (
-        <Tooltip key={item.type}>
+        <Tooltip key={`${item.type}:${item.preset ?? "default"}`}>
           <TooltipTrigger asChild>
             <div
               draggable
-              onDragStart={(e) => onDragStart(e, item.type)}
-              onClick={() => handleClick(item.type)}
+              onDragStart={(e) => onDragStart(e, item.type, item.preset)}
+              onClick={() => handleClick(item.type, item.preset)}
               className="flex items-center justify-center size-8 rounded-lg cursor-pointer transition-colors hover:bg-gray-100"
               style={{ color: item.color }}
             >

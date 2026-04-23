@@ -11,7 +11,32 @@ export type NodeData =
   | StravaConnectNodeData
   | PaymentNodeData
   | WhatsAppFlowNodeData
-  | WaitForPlayedNodeData;
+  | WaitForPlayedNodeData
+  | AgenticLoopNodeData;
+
+export type AgenticLoopHandoff = {
+  nodeId: string;
+  label: string;
+  description: string;
+};
+
+export type AgenticLoopTool =
+  | { name: "handoff_to"; enabled: true }
+  | { name: "capture_variable"; enabled: boolean }
+  | { name: "send_message"; enabled: true }
+  | { name: "end_conversation"; enabled: boolean };
+
+export type AgenticLoopNodeData = {
+  type: "agenticLoop";
+  label: string;
+  systemPrompt: string;
+  model: string;
+  maxTurns: number;
+  historyWindowMessages: number;
+  handoffTargets: AgenticLoopHandoff[];
+  tools: AgenticLoopTool[];
+  fallbackHandoffNodeId?: string;
+};
 
 export type CaptureMode = "full" | "summary";
 export type ReplyMatchType = "contains" | "exact" | "startsWith" | "any";
@@ -33,6 +58,7 @@ export type SendMessageNodeData = {
   type: "sendMessage";
   label: string;
   messageType: "text" | "template" | "image" | "file" | "audio" | "video" | "ai";
+  variant?: "freeAi";
   textContent?: string;
   templateId?: string;
   templateName?: string;

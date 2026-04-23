@@ -432,6 +432,10 @@ export function SendMessageEditor({ nodeId, data }: SendMessageEditorProps) {
 
             update({
               messageType: value as SendMessageNodeData["messageType"],
+              variant:
+                value === "ai" && data.variant === "freeAi"
+                  ? "freeAi"
+                  : undefined,
               textContent: undefined,
               templateId: undefined,
               templateName: undefined,

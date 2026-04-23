@@ -67,6 +67,12 @@ export const NODE_CONFIG = {
     color: "#7C3AED",
     description: "Aguarda o usuario ouvir o ultimo audio antes de continuar",
   },
+  [NODE_TYPES.AGENTIC_LOOP]: {
+    label: "Agente IA",
+    color: "#8B5CF6",
+    description:
+      "Loop de IA com handoff - conversa multi-turno ate o modelo decidir continuar o flow",
+  },
 } as const;
 
 export const DEFAULT_SPLITS = [

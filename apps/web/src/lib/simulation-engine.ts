@@ -5,6 +5,7 @@ import type {
   TagConversationNodeData,
   RandomizerNodeData,
   WaitForReplyNodeData,
+  AgenticLoopNodeData,
 } from "@/types/node-data";
 import type { ChatMessage } from "@/types/simulator";
 import {
@@ -240,6 +241,24 @@ async function processSimulationQueue(
           timestamp: new Date(),
         });
       }
+
+      callbacks.onPause?.({
+        nodeId: current.id,
+        pendingNodeIds: queue.map((node) => node.id),
+      });
+      return;
+    }
+
+    if (data.type === "agenticLoop") {
+      const loopData = data as AgenticLoopNodeData;
+
+      callbacks.onMessage({
+        id: createMessageId("sys"),
+        content: `Agente IA pausado (${loopData.model || "gpt-4o"}, ${loopData.handoffTargets?.length ?? 0} handoffs)`,
+        type: "system",
+        sender: "system",
+        timestamp: new Date(),
+      });
 
       callbacks.onPause?.({
         nodeId: current.id,

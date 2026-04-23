@@ -1,6 +1,6 @@
 "use client";
 
-import { type DragEvent } from "react";
+import { type DragEvent, type ReactNode } from "react";
 import {
   Zap,
   MessageSquare,
@@ -11,6 +11,8 @@ import {
   Timer,
   Flag,
   Link,
+  Sparkles,
+  BrainCircuit,
 } from "lucide-react";
 import { NODE_TYPES } from "@/types/flow";
 import { NODE_CONFIG } from "@/lib/constants";
@@ -22,7 +24,16 @@ import {
   TooltipContent,
 } from "@/components/ui/tooltip";
 
-const nodeItems = [
+type PaletteNodeItem = {
+  type: string;
+  preset?: "freeAi";
+  icon: ReactNode;
+  label: string;
+  color: string;
+  description: string;
+};
+
+const nodeItems: PaletteNodeItem[] = [
   {
     type: NODE_TYPES.TRIGGER,
     icon: <Zap size={20} />,
@@ -32,6 +43,14 @@ const nodeItems = [
     type: NODE_TYPES.SEND_MESSAGE,
     icon: <MessageSquare size={20} />,
     ...NODE_CONFIG[NODE_TYPES.SEND_MESSAGE],
+  },
+  {
+    type: NODE_TYPES.SEND_MESSAGE,
+    preset: "freeAi",
+    icon: <Sparkles size={20} />,
+    label: "IA Livre",
+    color: "#8B5CF6",
+    description: "Gera e envia uma resposta livre com IA",
   },
   {
     type: NODE_TYPES.TAG_CONVERSATION,
@@ -68,10 +87,22 @@ const nodeItems = [
     icon: <Link size={20} />,
     ...NODE_CONFIG[NODE_TYPES.STRAVA_CONNECT],
   },
+  {
+    type: NODE_TYPES.AGENTIC_LOOP,
+    icon: <BrainCircuit size={20} />,
+    ...NODE_CONFIG[NODE_TYPES.AGENTIC_LOOP],
+  },
 ];
 
-function onDragStart(event: DragEvent, nodeType: string) {
-  event.dataTransfer.setData("application/reactflow", nodeType);
+function onDragStart(
+  event: DragEvent,
+  nodeType: string,
+  preset?: "freeAi"
+) {
+  event.dataTransfer.setData(
+    "application/reactflow",
+    JSON.stringify({ type: nodeType, preset })
+  );
   event.dataTransfer.effectAllowed = "move";
 }
 
@@ -79,7 +110,7 @@ export function FlowSidebar() {
   const addNode = useFlowStore((s) => s.addNode);
   const nodes = useFlowStore((s) => s.nodes);
 
-  const handleClick = (type: string) => {
+  const handleClick = (type: string, preset?: "freeAi") => {
     // Place new node below the lowest existing node
     const maxY = nodes.length > 0
       ? Math.max(...nodes.map((n) => n.position.y)) + 120
@@ -92,19 +123,19 @@ export function FlowSidebar() {
       id: createNodeId(type),
       type,
       position: { x: centerX, y: maxY },
-      data: getDefaultData(type),
+      data: getDefaultData(type, preset),
     });
   };
 
   return (
     <aside className="w-14 border-r bg-white flex flex-col items-center py-3 gap-1 shrink-0">
       {nodeItems.map((item) => (
-        <Tooltip key={item.type}>
+        <Tooltip key={`${item.type}:${item.preset ?? "default"}`}>
           <TooltipTrigger asChild>
             <div
               draggable
-              onDragStart={(e) => onDragStart(e, item.type)}
-              onClick={() => handleClick(item.type)}
+              onDragStart={(e) => onDragStart(e, item.type, item.preset)}
+              onClick={() => handleClick(item.type, item.preset)}
               className="flex items-center justify-center w-10 h-10 rounded-lg cursor-pointer transition-colors hover:bg-gray-100"
               style={{ color: item.color }}
             >

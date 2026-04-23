@@ -16,6 +16,7 @@ import type {
   PaymentNodeData,
   WhatsAppFlowNodeData,
   WaitForPlayedNodeData,
+  AgenticLoopNodeData,
 } from "@/types/node-data";
 import {
   extractFieldsFromText,
@@ -1792,6 +1793,26 @@ async function runFlowQueue(params: {
         .from("conversations")
         .update({ flow_variables: variables })
         .eq("id", params.conversationId);
+
+      await pauseFlow({
+        supabase: params.supabase,
+        conversationId: params.conversationId,
+        currentNodeId: current.id,
+        queue,
+      });
+      return "paused" as const;
+    }
+
+    if (data.type === "agenticLoop") {
+      const loopData = data as AgenticLoopNodeData;
+
+      console.log("[flow-engine] entering agenticLoop", {
+        conversationId: params.conversationId,
+        nodeId: current.id,
+        model: loopData.model,
+        maxTurns: loopData.maxTurns,
+        handoffs: loopData.handoffTargets?.length ?? 0,
+      });
 
       await pauseFlow({
         supabase: params.supabase,

@@ -32,6 +32,7 @@ import { StravaConnectNode } from "@/components/nodes/strava-connect-node";
 import { PaymentNode } from "@/components/nodes/payment-node";
 import { WhatsAppFlowNode } from "@/components/nodes/whatsapp-flow-node";
 import { WaitForPlayedNode } from "@/components/nodes/wait-for-played-node";
+import { AgenticLoopNode } from "@/components/nodes/agentic-loop-node";
 
 import type {
   TriggerNodeData,
@@ -47,8 +48,16 @@ import type {
   PaymentNodeData,
   WhatsAppFlowNodeData,
   WaitForPlayedNodeData,
+  AgenticLoopNodeData,
   NodeData,
 } from "@/types/node-data";
+
+type PaletteNodePreset = "freeAi";
+
+type PaletteDragPayload = {
+  type: string;
+  preset?: PaletteNodePreset;
+};
 
 const nodeTypes = {
   [NODE_TYPES.TRIGGER]: TriggerNode,
@@ -64,17 +73,28 @@ const nodeTypes = {
   [NODE_TYPES.PAYMENT]: PaymentNode,
   [NODE_TYPES.WHATSAPP_FLOW]: WhatsAppFlowNode,
   [NODE_TYPES.WAIT_FOR_PLAYED]: WaitForPlayedNode,
+  [NODE_TYPES.AGENTIC_LOOP]: AgenticLoopNode,
 };
 
 export function createNodeId(type: string) {
   return `${type}-${Date.now()}`;
 }
 
-export function getDefaultData(type: string) {
+export function getDefaultData(type: string, preset?: PaletteNodePreset) {
   switch (type) {
     case NODE_TYPES.TRIGGER:
       return { type: "trigger", label: "Trigger", triggerType: "manual" } satisfies TriggerNodeData;
     case NODE_TYPES.SEND_MESSAGE:
+      if (preset === "freeAi") {
+        return {
+          type: "sendMessage",
+          label: "IA Livre",
+          messageType: "ai",
+          interactiveType: "none",
+          variant: "freeAi",
+        } satisfies SendMessageNodeData;
+      }
+
       return {
         type: "sendMessage",
         label: "Enviar Mensagem",
@@ -138,6 +158,22 @@ export function getDefaultData(type: string) {
       } satisfies WhatsAppFlowNodeData;
     case NODE_TYPES.WAIT_FOR_PLAYED:
       return { type: "waitForPlayed", label: "Esperar Audio", timeoutMinutes: 2 } satisfies WaitForPlayedNodeData;
+    case NODE_TYPES.AGENTIC_LOOP:
+      return {
+        type: "agenticLoop",
+        label: "Agente IA",
+        systemPrompt: "",
+        model: "gpt-4o",
+        maxTurns: 10,
+        historyWindowMessages: 20,
+        handoffTargets: [],
+        tools: [
+          { name: "handoff_to", enabled: true },
+          { name: "send_message", enabled: true },
+          { name: "capture_variable", enabled: true },
+          { name: "end_conversation", enabled: false },
+        ],
+      } satisfies AgenticLoopNodeData;
     default:
       return {
         type: "sendMessage",
@@ -146,6 +182,21 @@ export function getDefaultData(type: string) {
         interactiveType: "none",
       } satisfies SendMessageNodeData;
   }
+}
+
+function parsePaletteDragPayload(rawValue: string): PaletteDragPayload | null {
+  if (!rawValue) return null;
+
+  try {
+    const parsed = JSON.parse(rawValue) as PaletteDragPayload;
+    if (typeof parsed?.type === "string" && parsed.type.trim()) {
+      return parsed;
+    }
+  } catch {
+    // Fallback to legacy plain-string node type payloads.
+  }
+
+  return { type: rawValue };
 }
 
 // ---------------------------------------------------------------------------
@@ -264,8 +315,9 @@ export function FlowCanvas() {
     (event: DragEvent) => {
       event.preventDefault();
 
-      const type = event.dataTransfer.getData("application/reactflow");
-      if (!type) return;
+      const rawPayload = event.dataTransfer.getData("application/reactflow");
+      const payload = parsePaletteDragPayload(rawPayload);
+      if (!payload?.type) return;
 
       const position = screenToFlowPosition({
         x: event.clientX,
@@ -273,10 +325,10 @@ export function FlowCanvas() {
       });
 
       const newNode = {
-        id: createNodeId(type),
-        type,
+        id: createNodeId(payload.type),
+        type: payload.type,
         position,
-        data: getDefaultData(type),
+        data: getDefaultData(payload.type, payload.preset),
       };
 
       addNode(newNode);

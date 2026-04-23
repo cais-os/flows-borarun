@@ -17,6 +17,7 @@ import { StravaConnectEditor } from "./strava-connect-editor";
 import { PaymentEditor } from "./payment-editor";
 import { WhatsAppFlowEditor } from "./whatsapp-flow-editor";
 import { WaitForPlayedEditor } from "./wait-for-played-editor";
+import { AgenticLoopEditor } from "./agentic-loop-editor";
 import type {
   NodeData,
   TriggerNodeData,
@@ -32,6 +33,7 @@ import type {
   PaymentNodeData,
   WhatsAppFlowNodeData,
   WaitForPlayedNodeData,
+  AgenticLoopNodeData,
 } from "@/types/node-data";
 
 export function NodeEditorPanel() {
@@ -45,9 +47,19 @@ export function NodeEditorPanel() {
   if (!selectedNodeId || !nodeData) return null;
 
   const nodeType = nodeData.type;
-  const config = nodeType
+  const baseConfig = nodeType
     ? NODE_CONFIG[nodeType as keyof typeof NODE_CONFIG]
     : null;
+  const config =
+    nodeData.type === "sendMessage" &&
+    (nodeData as SendMessageNodeData).variant === "freeAi"
+      ? {
+          ...baseConfig,
+          label: "IA Livre",
+          color: "#8B5CF6",
+          description: "Gera uma mensagem livre com IA a partir do prompt",
+        }
+      : baseConfig;
 
   const close = () => setSelectedNodeId(null);
 
@@ -170,6 +182,12 @@ export function NodeEditorPanel() {
             <WaitForPlayedEditor
               nodeId={selectedNodeId}
               data={nodeData as WaitForPlayedNodeData}
+            />
+          )}
+          {nodeData.type === "agenticLoop" && (
+            <AgenticLoopEditor
+              nodeId={selectedNodeId}
+              data={nodeData as AgenticLoopNodeData}
             />
           )}
         </div>
