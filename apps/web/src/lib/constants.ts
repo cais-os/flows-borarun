@@ -55,7 +55,7 @@ export const NODE_CONFIG = {
   [NODE_TYPES.PAYMENT]: {
     label: "Pagamento",
     color: "#00B1EA",
-    description: "Envia um link de pagamento do Mercado Pago",
+    description: "Envia um link de pagamento do Stripe",
   },
   [NODE_TYPES.WHATSAPP_FLOW]: {
     label: "Formulario WhatsApp",

@@ -53,7 +53,7 @@ export default async function SubscriptionCancelPage({
   const { data: record } = await supabase
     .from("payments")
     .select(
-      "id, plan_name, mp_subscription_status, conversation:conversations(subscription_expires_at)"
+      "id, plan_name, provider_subscription_status, mp_subscription_status, conversation:conversations(subscription_expires_at)"
     )
     .eq("id", payload.paymentRecordId)
     .maybeSingle();
@@ -61,6 +61,7 @@ export default async function SubscriptionCancelPage({
   const payment = record as {
     id: string;
     plan_name: string | null;
+    provider_subscription_status: string | null;
     mp_subscription_status: string | null;
     conversation:
       | {
@@ -102,7 +103,9 @@ export default async function SubscriptionCancelPage({
   const validUntil = formatSubscriptionValidity(
     conversation?.subscription_expires_at || null
   );
-  const alreadyCancelled = payment.mp_subscription_status === "cancelled";
+  const alreadyCancelled =
+    payment.provider_subscription_status === "cancelled" ||
+    payment.mp_subscription_status === "cancelled";
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-100 px-4">

@@ -3,6 +3,7 @@ import chromium from "@sparticuz/chromium-min";
 import puppeteer from "puppeteer-core";
 import { renderPdfTemplateHtml } from "@/lib/pdf-template-renderer";
 import { PLANEJADOR_INICIAL_PROMPT } from "@/lib/prompts/planejador-inicial";
+import { normalizeTrainingPlan } from "@/lib/training-plan";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -105,7 +106,8 @@ export async function generatePdf(params: {
   }
 
   // Extract the two root keys
-  const planData = (parsed.training_plan as Record<string, unknown>) || parsed;
+  const rawPlanData = (parsed.training_plan as Record<string, unknown>) || parsed;
+  const planData = normalizeTrainingPlan(rawPlanData);
   const coachingSummary = (parsed.coaching_summary as Record<string, unknown>) || {};
 
   // 2. Interpolate template with AI-generated data + flow variables

@@ -38,7 +38,7 @@ export function PaymentNode({ id, data, selected }: NodeProps) {
           </div>
         )}
         <p className="text-gray-500 line-clamp-2 text-xs">
-          {nodeData.messageText || "Envia link de pagamento Mercado Pago"}
+          {nodeData.messageText || "Envia link de pagamento Stripe"}
         </p>
       </div>
     </NodeWrapper>

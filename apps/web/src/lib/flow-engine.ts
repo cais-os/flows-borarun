@@ -32,12 +32,10 @@ import {
   resolveAppOrigin,
 } from "@/lib/strava";
 import {
-  getMercadoPagoConfig,
-  createPaymentAndPreference,
+  createStripePaymentCheckout,
   buildPaymentMessage,
-  type MercadoPagoBillingMode,
-} from "@/lib/mercado-pago";
-import { getOrganizationSettingsById } from "@/lib/organization";
+  type StripePaymentBillingMode,
+} from "@/lib/stripe-payments";
 import {
   buildNoMatchResponseMessage,
   getMatchedWaitRoute,
@@ -212,8 +210,8 @@ function delay(ms: number) {
 }
 
 function getPaymentBillingMode(
-  value: MercadoPagoBillingMode | undefined
-): MercadoPagoBillingMode {
+  value: StripePaymentBillingMode | undefined
+): StripePaymentBillingMode {
   return value === "one_time" ? "one_time" : "recurring";
 }
 
@@ -1954,130 +1952,120 @@ async function runFlowQueue(params: {
         if (paymentAmount <= 0) {
           console.error("Flow engine: Payment node has invalid amount:", paymentAmount, "— skipping. Configure a value > 0 in the node editor.");
         } else {
-        const settings = await getOrganizationSettingsById(params.organizationId);
-        const mpConfig = getMercadoPagoConfig(settings);
-        const billingMode = getPaymentBillingMode(paymentData.billingMode);
-        const conversationVariables = await getConversationVariables(
-          params.supabase,
-          params.conversationId
-        );
-        const payerEmail =
-          billingMode === "recurring"
-            ? resolvePaymentPayerEmail(paymentData, conversationVariables)
-            : null;
+          const billingMode = getPaymentBillingMode(paymentData.billingMode);
+          const conversationVariables = await getConversationVariables(
+            params.supabase,
+            params.conversationId
+          );
+          const payerEmail =
+            billingMode === "recurring"
+              ? resolvePaymentPayerEmail(paymentData, conversationVariables)
+              : null;
 
-        if (!mpConfig.configured || !mpConfig.config) {
-          console.error("Flow engine: Mercado Pago not configured for org", params.organizationId);
-        } else {
-          const result = await createPaymentAndPreference({
-            supabase: params.supabase,
-            organizationId: params.organizationId,
-            conversationId: params.conversationId,
-            planName: paymentData.planName || "Assinatura",
-            amount: paymentAmount,
-            durationDays: paymentData.durationDays || 30,
-            currency: paymentData.currency || "BRL",
-            accessToken: mpConfig.config.accessToken,
-            billingMode,
-            payerEmail,
-          });
-
-          const paymentUrl = result.initPoint;
-          const isEmailCaptureStep = result.checkoutType === "email_capture";
-          let message: string;
-          if (paymentData.messageText?.trim()) {
-            message = interpolateVariables(
-              paymentData.messageText.replace(/\{\{payment_link\}\}/g, paymentUrl),
-              conversationVariables
-            );
-          } else if (isEmailCaptureStep) {
-            message =
-              `Para continuar a assinatura do plano ${paymentData.planName || "Premium"}, clique no link abaixo.\n\n${paymentUrl}\n\nAntes de abrir o checkout do Mercado Pago, vou te pedir um e-mail rapido para ativar a cobranca recorrente.`;
-          } else {
-            message = buildPaymentMessage(paymentUrl);
-          }
-
-          if (paymentData.ctaButtonText?.trim()) {
-            // Send as interactive CTA URL button
-            const bodyText = paymentData.messageText?.trim()
-              ? interpolateVariables(
-                  paymentData.messageText.replace(/\{\{payment_link\}\}/g, "").trim(),
-                  conversationVariables
-                )
-              : isEmailCaptureStep
-                ? `Para assinar o plano ${paymentData.planName || ""}, clique no botao abaixo. Primeiro vou confirmar seu e-mail e depois abrir o Mercado Pago.`.trim()
-              : `Para assinar o plano ${paymentData.planName || ""}, clique no botao abaixo:`.trim();
-
-            const ctaResult = await sendMetaWhatsAppCtaUrlMessage(
-              {
-                to: params.contactPhone,
-                bodyText,
-                buttonText: paymentData.ctaButtonText,
-                url: paymentUrl,
-              },
-              params.metaConfig
-            );
-
-            await persistConversationMessage({
+          try {
+            const result = await createStripePaymentCheckout({
               supabase: params.supabase,
+              organizationId: params.organizationId,
               conversationId: params.conversationId,
-              content: bodyText,
-              type: "interactive",
-              sender: "bot",
-              nodeId: current.id,
-              waMessageId: ctaResult.messageId,
-              metadata: {
-                payment_url: paymentUrl,
-                whatsapp_interactive_kind: "cta_url",
-                whatsapp_button_text: paymentData.ctaButtonText,
-              },
+              planName: paymentData.planName || "Assinatura",
+              amount: paymentAmount,
+              durationDays: paymentData.durationDays || 30,
+              currency: paymentData.currency || "BRL",
+              billingMode,
+              payerEmail,
             });
-          } else if (paymentData.mediaUrl) {
-            let imageUrl: string;
-            if (paymentData.mediaUrl.startsWith("data:")) {
-              const base64Data = paymentData.mediaUrl.split(",")[1];
-              const mimeMatch = paymentData.mediaUrl.match(/data:([^;]+)/);
-              const contentType = mimeMatch?.[1] || "image/png";
-              const ext = contentType.split("/")[1] || "png";
-              const buffer = Buffer.from(base64Data!, "base64");
-              const fileName = `payment-${params.conversationId}-${Date.now()}.${ext}`;
-              await params.supabase.storage
-                .from("images")
-                .upload(fileName, buffer, { contentType });
-              const { data: urlData } = params.supabase.storage
-                .from("images")
-                .getPublicUrl(fileName);
-              imageUrl = urlData.publicUrl;
+
+            const paymentUrl = result.initPoint!;
+            let message: string;
+            if (paymentData.messageText?.trim()) {
+              message = interpolateVariables(
+                paymentData.messageText.replace(/\{\{payment_link\}\}/g, paymentUrl),
+                conversationVariables
+              );
             } else {
-              imageUrl = paymentData.mediaUrl;
+              message = buildPaymentMessage(paymentUrl);
             }
 
-            const imgResult = await sendMetaWhatsAppImageMessage(
-              { to: params.contactPhone, imageUrl, caption: message },
-              params.metaConfig
-            );
+            if (paymentData.ctaButtonText?.trim()) {
+              const bodyText = paymentData.messageText?.trim()
+                ? interpolateVariables(
+                    paymentData.messageText.replace(/\{\{payment_link\}\}/g, "").trim(),
+                    conversationVariables
+                  )
+                : `Para assinar o plano ${paymentData.planName || ""}, clique no botao abaixo:`.trim();
 
-            await params.supabase.from("messages").insert({
-              conversation_id: params.conversationId,
-              content: message,
-              type: "image",
-              sender: "bot",
-              media_url: imageUrl,
-              node_id: current.id,
-              wa_message_id: imgResult.messageId,
-            });
-          } else {
-            await sendTextAndPersist({
-              supabase: params.supabase,
-              conversationId: params.conversationId,
-              contactPhone: params.contactPhone,
-              nodeId: current.id,
-              text: message,
-              metaConfig: params.metaConfig,
-              inboundMessageId: params.inboundMessageId,
-            });
+              const ctaResult = await sendMetaWhatsAppCtaUrlMessage(
+                {
+                  to: params.contactPhone,
+                  bodyText,
+                  buttonText: paymentData.ctaButtonText,
+                  url: paymentUrl,
+                },
+                params.metaConfig
+              );
+
+              await persistConversationMessage({
+                supabase: params.supabase,
+                conversationId: params.conversationId,
+                content: bodyText,
+                type: "interactive",
+                sender: "bot",
+                nodeId: current.id,
+                waMessageId: ctaResult.messageId,
+                metadata: {
+                  payment_url: paymentUrl,
+                  whatsapp_interactive_kind: "cta_url",
+                  whatsapp_button_text: paymentData.ctaButtonText,
+                },
+              });
+            } else if (paymentData.mediaUrl) {
+              let imageUrl: string;
+              if (paymentData.mediaUrl.startsWith("data:")) {
+                const base64Data = paymentData.mediaUrl.split(",")[1];
+                const mimeMatch = paymentData.mediaUrl.match(/data:([^;]+)/);
+                const contentType = mimeMatch?.[1] || "image/png";
+                const ext = contentType.split("/")[1] || "png";
+                const buffer = Buffer.from(base64Data!, "base64");
+                const fileName = `payment-${params.conversationId}-${Date.now()}.${ext}`;
+                await params.supabase.storage
+                  .from("images")
+                  .upload(fileName, buffer, { contentType });
+                const { data: urlData } = params.supabase.storage
+                  .from("images")
+                  .getPublicUrl(fileName);
+                imageUrl = urlData.publicUrl;
+              } else {
+                imageUrl = paymentData.mediaUrl;
+              }
+
+              const imgResult = await sendMetaWhatsAppImageMessage(
+                { to: params.contactPhone, imageUrl, caption: message },
+                params.metaConfig
+              );
+
+              await params.supabase.from("messages").insert({
+                conversation_id: params.conversationId,
+                content: message,
+                type: "image",
+                sender: "bot",
+                media_url: imageUrl,
+                node_id: current.id,
+                wa_message_id: imgResult.messageId,
+              });
+            } else {
+              await sendTextAndPersist({
+                supabase: params.supabase,
+                conversationId: params.conversationId,
+                contactPhone: params.contactPhone,
+                nodeId: current.id,
+                text: message,
+                metaConfig: params.metaConfig,
+                inboundMessageId: params.inboundMessageId,
+              });
+            }
+          } catch (error) {
+            console.error("Flow engine: failed to create Stripe checkout", error);
           }
-        }
         } // end: paymentAmount > 0
       } catch (error) {
         console.error("Flow engine: failed to send payment link", error);

@@ -5,6 +5,7 @@ import {
   cancelMercadoPagoSubscription,
   getMercadoPagoConfig,
 } from "@/lib/mercado-pago";
+import { cancelStripeSubscriptionAtPeriodEnd } from "@/lib/stripe-payments";
 import { verifySubscriptionCancellationToken } from "@/lib/subscription-utils";
 
 export async function POST(request: Request) {
@@ -23,7 +24,7 @@ export async function POST(request: Request) {
     const { data: paymentRecord } = await supabase
       .from("payments")
       .select(
-        "id, organization_id, conversation_id, mp_subscription_id, mp_subscription_status"
+        "id, organization_id, conversation_id, provider, provider_subscription_id, provider_subscription_status, mp_subscription_id, mp_subscription_status"
       )
       .eq("id", payload.paymentRecordId)
       .maybeSingle();
@@ -32,15 +33,27 @@ export async function POST(request: Request) {
       id: string;
       organization_id: string;
       conversation_id: string;
+      provider: string | null;
+      provider_subscription_id: string | null;
+      provider_subscription_status: string | null;
       mp_subscription_id: string | null;
       mp_subscription_status: string | null;
     } | null;
+
+    const provider =
+      payload.paymentProvider ||
+      record?.provider ||
+      (record?.provider_subscription_id ? "stripe" : "mercado_pago");
+    const recordSubscriptionId =
+      provider === "stripe"
+        ? record?.provider_subscription_id
+        : record?.mp_subscription_id;
 
     if (
       !record ||
       record.organization_id !== payload.organizationId ||
       record.conversation_id !== payload.conversationId ||
-      record.mp_subscription_id !== payload.subscriptionId
+      recordSubscriptionId !== payload.subscriptionId
     ) {
       return NextResponse.json(
         { ok: false, error: "Assinatura nao encontrada." },
@@ -48,39 +61,60 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!record.mp_subscription_id) {
+    if (!recordSubscriptionId) {
       return NextResponse.json(
         { ok: false, error: "Essa conversa nao possui assinatura recorrente ativa." },
         { status: 409 }
       );
     }
 
-    let finalStatus = record.mp_subscription_status || null;
+    let finalStatus =
+      provider === "stripe"
+        ? record.provider_subscription_status || null
+        : record.mp_subscription_status || null;
 
     if (finalStatus !== "cancelled") {
-      const settings = await getOrganizationSettingsById(payload.organizationId);
-      const mpConfig = getMercadoPagoConfig(settings);
-
-      if (!mpConfig.configured || !mpConfig.config) {
-        return NextResponse.json(
-          { ok: false, error: "Mercado Pago nao configurado." },
-          { status: 503 }
+      if (provider === "stripe") {
+        const subscription = await cancelStripeSubscriptionAtPeriodEnd(
+          recordSubscriptionId
         );
-      }
+        finalStatus =
+          subscription.cancel_at_period_end || subscription.status === "canceled"
+            ? "cancelled"
+            : subscription.status;
+      } else {
+        const settings = await getOrganizationSettingsById(payload.organizationId);
+        const mpConfig = getMercadoPagoConfig(settings);
 
-      const subscription = await cancelMercadoPagoSubscription(
-        record.mp_subscription_id,
-        mpConfig.config.accessToken
-      );
-      finalStatus = subscription.status || "cancelled";
+        if (!mpConfig.configured || !mpConfig.config) {
+          return NextResponse.json(
+            { ok: false, error: "Mercado Pago nao configurado." },
+            { status: 503 }
+          );
+        }
+
+        const subscription = await cancelMercadoPagoSubscription(
+          recordSubscriptionId,
+          mpConfig.config.accessToken
+        );
+        finalStatus = subscription.status || "cancelled";
+      }
     }
+
+    const paymentUpdate =
+      provider === "stripe"
+        ? {
+            provider_subscription_status: finalStatus || "cancelled",
+            updated_at: new Date().toISOString(),
+          }
+        : {
+            mp_subscription_status: finalStatus || "cancelled",
+            updated_at: new Date().toISOString(),
+          };
 
     await supabase
       .from("payments")
-      .update({
-        mp_subscription_status: finalStatus || "cancelled",
-        updated_at: new Date().toISOString(),
-      })
+      .update(paymentUpdate)
       .eq("id", record.id);
 
     await supabase
@@ -95,7 +129,9 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: true,
       cancelled: true,
-      alreadyCancelled: record.mp_subscription_status === "cancelled",
+      alreadyCancelled:
+        record.provider_subscription_status === "cancelled" ||
+        record.mp_subscription_status === "cancelled",
     });
   } catch (error) {
     console.error("[subscription/cancel] failed", error);

@@ -66,12 +66,6 @@ export async function PUT(request: Request) {
       strava_scopes: Array.isArray(body.strava_scopes)
         ? (body.strava_scopes as string[])
         : ["read", "activity:read_all"],
-      mercado_pago_access_token:
-        (body.mercado_pago_access_token as string) || null,
-      mercado_pago_public_key:
-        (body.mercado_pago_public_key as string) || null,
-      mercado_pago_webhook_secret:
-        (body.mercado_pago_webhook_secret as string) || null,
       subscription_nudge_message:
         (body.subscription_nudge_message as string) || null,
     });

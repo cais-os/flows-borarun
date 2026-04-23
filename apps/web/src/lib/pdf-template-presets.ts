@@ -69,24 +69,28 @@ export const PDF_TEMPLATE_SAMPLE_AI_DATA: Record<string, unknown> = {
         {
           dia: "Segunda",
           treino: "Corrida leve + educativos",
+          distancia_km: "6.5",
           duracao: "40 min",
           intensidade: "Leve",
         },
         {
           dia: "Quarta",
           treino: "Intervalado 6x400m",
+          distancia_km: "7.2",
           duracao: "45 min",
           intensidade: "Moderada",
         },
         {
           dia: "Sexta",
           treino: "Forca e mobilidade",
+          distancia_km: "0",
           duracao: "30 min",
           intensidade: "Controlada",
         },
         {
           dia: "Domingo",
           treino: "Longao progressivo",
+          distancia_km: "12",
           duracao: "60 min",
           intensidade: "Leve a moderada",
         },
@@ -99,24 +103,28 @@ export const PDF_TEMPLATE_SAMPLE_AI_DATA: Record<string, unknown> = {
         {
           dia: "Terca",
           treino: "Rodagem continua",
+          distancia_km: "7",
           duracao: "45 min",
           intensidade: "Leve",
         },
         {
           dia: "Quinta",
           treino: "Tempo run em bloco",
+          distancia_km: "8.5",
           duracao: "50 min",
           intensidade: "Sustentada",
         },
         {
           dia: "Sabado",
           treino: "Fortalecimento",
+          distancia_km: "0",
           duracao: "35 min",
           intensidade: "Moderada",
         },
         {
           dia: "Domingo",
           treino: "Longao com final firme",
+          distancia_km: "14",
           duracao: "70 min",
           intensidade: "Moderada",
         },
@@ -593,6 +601,7 @@ function buildPerformancePreset(): string {
               <tr>
                 <th>Dia</th>
                 <th>Treino</th>
+                <th>Km</th>
                 <th>Duracao</th>
                 <th>Intensidade</th>
               </tr>
@@ -602,6 +611,7 @@ function buildPerformancePreset(): string {
                 <tr>
                   <td>{{dia}}</td>
                   <td>{{treino}}</td>
+                  <td>{{distancia_km}}</td>
                   <td>{{duracao}}</td>
                   <td>{{intensidade}}</td>
                 </tr>
@@ -673,6 +683,7 @@ function buildMinimalPreset(theme = DEFAULT_PDF_TEMPLATE_THEME): string {
                   <tr>
                     <th>Dia</th>
                     <th>Treino</th>
+                    <th>Km</th>
                     <th>Duracao</th>
                     <th>Intensidade</th>
                   </tr>
@@ -682,6 +693,7 @@ function buildMinimalPreset(theme = DEFAULT_PDF_TEMPLATE_THEME): string {
                     <tr>
                       <td>{{dia}}</td>
                       <td>{{treino}}</td>
+                      <td>{{distancia_km}}</td>
                       <td>{{duracao}}</td>
                       <td>{{intensidade}}</td>
                     </tr>

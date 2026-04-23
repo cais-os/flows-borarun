@@ -106,12 +106,9 @@ export function PaymentEditor({ nodeId, data }: PaymentEditorProps) {
           placeholder="Ex: email ou lead_email"
         />
         <p className="text-xs text-slate-400">
-          Para assinatura recorrente, o Mercado Pago precisa do e-mail do
-          pagador. Se vazio, o sistema tenta detectar automaticamente
-          variaveis comuns como <code className="text-sky-600">email</code> e{" "}
-          <code className="text-sky-600">lead_email</code>. Quando nao
-          encontrar, ele abre uma pagina segura para o usuario informar o
-          e-mail antes de entrar no checkout.
+          Se voce ja tiver o e-mail do contato, o Stripe usa esse valor para
+          pre-preencher o checkout. Se vazio, o proprio checkout coleta o
+          e-mail automaticamente.
         </p>
       </div>
 
@@ -167,11 +164,11 @@ export function PaymentEditor({ nodeId, data }: PaymentEditorProps) {
         <p className="text-xs font-medium text-sky-800">O que esse no faz</p>
         <p className="text-xs text-sky-700">
           {billingMode === "recurring"
-            ? "Cria um link de assinatura recorrente mensal no Mercado Pago e envia ao contato via WhatsApp. Se faltar e-mail, o sistema abre uma etapa rapida para captura antes do checkout. Quando o pagamento inicial for confirmado, a assinatura Premium e ativada automaticamente."
-            : "Cria um link de pagamento no Mercado Pago e envia ao contato via WhatsApp. Quando o pagamento for confirmado, a assinatura e ativada automaticamente."}
+            ? "Cria um checkout de assinatura recorrente mensal no Stripe e envia ao contato via WhatsApp. Quando o pagamento inicial for confirmado, a assinatura Premium e ativada automaticamente."
+            : "Cria um checkout de pagamento avulso no Stripe e envia ao contato via WhatsApp. Quando o pagamento for confirmado, a assinatura e ativada automaticamente."}
         </p>
         <p className="text-xs text-sky-700">
-          Configure as credenciais do Mercado Pago na pagina de Configuracoes.
+          Os pagamentos usam a configuracao global do Stripe da plataforma.
         </p>
       </div>
     </div>

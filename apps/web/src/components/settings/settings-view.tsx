@@ -33,9 +33,6 @@ type SettingsFormValues = {
   stravaClientId: string;
   stravaClientSecret: string;
   stravaScopes: string;
-  mercadoPagoAccessToken: string;
-  mercadoPagoPublicKey: string;
-  mercadoPagoWebhookSecret: string;
   subscriptionNudgeMessage: string;
 };
 
@@ -59,9 +56,6 @@ type SettingsPayload = {
     strava_client_id: string | null;
     strava_client_secret: string | null;
     strava_scopes: string[] | null;
-    mercado_pago_access_token: string | null;
-    mercado_pago_public_key: string | null;
-    mercado_pago_webhook_secret: string | null;
     subscription_nudge_message: string | null;
   } | null;
 };
@@ -83,9 +77,6 @@ const defaultValues: SettingsFormValues = {
   stravaClientId: "",
   stravaClientSecret: "",
   stravaScopes: "read,activity:read_all",
-  mercadoPagoAccessToken: "",
-  mercadoPagoPublicKey: "",
-  mercadoPagoWebhookSecret: "",
   subscriptionNudgeMessage: "",
 };
 
@@ -108,10 +99,6 @@ function mapPayloadToForm(payload: SettingsPayload): SettingsFormValues {
     stravaClientSecret: payload.settings?.strava_client_secret || "",
     stravaScopes:
       payload.settings?.strava_scopes?.join(",") || "read,activity:read_all",
-    mercadoPagoAccessToken: payload.settings?.mercado_pago_access_token || "",
-    mercadoPagoPublicKey: payload.settings?.mercado_pago_public_key || "",
-    mercadoPagoWebhookSecret:
-      payload.settings?.mercado_pago_webhook_secret || "",
     subscriptionNudgeMessage: payload.settings?.subscription_nudge_message || "",
   };
 }
@@ -219,9 +206,6 @@ export function SettingsView() {
             .split(",")
             .map((scope) => scope.trim())
             .filter(Boolean),
-          mercado_pago_access_token: form.mercadoPagoAccessToken,
-          mercado_pago_public_key: form.mercadoPagoPublicKey,
-          mercado_pago_webhook_secret: form.mercadoPagoWebhookSecret,
           subscription_nudge_message: form.subscriptionNudgeMessage,
         }),
       });
@@ -265,7 +249,7 @@ export function SettingsView() {
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-sm text-slate-600">
-                Se voce precisa alterar WhatsApp, Strava, Mercado Pago ou o
+                Se voce precisa alterar WhatsApp, Strava, Stripe ou o
                 plano da conta, entre com o usuario proprietario da
                 organizacao.
               </p>
@@ -538,51 +522,17 @@ export function SettingsView() {
 
         <Card className="border-slate-200 bg-white shadow-[0_24px_60px_-40px_rgba(15,23,42,0.2)]">
           <CardHeader>
-            <CardTitle>Mercado Pago</CardTitle>
+            <CardTitle>Stripe</CardTitle>
             <CardDescription>
-              Credenciais de pagamento do Mercado Pago para esta assessoria.
+              Os pagamentos agora usam uma conta Stripe central da plataforma.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="mercadoPagoAccessToken">Access Token</Label>
-              <Input
-                id="mercadoPagoAccessToken"
-                type="password"
-                value={form.mercadoPagoAccessToken}
-                onChange={(e) =>
-                  updateField("mercadoPagoAccessToken", e.target.value)
-                }
-                placeholder="APP_USR-..."
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="mercadoPagoPublicKey">Public Key</Label>
-              <Input
-                id="mercadoPagoPublicKey"
-                value={form.mercadoPagoPublicKey}
-                onChange={(e) =>
-                  updateField("mercadoPagoPublicKey", e.target.value)
-                }
-                placeholder="APP_USR-..."
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="mercadoPagoWebhookSecret">Webhook Secret</Label>
-              <Input
-                id="mercadoPagoWebhookSecret"
-                type="password"
-                value={form.mercadoPagoWebhookSecret}
-                onChange={(e) =>
-                  updateField("mercadoPagoWebhookSecret", e.target.value)
-                }
-                placeholder="Segredo de assinatura do webhook"
-              />
-              <p className="text-xs text-slate-400">
-                Use o segredo configurado no painel de notificacoes do Mercado
-                Pago para validar a autenticidade dos webhooks.
-              </p>
-            </div>
+            <p className="text-sm leading-6 text-slate-600">
+              Nao e mais necessario configurar credenciais de pagamento por
+              assessoria. As chaves do Stripe ficam definidas no ambiente da
+              aplicacao e valem para toda a plataforma.
+            </p>
           </CardContent>
         </Card>
 

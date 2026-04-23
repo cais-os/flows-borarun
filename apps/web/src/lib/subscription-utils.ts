@@ -8,6 +8,7 @@ export type SubscriptionCancellationTokenPayload = {
   conversationId: string;
   organizationId: string;
   subscriptionId: string;
+  paymentProvider?: string | null;
   exp: number;
 };
 
@@ -16,6 +17,7 @@ export type CancellableSubscriptionRecord = {
   conversationId: string;
   organizationId: string;
   subscriptionId: string;
+  paymentProvider: string | null;
   subscriptionStatus: string | null;
   planName: string | null;
   expiresAt: string | null;
@@ -96,6 +98,7 @@ export function createSubscriptionCancellationToken(params: {
   conversationId: string;
   organizationId: string;
   subscriptionId: string;
+  paymentProvider?: string | null;
   expiresInMs?: number;
 }) {
   const secret = getCronSecret();
@@ -106,6 +109,7 @@ export function createSubscriptionCancellationToken(params: {
     conversationId: params.conversationId,
     organizationId: params.organizationId,
     subscriptionId: params.subscriptionId,
+    paymentProvider: params.paymentProvider || null,
     exp: Date.now() + (params.expiresInMs ?? DEFAULT_TOKEN_TTL_MS),
   };
 
@@ -190,12 +194,12 @@ export async function findCancellableSubscriptionForConversation(params: {
   const { data: payment } = await params.supabase
     .from("payments")
     .select(
-      "id, organization_id, conversation_id, mp_subscription_id, mp_subscription_status, billing_mode, plan_name"
+      "id, organization_id, conversation_id, provider, provider_subscription_id, provider_subscription_status, mp_subscription_id, mp_subscription_status, billing_mode, plan_name"
     )
     .eq("organization_id", params.organizationId)
     .eq("conversation_id", params.conversationId)
     .eq("billing_mode", "recurring")
-    .not("mp_subscription_id", "is", null)
+    .or("provider_subscription_id.not.is.null,mp_subscription_id.not.is.null")
     .order("updated_at", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(1)
@@ -205,12 +209,18 @@ export async function findCancellableSubscriptionForConversation(params: {
     id: string;
     organization_id: string;
     conversation_id: string;
+    provider: string | null;
+    provider_subscription_id: string | null;
+    provider_subscription_status: string | null;
     mp_subscription_id: string | null;
     mp_subscription_status: string | null;
     plan_name: string | null;
   } | null;
 
-  if (!record?.mp_subscription_id) {
+  const subscriptionId =
+    record?.provider_subscription_id || record?.mp_subscription_id || null;
+
+  if (!record || !subscriptionId) {
     return null;
   }
 
@@ -218,8 +228,12 @@ export async function findCancellableSubscriptionForConversation(params: {
     paymentRecordId: record.id,
     conversationId: record.conversation_id,
     organizationId: record.organization_id,
-    subscriptionId: record.mp_subscription_id,
-    subscriptionStatus: record.mp_subscription_status,
+    subscriptionId,
+    paymentProvider:
+      record.provider ||
+      (record.provider_subscription_id ? "stripe" : "mercado_pago"),
+    subscriptionStatus:
+      record.provider_subscription_status || record.mp_subscription_status,
     planName: record.plan_name,
     expiresAt: conv.subscription_expires_at,
   } satisfies CancellableSubscriptionRecord;

@@ -11,10 +11,6 @@
     {
       "path": "/api/cron/weekly-training",
       "schedule": "0 8,9,18,19,20,21 * * *"
-    },
-    {
-      "path": "/api/cron/mercadopago-reconcile",
-      "schedule": "* * * * *"
     }
   ]
 }

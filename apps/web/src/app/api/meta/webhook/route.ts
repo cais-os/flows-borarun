@@ -929,6 +929,7 @@ export async function POST(request: Request) {
                 conversationId,
                 organizationId,
                 subscriptionId: cancellableSubscription.subscriptionId,
+                paymentProvider: cancellableSubscription.paymentProvider,
               });
 
               if (token) {

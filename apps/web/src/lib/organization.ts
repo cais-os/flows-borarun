@@ -244,7 +244,7 @@ export async function getConversationOrganizationContext(
 }
 
 export async function upsertCurrentOrganizationSettings(
-  values: Omit<OrganizationSettings, "organization_id">
+  values: Partial<Omit<OrganizationSettings, "organization_id">>
 ) {
   const context = await getCurrentOrganizationContext();
   const supabase = await createSupabaseServer();
