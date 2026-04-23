@@ -107,7 +107,9 @@ export async function generatePdf(params: {
 
   // Extract the two root keys
   const rawPlanData = (parsed.training_plan as Record<string, unknown>) || parsed;
-  const planData = normalizeTrainingPlan(rawPlanData);
+  const planData = normalizeTrainingPlan(rawPlanData, {
+    flowVariables: params.flowVariables,
+  });
   const coachingSummary = (parsed.coaching_summary as Record<string, unknown>) || {};
 
   // 2. Interpolate template with AI-generated data + flow variables

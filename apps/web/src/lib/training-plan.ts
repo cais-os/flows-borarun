@@ -8,6 +8,8 @@ type TrainingPlan = Record<string, unknown> & {
   semanas?: TrainingWeek[];
 };
 
+type FlowVariables = Record<string, string>;
+
 type NumericRange = {
   min: number;
   max: number;
@@ -48,6 +50,23 @@ const EXPLICIT_NON_RUNNING_PATTERNS = [
   /\bsem treino de corrida\b/,
 ];
 
+const WEEKLY_FREQUENCY_KEYS = [
+  "frequencia",
+  "flow_frequencia",
+  "onb_frequencia",
+  "lead_frequencia",
+];
+
+const NUMBER_WORDS: Array<[RegExp, number]> = [
+  [/\buma?\b/, 1],
+  [/\bduas?\b/, 2],
+  [/\btres\b/, 3],
+  [/\bquatro\b/, 4],
+  [/\bcinco\b/, 5],
+  [/\bseis\b/, 6],
+  [/\bsete\b/, 7],
+];
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -68,6 +87,43 @@ function normalizeText(value: string) {
 function parseNumber(value: string) {
   const parsed = Number(value.replace(",", "."));
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseWeeklyFrequency(value: string) {
+  const normalized = normalizeText(value);
+  const digitMatch = normalized.match(
+    /(\d+)\s*(?:x|vez(?:es)?|treinos?|dias?)\b/
+  );
+  if (digitMatch) {
+    const parsed = Number.parseInt(digitMatch[1] || "", 10);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+
+  for (const [pattern, count] of NUMBER_WORDS) {
+    if (pattern.test(normalized)) {
+      return count;
+    }
+  }
+
+  return null;
+}
+
+function resolveDesiredWeeklyFrequency(flowVariables?: FlowVariables) {
+  if (!flowVariables) return null;
+
+  for (const key of WEEKLY_FREQUENCY_KEYS) {
+    const value = flowVariables[key];
+    if (!value?.trim()) continue;
+
+    const parsed = parseWeeklyFrequency(value);
+    if (parsed !== null) {
+      return parsed;
+    }
+  }
+
+  return null;
 }
 
 function roundToOneDecimal(value: number) {
@@ -379,11 +435,17 @@ function applyTemplateAliases(day: TrainingDay) {
 }
 
 export function normalizeTrainingPlan(
-  rawPlanData: Record<string, unknown>
+  rawPlanData: Record<string, unknown>,
+  options?: {
+    flowVariables?: FlowVariables;
+  }
 ): Record<string, unknown> {
   const cloned = JSON.parse(JSON.stringify(rawPlanData || {})) as TrainingPlan;
   const weeks = Array.isArray(cloned.semanas) ? cloned.semanas : [];
   const level = getProfileLevel(cloned);
+  const desiredWeeklyFrequency = resolveDesiredWeeklyFrequency(
+    options?.flowVariables
+  );
 
   for (const week of weeks) {
     if (!Array.isArray(week.dias)) continue;
@@ -414,11 +476,27 @@ export function normalizeTrainingPlan(
       };
     });
 
-    const explicitTotal = estimates.reduce(
+    const runningEstimates = estimates.filter(
+      (item) => item.running && isRecord(item.day)
+    );
+
+    const selectedEstimates =
+      typeof desiredWeeklyFrequency === "number" && desiredWeeklyFrequency > 0
+        ? runningEstimates.slice(0, desiredWeeklyFrequency)
+        : runningEstimates;
+
+    const effectiveEstimates =
+      selectedEstimates.length > 0 ? selectedEstimates : estimates;
+    const shouldIgnoreProvidedWeekTotal =
+      typeof desiredWeeklyFrequency === "number" &&
+      desiredWeeklyFrequency > 0 &&
+      runningEstimates.length > desiredWeeklyFrequency;
+
+    const explicitTotal = effectiveEstimates.reduce(
       (sum, item) => sum + (item.explicit ? item.distanceKm || 0 : 0),
       0
     );
-    const estimatedItems = estimates.filter(
+    const estimatedItems = effectiveEstimates.filter(
       (item) => item.running && !item.explicit && item.distanceKm !== null
     );
     const estimatedTotal = estimatedItems.reduce(
@@ -428,6 +506,7 @@ export function normalizeTrainingPlan(
 
     let scaleFactor = 1;
     if (
+      !shouldIgnoreProvidedWeekTotal &&
       typeof weekTotal === "number" &&
       weekTotal > 0 &&
       estimatedItems.length > 0 &&
@@ -437,7 +516,7 @@ export function normalizeTrainingPlan(
       scaleFactor = (weekTotal - explicitTotal) / estimatedTotal;
     }
 
-    for (const item of estimates) {
+    for (const item of effectiveEstimates) {
       if (!isRecord(item.day)) continue;
 
       if (!item.running) {
@@ -467,6 +546,19 @@ export function normalizeTrainingPlan(
       }
 
       applyTemplateAliases(item.day);
+    }
+
+    if (selectedEstimates.length > 0) {
+      week.dias = selectedEstimates
+        .map((item) => item.day)
+        .filter(isRecord);
+
+      const recalculatedWeekTotal = selectedEstimates.reduce((sum, item) => {
+        const parsedDistance = parseNumber(asString(item.day.distancia_km) || "");
+        return sum + (parsedDistance || 0);
+      }, 0);
+
+      week.volume_total_km = formatDistanceKm(recalculatedWeekTotal);
     }
   }
 

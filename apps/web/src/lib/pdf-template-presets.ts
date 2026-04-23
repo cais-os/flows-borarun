@@ -82,10 +82,10 @@ export const PDF_TEMPLATE_SAMPLE_AI_DATA: Record<string, unknown> = {
         },
         {
           dia: "Sexta",
-          treino: "Forca e mobilidade",
-          distancia_km: "0",
-          duracao: "30 min",
-          intensidade: "Controlada",
+          treino: "Rodagem progressiva",
+          distancia_km: "5.3",
+          duracao: "35 min",
+          intensidade: "Moderada",
         },
         {
           dia: "Domingo",
@@ -116,10 +116,10 @@ export const PDF_TEMPLATE_SAMPLE_AI_DATA: Record<string, unknown> = {
         },
         {
           dia: "Sabado",
-          treino: "Fortalecimento",
-          distancia_km: "0",
-          duracao: "35 min",
-          intensidade: "Moderada",
+          treino: "Rodagem regenerativa",
+          distancia_km: "6",
+          duracao: "38 min",
+          intensidade: "Leve",
         },
         {
           dia: "Domingo",
