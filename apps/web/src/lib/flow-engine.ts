@@ -113,6 +113,14 @@ const COMMON_PAYMENT_EMAIL_KEYS = [
 const REUSABLE_PAYMENT_RECORD_MAX_AGE_MS = 1000 * 60 * 60 * 48;
 const MAX_AGENTIC_CONTEXT_VARIABLES = 25;
 
+function getChatCompletionTokenParams(model: string | undefined, maxTokens: number) {
+  if (typeof model === "string" && model.toLowerCase().startsWith("gpt-5")) {
+    return { max_completion_tokens: maxTokens };
+  }
+
+  return { max_tokens: maxTokens };
+}
+
 function findNextNodes(
   nodeId: string,
   edges: FlowEdge[],
@@ -268,6 +276,38 @@ function findConnectedPaymentNode(
   );
 }
 
+function findClosestUpstreamGeneratePdfNode(
+  nodeId: string,
+  edges: FlowEdge[],
+  nodes: FlowNode[]
+) {
+  const visited = new Set<string>([nodeId]);
+  const queue = edges
+    .filter((edge) => edge.target === nodeId)
+    .map((edge) => edge.source);
+
+  while (queue.length > 0) {
+    const currentId = queue.shift();
+    if (!currentId || visited.has(currentId)) continue;
+    visited.add(currentId);
+
+    const node = nodes.find((item) => item.id === currentId);
+    if (!node) continue;
+
+    if (node.data.type === "generatePdf") {
+      return node;
+    }
+
+    for (const edge of edges) {
+      if (edge.target === currentId && !visited.has(edge.source)) {
+        queue.push(edge.source);
+      }
+    }
+  }
+
+  return null;
+}
+
 function buildAgenticFlowVariableContext(variables: Record<string, string>) {
   const entries = Object.entries(variables)
     .filter(([key, value]) => {
@@ -338,6 +378,12 @@ type ResolvedAgenticLoopPaymentConfig = {
   source: "embedded" | "connected_node";
 };
 
+type ResolvedAgenticLoopPdfConfig = {
+  pdfNode: FlowNode;
+  pdfData: GeneratePdfNodeData;
+  source: "upstream_node";
+};
+
 function resolveAgenticLoopPaymentConfig(params: {
   currentNode: FlowNode;
   loopData: AgenticLoopNodeData;
@@ -367,6 +413,48 @@ function resolveAgenticLoopPaymentConfig(params: {
     nodeId: paymentNode.id,
     source: "connected_node",
   } satisfies ResolvedAgenticLoopPaymentConfig;
+}
+
+function resolveAgenticLoopPdfConfig(params: {
+  currentNode: FlowNode;
+  loopData: AgenticLoopNodeData;
+  nodes: FlowNode[];
+  edges: FlowEdge[];
+}) {
+  if (params.loopData.pdfTool?.enabled === false) {
+    return null;
+  }
+
+  const pdfNode = findClosestUpstreamGeneratePdfNode(
+    params.currentNode.id,
+    params.edges,
+    params.nodes
+  );
+
+  if (!pdfNode) {
+    return null;
+  }
+
+  return {
+    pdfNode,
+    pdfData: pdfNode.data as GeneratePdfNodeData,
+    source: "upstream_node",
+  } satisfies ResolvedAgenticLoopPdfConfig;
+}
+
+function parseToolArguments(
+  rawArguments: string | undefined
+): Record<string, unknown> {
+  if (!rawArguments?.trim()) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(rawArguments);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 async function findReusableStripePaymentRecordId(params: {
@@ -614,6 +702,12 @@ async function runAgenticLoopTurn(params: {
     nodes: params.nodes,
     edges: params.edges,
   });
+  const pdfConfig = resolveAgenticLoopPdfConfig({
+    currentNode: params.currentNode,
+    loopData: params.loopData,
+    nodes: params.nodes,
+    edges: params.edges,
+  });
   const { data: conversation } = await params.supabase
     .from("conversations")
     .select("subscription_status, subscription_plan")
@@ -635,6 +729,9 @@ async function runAgenticLoopTurn(params: {
           : `Tipo de cobranca: assinatura recorrente mensal com ciclo de ${paymentConfig.paymentData.durationDays || 30} dias.`,
       ].join("\n")
     : "Nenhuma tool de pagamento foi configurada neste Agente IA.";
+  const pdfContext = pdfConfig
+    ? "Existe uma tool regenerate_pdf disponivel. Ela deve reutilizar o no Gerar PDF anterior para gerar uma nova versao do plano quando o usuario pedir alteracoes claras."
+    : "Nenhuma tool de regeneracao de PDF esta disponivel neste Agente IA.";
 
   const currentSubscriptionContext =
     conversation?.subscription_status === "active" &&
@@ -651,41 +748,69 @@ async function runAgenticLoopTurn(params: {
       : "O usuario acabou de responder nesta conversa. Continue a partir do que ele disse por ultimo.",
     currentSubscriptionContext,
     paymentContext,
+    pdfContext,
     "Contexto conhecido do usuario no flow:",
     buildAgenticFlowVariableContext(flowVariables),
     "Regras obrigatorias:",
     "- So use a tool send_payment_link quando o usuario demonstrar intencao clara de assinar ou pedir explicitamente o link para pagamento.",
     "- Sinais fracos como curiosidade, perguntas sobre preco, pedido de explicacao ou duvidas nao autorizam o envio do link.",
+    "- So use a tool regenerate_pdf quando o usuario pedir claramente para ajustar, atualizar, refazer ou regenerar o PDF/plano e a alteracao desejada estiver clara.",
+    "- Se o usuario quiser mudar o PDF mas nao disser exatamente o que alterar, faca uma pergunta curta para esclarecer antes de usar a tool regenerate_pdf.",
     "- Se usar a tool send_payment_link, nao escreva nenhuma mensagem adicional nessa mesma resposta.",
+    "- Se usar a tool regenerate_pdf, nao escreva nenhuma mensagem adicional nessa mesma resposta.",
     "- Se o usuario ainda estiver em duvida, responda a objecao e convide para o proximo passo de forma natural.",
     params.loopData.systemPrompt?.trim() || "",
   ]
     .filter(Boolean)
     .join("\n\n");
 
-  const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = paymentConfig
-    ? [
-        {
-          type: "function",
-          function: {
-            name: "send_payment_link",
-            description:
-              "Envia o link de pagamento quando o usuario disser claramente que quer assinar ou receber o link.",
-            parameters: {
-              type: "object",
-              properties: {},
-              additionalProperties: false,
+  const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [];
+
+  if (paymentConfig) {
+    tools.push({
+      type: "function",
+      function: {
+        name: "send_payment_link",
+        description:
+          "Envia o link de pagamento quando o usuario disser claramente que quer assinar ou receber o link.",
+        parameters: {
+          type: "object",
+          properties: {},
+          additionalProperties: false,
+        },
+      },
+    });
+  }
+
+  if (pdfConfig) {
+    tools.push({
+      type: "function",
+      function: {
+        name: "regenerate_pdf",
+        description:
+          "Regenera e reenvía o PDF com as alteracoes pedidas pelo usuario.",
+        parameters: {
+          type: "object",
+          properties: {
+            change_request: {
+              type: "string",
+              description:
+                "Resumo claro e direto das alteracoes que o usuario quer no plano/PDF.",
             },
           },
+          required: ["change_request"],
+          additionalProperties: false,
         },
-      ]
-    : [];
+      },
+    });
+  }
 
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const model = params.loopData.model || "gpt-4o";
   const completion = await openai.chat.completions.create({
-    model: params.loopData.model || "gpt-4o",
+    model,
     temperature: 0.6,
-    max_tokens: 400,
+    ...getChatCompletionTokenParams(model, 400),
     tools,
     tool_choice: tools.length > 0 ? "auto" : undefined,
     messages: [
@@ -701,10 +826,71 @@ async function runAgenticLoopTurn(params: {
   const toolCall = assistantMessage?.tool_calls?.find(
     (item) =>
       item.type === "function" &&
-      item.function.name === "send_payment_link"
+      (item.function.name === "send_payment_link" ||
+        item.function.name === "regenerate_pdf")
   );
 
-  if (toolCall && paymentConfig) {
+  if (
+    toolCall?.type === "function" &&
+    toolCall.function.name === "regenerate_pdf" &&
+    pdfConfig
+  ) {
+    const toolArgs = parseToolArguments(toolCall.function.arguments);
+    const changeRequest =
+      typeof toolArgs.change_request === "string"
+        ? toolArgs.change_request.trim()
+        : "";
+
+    if (!changeRequest) {
+      await sendTextAndPersist({
+        supabase: params.supabase,
+        conversationId: params.conversationId,
+        contactPhone: params.contactPhone,
+        nodeId: params.currentNode.id,
+        text:
+          "Posso ajustar seu PDF, sim. Me diz so o que voce quer mudar no plano para eu gerar a nova versao.",
+        metaConfig: params.metaConfig,
+        inboundMessageId: params.inboundMessageId,
+      });
+
+      return { status: "waiting" as const };
+    }
+
+    await sendTextAndPersist({
+      supabase: params.supabase,
+      conversationId: params.conversationId,
+      contactPhone: params.contactPhone,
+      nodeId: params.currentNode.id,
+      text:
+        "Perfeito. Vou ajustar o PDF com base no que voce pediu e te envio a nova versao em seguida.",
+      metaConfig: params.metaConfig,
+      inboundMessageId: params.inboundMessageId,
+    });
+
+    await executeGeneratePdfNode({
+      supabase: params.supabase,
+      organizationId: params.organizationId,
+      metaConfig: params.metaConfig,
+      conversationId: params.conversationId,
+      contactPhone: params.contactPhone,
+      node: pdfConfig.pdfNode,
+      data: pdfConfig.pdfData,
+      flowVariablesOverride: {
+        ...flowVariables,
+        _last_pdf_regeneration_request: changeRequest,
+      },
+      adjustmentRequest: changeRequest,
+      inboundMessageId: params.inboundMessageId,
+    });
+
+    return { status: "waiting" as const };
+  }
+
+  if (
+    toolCall?.type === "function" &&
+    toolCall.function.name === "send_payment_link" &&
+    paymentConfig
+  ) {
     const result = await sendStripePaymentLinkForNode({
       supabase: params.supabase,
       organizationId: params.organizationId,
@@ -1841,13 +2027,14 @@ async function executeGeneratePdfNode(params: {
   contactPhone: string;
   node: FlowNode;
   data: GeneratePdfNodeData;
+  flowVariablesOverride?: Record<string, string>;
+  adjustmentRequest?: string;
   inboundMessageId?: string;
 }) {
   try {
-    const flowVariables = await getConversationVariables(
-      params.supabase,
-      params.conversationId
-    );
+    const flowVariables =
+      params.flowVariablesOverride ||
+      (await getConversationVariables(params.supabase, params.conversationId));
 
     const { data: template } = await params.supabase
       .from("pdf_templates")
@@ -1864,6 +2051,7 @@ async function executeGeneratePdfNode(params: {
       templateHtml: template.html_content,
       flowVariables,
       aiPrompt: params.data.aiPrompt,
+      adjustmentRequest: params.adjustmentRequest,
       stravaContext: stravaContext || undefined,
     });
 
@@ -1873,6 +2061,9 @@ async function executeGeneratePdfNode(params: {
       _training_plan: JSON.stringify(planData),
       _coaching_summary: JSON.stringify(coachingSummary),
       _plan_generated_at: new Date().toISOString(),
+      ...(params.adjustmentRequest
+        ? { _last_pdf_regeneration_request: params.adjustmentRequest }
+        : {}),
     };
     await params.supabase
       .from("conversations")

@@ -57,6 +57,7 @@ export async function generatePdf(params: {
   templateHtml: string;
   flowVariables: Record<string, string>;
   aiPrompt?: string;
+  adjustmentRequest?: string;
   stravaContext?: string;
 }): Promise<GeneratePdfResult> {
   // 1. Generate structured plan from AI
@@ -65,9 +66,13 @@ export async function generatePdf(params: {
     .join("\n");
 
   const usePlanejadorPrompt = !params.aiPrompt;
-  const instruction = usePlanejadorPrompt
+  const baseInstruction = usePlanejadorPrompt
     ? PLANEJADOR_INICIAL_PROMPT + JSON_FORMAT_INSTRUCTION
     : (params.aiPrompt || DEFAULT_INSTRUCTION) + JSON_FORMAT_INSTRUCTION;
+  const adjustmentInstruction = params.adjustmentRequest?.trim()
+    ? `\n\nAJUSTE SOLICITADO PELO USUARIO:\n${params.adjustmentRequest.trim()}\n\nGere uma nova versao do plano incorporando esse pedido de forma coerente, segura e personalizada. Preserve o restante do contexto sempre que fizer sentido e mantenha o foco em treinos de corrida.`
+    : "";
+  const instruction = `${baseInstruction}${adjustmentInstruction}`;
 
   const userContent = params.stravaContext
     ? `Informações do aluno:\n${variablesSummary}\n\nDados do Strava:\n${params.stravaContext}`

@@ -174,6 +174,9 @@ export function getDefaultData(type: string, preset?: PaletteNodePreset) {
           { name: "capture_variable", enabled: true },
           { name: "end_conversation", enabled: false },
         ],
+        pdfTool: {
+          enabled: true,
+        },
         paymentTool: {
           enabled: false,
           planName: "",

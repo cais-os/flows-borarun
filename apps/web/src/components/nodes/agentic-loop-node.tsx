@@ -10,6 +10,7 @@ import { NodeWrapper } from "./node-wrapper";
 export function AgenticLoopNode({ id, data, selected }: NodeProps) {
   const nodeData = data as AgenticLoopNodeData;
   const config = NODE_CONFIG[NODE_TYPES.AGENTIC_LOOP];
+  const pdfToolEnabled = nodeData.pdfTool?.enabled !== false;
   const paymentToolEnabled = nodeData.paymentTool?.enabled;
 
   return (
@@ -30,6 +31,11 @@ export function AgenticLoopNode({ id, data, selected }: NodeProps) {
         {nodeData.autoStart !== false
           ? "inicia a conversa automaticamente"
           : "aguarda o usuario falar para comecar"}
+      </div>
+      <div className="mt-1 text-[10px] text-gray-500">
+        {pdfToolEnabled
+          ? "tool de regeneracao de PDF ativa"
+          : "tool de regeneracao de PDF desativada"}
       </div>
       <div className="mt-1 text-[10px] text-gray-500">
         {paymentToolEnabled

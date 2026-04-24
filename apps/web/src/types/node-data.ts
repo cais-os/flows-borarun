@@ -43,6 +43,10 @@ export type AgenticLoopPaymentToolConfig = PaymentConfigFields & {
   enabled: boolean;
 };
 
+export type AgenticLoopPdfToolConfig = {
+  enabled: boolean;
+};
+
 export type AgenticLoopNodeData = {
   type: "agenticLoop";
   label: string;
@@ -54,6 +58,7 @@ export type AgenticLoopNodeData = {
   handoffTargets: AgenticLoopHandoff[];
   tools: AgenticLoopTool[];
   fallbackHandoffNodeId?: string;
+  pdfTool?: AgenticLoopPdfToolConfig;
   paymentTool?: AgenticLoopPaymentToolConfig;
 };
 

@@ -11,7 +11,7 @@ const PRIVATE_KEY = resolveWhatsAppFlowsPrivateKey();
 
 type FlowRequest = {
   version: string;
-  action: "ping" | "INIT" | "data_exchange";
+  action: "ping" | "INIT" | "data_exchange" | "complete" | "COMPLETE";
   screen?: string;
   data?: Record<string, string>;
   flow_token?: string;

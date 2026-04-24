@@ -71,7 +71,7 @@ export const NODE_CONFIG = {
     label: "Agente IA",
     color: "#8B5CF6",
     description:
-      "Conversa com o usuario e pode enviar o link de pagamento configurado no proprio no",
+      "Conversa com o usuario, pode regenerar o PDF anterior e enviar o link de pagamento configurado no proprio no",
   },
 } as const;
 

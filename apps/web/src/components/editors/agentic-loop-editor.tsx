@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useFlowStore } from "@/hooks/use-flow-store";
 import type {
+  AgenticLoopPdfToolConfig,
   AgenticLoopPaymentToolConfig,
   AgenticLoopNodeData,
 } from "@/types/node-data";
@@ -46,6 +47,21 @@ export function AgenticLoopEditor({
     });
   }
 
+  function patchPdfTool(partial: Partial<AgenticLoopPdfToolConfig>) {
+    patch({
+      pdfTool: {
+        enabled: true,
+        ...(data.pdfTool || {}),
+        ...partial,
+      },
+    });
+  }
+
+  const pdfTool = {
+    enabled: true,
+    ...(data.pdfTool || {}),
+  };
+
   const paymentTool = {
     enabled: false,
     planName: "",
@@ -59,8 +75,9 @@ export function AgenticLoopEditor({
   return (
     <div className="flex flex-col gap-4">
       <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 text-xs text-violet-800">
-        Este agente pode conversar com o usuario e disparar a tool de
-        pagamento configurada abaixo. Nao e mais necessario adicionar um no{" "}
+        Este agente pode conversar com o usuario, regenerar o PDF quando houver
+        um no <strong>Gerar PDF</strong> antes dele no flow e disparar a tool
+        de pagamento configurada abaixo. Nao e mais necessario adicionar um no{" "}
         <strong>Pagamento</strong> depois dele para o caso principal.
       </div>
 
@@ -81,6 +98,30 @@ export function AgenticLoopEditor({
               className="rounded border-gray-300"
             />
             Ativo
+          </label>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-1">
+            <Label>Tool de regeneracao de PDF</Label>
+            <p className="text-xs text-slate-500">
+              Quando ativa, o agente pode gerar uma nova versao do PDF com os
+              ajustes pedidos pelo usuario, reutilizando o no Gerar PDF mais
+              proximo antes deste agente.
+            </p>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={pdfTool.enabled}
+              onChange={(event) =>
+                patchPdfTool({ enabled: event.target.checked })
+              }
+              className="rounded border-gray-300"
+            />
+            Ativa
           </label>
         </div>
       </div>
