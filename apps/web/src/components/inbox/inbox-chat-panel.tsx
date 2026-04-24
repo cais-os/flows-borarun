@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import {
   Crown,
   Headset,
@@ -27,6 +27,60 @@ type Shortcut = {
   trigger: string;
   content: string;
 };
+
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
+const weekdayFormatter = new Intl.DateTimeFormat("pt-BR", {
+  weekday: "long",
+});
+const dateFormatter = new Intl.DateTimeFormat("pt-BR", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+});
+
+function startOfDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function isSameDay(left: Date, right: Date) {
+  return (
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+  );
+}
+
+function formatDateSeparatorLabel(createdAt: string) {
+  const messageDate = new Date(createdAt);
+  const today = new Date();
+  const diffInDays = Math.floor(
+    (startOfDay(today).getTime() - startOfDay(messageDate).getTime()) / DAY_IN_MS
+  );
+
+  if (diffInDays === 0) {
+    return "HOJE";
+  }
+
+  if (diffInDays === 1) {
+    return "ONTEM";
+  }
+
+  if (diffInDays > 1 && diffInDays < 7) {
+    return weekdayFormatter.format(messageDate).toUpperCase();
+  }
+
+  return dateFormatter.format(messageDate);
+}
+
+function DateSeparator({ createdAt }: { createdAt: string }) {
+  return (
+    <div className="my-3 flex justify-center">
+      <span className="rounded-md bg-[#d9eaf4] px-3 py-1 text-[11px] font-medium uppercase tracking-[0.02em] text-slate-600 shadow-sm">
+        {formatDateSeparatorLabel(createdAt)}
+      </span>
+    </div>
+  );
+}
 
 function MessageBubble({ message }: { message: DbMessage }) {
   const isContact = message.sender === "contact";
@@ -398,9 +452,24 @@ export function InboxChatPanel({
             Nenhuma mensagem ainda
           </div>
         ) : (
-          conversation.messages.map((message) => (
-            <MessageBubble key={message.id} message={message} />
-          ))
+          conversation.messages.map((message, index) => {
+            const previousMessage = conversation.messages[index - 1];
+            const showDateSeparator =
+              !previousMessage ||
+              !isSameDay(
+                new Date(previousMessage.created_at),
+                new Date(message.created_at)
+              );
+
+            return (
+              <Fragment key={message.id}>
+                {showDateSeparator && (
+                  <DateSeparator createdAt={message.created_at} />
+                )}
+                <MessageBubble message={message} />
+              </Fragment>
+            );
+          })
         )}
         <div ref={messagesEndRef} />
       </div>
