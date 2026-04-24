@@ -48,6 +48,7 @@ export type AgenticLoopNodeData = {
   label: string;
   systemPrompt: string;
   model: string;
+  autoStart?: boolean;
   maxTurns: number;
   historyWindowMessages: number;
   handoffTargets: AgenticLoopHandoff[];

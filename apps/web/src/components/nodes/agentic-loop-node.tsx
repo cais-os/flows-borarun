@@ -27,6 +27,11 @@ export function AgenticLoopNode({ id, data, selected }: NodeProps) {
         max {nodeData.maxTurns ?? 10} turnos
       </div>
       <div className="mt-1 text-[10px] text-gray-500">
+        {nodeData.autoStart !== false
+          ? "inicia a conversa automaticamente"
+          : "aguarda o usuario falar para comecar"}
+      </div>
+      <div className="mt-1 text-[10px] text-gray-500">
         {paymentToolEnabled
           ? "tool de pagamento embutida ativa"
           : "sem tool de pagamento embutida"}

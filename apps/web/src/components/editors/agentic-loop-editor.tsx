@@ -64,6 +64,27 @@ export function AgenticLoopEditor({
         <strong>Pagamento</strong> depois dele para o caso principal.
       </div>
 
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-1">
+            <Label>Inicio automatico</Label>
+            <p className="text-xs text-slate-500">
+              Quando ativo, o agente ja envia a primeira mensagem ao entrar
+              neste no, sem esperar o usuario responder de novo.
+            </p>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={data.autoStart !== false}
+              onChange={(event) => patch({ autoStart: event.target.checked })}
+              className="rounded border-gray-300"
+            />
+            Ativo
+          </label>
+        </div>
+      </div>
+
       <div className="flex flex-col gap-1.5">
         <Label>Nome do no</Label>
         <Input

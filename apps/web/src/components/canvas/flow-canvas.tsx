@@ -164,6 +164,7 @@ export function getDefaultData(type: string, preset?: PaletteNodePreset) {
         label: "Agente IA",
         systemPrompt: "",
         model: "gpt-4o",
+        autoStart: true,
         maxTurns: 10,
         historyWindowMessages: 20,
         handoffTargets: [],

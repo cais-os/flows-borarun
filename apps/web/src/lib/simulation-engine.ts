@@ -254,7 +254,10 @@ async function processSimulationQueue(
 
       callbacks.onMessage({
         id: createMessageId("sys"),
-        content: `Agente IA pausado (${loopData.model || "gpt-4o"}, ${loopData.handoffTargets?.length ?? 0} handoffs)`,
+        content:
+          loopData.autoStart !== false
+            ? `Agente IA iniciaria a conversa automaticamente (${loopData.model || "gpt-4o"}, ${loopData.handoffTargets?.length ?? 0} handoffs)`
+            : `Agente IA pausado (${loopData.model || "gpt-4o"}, ${loopData.handoffTargets?.length ?? 0} handoffs)`,
         type: "system",
         sender: "system",
         timestamp: new Date(),

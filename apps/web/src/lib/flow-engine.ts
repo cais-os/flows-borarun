@@ -601,6 +601,7 @@ async function runAgenticLoopTurn(params: {
   loopData: AgenticLoopNodeData;
   nodes: FlowNode[];
   edges: FlowEdge[];
+  trigger: "node_entry" | "user_reply";
   inboundMessageId?: string;
 }) {
   const flowVariables = await getConversationVariables(
@@ -645,6 +646,9 @@ async function runAgenticLoopTurn(params: {
     "Voce e um agente comercial dentro de um flow de WhatsApp.",
     "Responda em portugues brasileiro, de forma natural, curta e consultiva.",
     "O PDF inicial do plano de corrida ja foi entregue anteriormente nesta conversa.",
+    params.trigger === "node_entry"
+      ? "Voce acabou de entrar neste no logo apos a entrega do PDF. Envie agora uma primeira mensagem curta para iniciar a conversa naturalmente, sem esperar o usuario falar de novo."
+      : "O usuario acabou de responder nesta conversa. Continue a partir do que ele disse por ultimo.",
     currentSubscriptionContext,
     paymentContext,
     "Contexto conhecido do usuario no flow:",
@@ -2350,6 +2354,30 @@ async function runFlowQueue(params: {
         currentNodeId: current.id,
         queue,
       });
+
+      if (loopData.autoStart !== false) {
+        try {
+          await runAgenticLoopTurn({
+            supabase: params.supabase,
+            organizationId: params.organizationId,
+            metaConfig: params.metaConfig,
+            conversationId: params.conversationId,
+            contactPhone: params.contactPhone,
+            currentNode: current,
+            loopData,
+            nodes: params.nodes,
+            edges: params.edges,
+            trigger: "node_entry",
+            inboundMessageId: params.inboundMessageId,
+          });
+        } catch (error) {
+          console.error(
+            "Flow engine: failed to send initial agentic loop message",
+            error
+          );
+        }
+      }
+
       return "paused" as const;
     }
 
@@ -3225,6 +3253,7 @@ export async function resumeFlow(
         loopData: currentNode.data as AgenticLoopNodeData,
         nodes,
         edges,
+        trigger: "user_reply",
         inboundMessageId: options.inboundMessageId,
       });
     } catch (error) {
