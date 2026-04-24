@@ -16,7 +16,12 @@ import {
   validateMetaWebhookVerifyToken,
 } from "@/lib/meta";
 import { createServerClient } from "@/lib/supabase/server";
-import { findMatchingFlow, executeFlow, resumeFlow } from "@/lib/flow-engine";
+import {
+  continueFlowQueue,
+  findMatchingFlow,
+  executeFlow,
+  resumeFlow,
+} from "@/lib/flow-engine";
 import { generateCoachResponse, validateProfileUpdates } from "@/lib/ai-coach";
 import { classifyFlowIntent } from "@/lib/intent-classifier";
 import { persistConversationMessage } from "@/lib/conversation-messages";
@@ -396,16 +401,15 @@ export async function POST(request: Request) {
           },
         });
 
-        await supabase
-          .from("conversations")
-          .update({ updated_at: new Date().toISOString() })
-          .eq("id", conversationId);
-
         if (message.id) {
           markMessageAsRead(message.id, metaConfig).catch(() => {});
         }
 
         if (conversationStatus === "human") {
+          await supabase
+            .from("conversations")
+            .update({ updated_at: new Date().toISOString() })
+            .eq("id", conversationId);
           continue;
         }
 
@@ -415,15 +419,54 @@ export async function POST(request: Request) {
         if (conversationStatus === "running" && existing?.active_flow_id) {
           const { data: freshConv } = await supabase
             .from("conversations")
-            .select("status, active_flow_id, updated_at")
+            .select(
+              "status, active_flow_id, current_node_id, flow_node_queue, updated_at"
+            )
             .eq("id", conversationId)
             .single();
 
           if (freshConv?.status === "running" && freshConv.active_flow_id) {
             const updatedAt = new Date(freshConv.updated_at as string).getTime();
             const stalenessMs = 2 * 60 * 1000;
+            const queueIds = Array.isArray(freshConv.flow_node_queue)
+              ? freshConv.flow_node_queue.filter(
+                  (value): value is string =>
+                    typeof value === "string" && value.length > 0
+                )
+              : [];
+            const hasCheckpoint =
+              (typeof freshConv.current_node_id === "string" &&
+                freshConv.current_node_id.length > 0) ||
+              queueIds.length > 0;
 
-            if (Date.now() - updatedAt < stalenessMs) {
+            if (!hasCheckpoint) {
+              console.warn(
+                "[webhook] broken running flow without checkpoint, resetting",
+                {
+                  conversationId,
+                  activeFlowId: freshConv.active_flow_id,
+                }
+              );
+              await supabase
+                .from("flow_executions")
+                .update({
+                  status: "abandoned",
+                  completed_at: new Date().toISOString(),
+                })
+                .eq("conversation_id", conversationId)
+                .eq("flow_id", freshConv.active_flow_id)
+                .eq("status", "running");
+              await supabase
+                .from("conversations")
+                .update({
+                  status: "ai",
+                  active_flow_id: null,
+                  current_node_id: null,
+                  flow_node_queue: null,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("id", conversationId);
+            } else if (Date.now() - updatedAt < stalenessMs) {
               console.log("[webhook] flow actively running, skipping processing", {
                 conversationId,
                 activeFlowId: freshConv.active_flow_id,
@@ -433,25 +476,53 @@ export async function POST(request: Request) {
             }
 
             // Stale — clean up crashed/timed-out flow
-            console.warn("[webhook] stale running flow, resetting", {
+            console.warn("[webhook] stale running flow, retrying continuation", {
               conversationId,
               activeFlowId: freshConv.active_flow_id,
               staleDurationMs: Date.now() - updatedAt,
+              queueLength: queueIds.length,
+              currentNodeId: freshConv.current_node_id,
             });
-            await supabase
-              .from("conversations")
-              .update({
-                status: "ai",
-                active_flow_id: null,
-                current_node_id: null,
-                flow_node_queue: null,
-                updated_at: new Date().toISOString(),
-              })
-              .eq("id", conversationId);
-            // Fall through to normal processing
+            try {
+              await continueFlowQueue(supabase, conversationId, contactPhone, {
+                organizationId,
+                metaConfig,
+              });
+              continue;
+            } catch (error) {
+              console.error("[webhook] failed to continue stale running flow", {
+                conversationId,
+                activeFlowId: freshConv.active_flow_id,
+                error,
+              });
+              await supabase
+                .from("flow_executions")
+                .update({
+                  status: "abandoned",
+                  completed_at: new Date().toISOString(),
+                })
+                .eq("conversation_id", conversationId)
+                .eq("flow_id", freshConv.active_flow_id)
+                .eq("status", "running");
+              await supabase
+                .from("conversations")
+                .update({
+                  status: "ai",
+                  active_flow_id: null,
+                  current_node_id: null,
+                  flow_node_queue: null,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("id", conversationId);
+            }
           }
           // If status changed (flow completed between reads), fall through
         }
+
+        await supabase
+          .from("conversations")
+          .update({ updated_at: new Date().toISOString() })
+          .eq("id", conversationId);
 
         try {
           console.log("[webhook] orchestration start", {

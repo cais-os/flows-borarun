@@ -97,6 +97,9 @@ interface TriggerMatchContext {
 const FLOW_CONTINUATION_SOFT_LIMIT_MS = 50_000;
 const PDF_CONTINUATION_BUFFER_MS = 1_000;
 const PDF_POST_SEND_SETTLE_MS = 750;
+const PDF_GENERATION_TIMEOUT_MS = 90_000;
+const PDF_DELIVERY_TIMEOUT_MS = 45_000;
+const PDF_GENERATION_MAX_ATTEMPTS = 2;
 const DEFAULT_MESSAGE_ORDER_DELAY_MS = 900;
 const AUDIO_MESSAGE_ORDER_DELAY_MS = 350;
 const UPCOMING_AUDIO_PREWARM_LIMIT = 2;
@@ -224,6 +227,29 @@ function shouldYieldBeforeGeneratePdf(
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function withTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  label: string
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
 }
 
 function getPaymentBillingMode(
@@ -867,7 +893,7 @@ async function runAgenticLoopTurn(params: {
       inboundMessageId: params.inboundMessageId,
     });
 
-    await executeGeneratePdfNode({
+    await executeGeneratePdfNodeSafely({
       supabase: params.supabase,
       organizationId: params.organizationId,
       metaConfig: params.metaConfig,
@@ -1158,12 +1184,13 @@ async function persistFlowContinuation(params: {
   supabase: SupabaseClient;
   conversationId: string;
   queue: FlowNode[];
+  currentNodeId?: string | null;
 }) {
   await params.supabase
     .from("conversations")
     .update({
       status: "running",
-      current_node_id: null,
+      current_node_id: params.currentNodeId ?? null,
       flow_node_queue: params.queue.map((node) => node.id),
       updated_at: new Date().toISOString(),
     })
@@ -2019,6 +2046,7 @@ async function executeSendMessageNode(params: {
 
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function executeGeneratePdfNode(params: {
   supabase: SupabaseClient;
   organizationId: string;
@@ -2127,6 +2155,164 @@ async function executeGeneratePdfNode(params: {
       console.error("Flow engine: failed to send PDF error notification", msgErr);
     }
   }
+}
+
+async function executeGeneratePdfNodeSafely(params: {
+  supabase: SupabaseClient;
+  organizationId: string;
+  metaConfig: MetaConfig;
+  conversationId: string;
+  contactPhone: string;
+  node: FlowNode;
+  data: GeneratePdfNodeData;
+  flowVariablesOverride?: Record<string, string>;
+  adjustmentRequest?: string;
+  inboundMessageId?: string;
+}): Promise<boolean> {
+  const flowVariables =
+    params.flowVariablesOverride ||
+    (await getConversationVariables(params.supabase, params.conversationId));
+
+  const { data: template, error: templateError } = await params.supabase
+    .from("pdf_templates")
+    .select("html_content")
+    .eq("organization_id", params.organizationId)
+    .eq("id", params.data.templateId)
+    .single();
+
+  if (templateError || !template) {
+    console.error("Flow engine: PDF template not found", {
+      conversationId: params.conversationId,
+      templateId: params.data.templateId,
+      templateError,
+    });
+    return false;
+  }
+
+  const stravaContext = await buildStravaCoachContext(
+    params.supabase,
+    params.conversationId
+  );
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= PDF_GENERATION_MAX_ATTEMPTS; attempt++) {
+    try {
+      const { pdf: pdfBuffer, planData, coachingSummary } = await withTimeout(
+        generatePdf({
+          templateHtml: template.html_content,
+          flowVariables,
+          aiPrompt: params.data.aiPrompt,
+          adjustmentRequest: params.adjustmentRequest,
+          stravaContext: stravaContext || undefined,
+        }),
+        PDF_GENERATION_TIMEOUT_MS,
+        `PDF generation attempt ${attempt}`
+      );
+
+      const updatedVars = {
+        ...flowVariables,
+        _training_plan: JSON.stringify(planData),
+        _coaching_summary: JSON.stringify(coachingSummary),
+        _plan_generated_at: new Date().toISOString(),
+        ...(params.adjustmentRequest
+          ? { _last_pdf_regeneration_request: params.adjustmentRequest }
+          : {}),
+      };
+      await params.supabase
+        .from("conversations")
+        .update({ flow_variables: updatedVars })
+        .eq("id", params.conversationId);
+
+      const fileName = `${params.conversationId}-${Date.now()}-${attempt}.pdf`;
+      await withTimeout(
+        params.supabase.storage
+          .from("pdfs")
+          .upload(fileName, pdfBuffer, { contentType: "application/pdf" }),
+        PDF_DELIVERY_TIMEOUT_MS,
+        `PDF upload attempt ${attempt}`
+      );
+
+      const { data: urlData } = params.supabase.storage
+        .from("pdfs")
+        .getPublicUrl(fileName);
+
+      if (params.inboundMessageId) {
+        await sendTypingIndicator(params.inboundMessageId, params.metaConfig).catch(
+          () => {}
+        );
+      }
+
+      const athleteName =
+        flowVariables.nome ||
+        flowVariables.onb_nome ||
+        flowVariables.flow_nome ||
+        "";
+      const pdfDisplayName = athleteName
+        ? `Plano de Treino - ${athleteName}.pdf`
+        : params.data.fileName || "plano-de-treino.pdf";
+
+      const result = await withTimeout(
+        sendMetaWhatsAppDocumentMessage(
+          {
+            to: params.contactPhone,
+            documentUrl: urlData.publicUrl,
+            fileName: pdfDisplayName,
+          },
+          params.metaConfig
+        ),
+        PDF_DELIVERY_TIMEOUT_MS,
+        `PDF delivery attempt ${attempt}`
+      );
+
+      await params.supabase.from("messages").insert({
+        conversation_id: params.conversationId,
+        content: pdfDisplayName,
+        type: "file",
+        sender: "bot",
+        media_url: urlData.publicUrl,
+        file_name: pdfDisplayName,
+        node_id: params.node.id,
+        wa_message_id: result.messageId,
+      });
+
+      return true;
+    } catch (error) {
+      lastError = error;
+      console.error("Flow engine: failed to generate PDF attempt", {
+        conversationId: params.conversationId,
+        nodeId: params.node.id,
+        attempt,
+        error,
+      });
+    }
+  }
+
+  console.error("Flow engine: failed to generate PDF after retries", {
+    conversationId: params.conversationId,
+    nodeId: params.node.id,
+    attempts: PDF_GENERATION_MAX_ATTEMPTS,
+    lastError,
+  });
+
+  try {
+    const errorMsg =
+      "Houve um problema ao gerar seu plano de treino. Vou tentar novamente depois, mas se quiser pode me mandar uma nova mensagem em instantes.";
+    await sendMetaWhatsAppTextMessage(
+      { to: params.contactPhone, body: errorMsg },
+      params.metaConfig
+    );
+    await params.supabase.from("messages").insert({
+      conversation_id: params.conversationId,
+      content: errorMsg,
+      type: "text",
+      sender: "bot",
+      node_id: params.node.id,
+    });
+  } catch (msgErr) {
+    console.error("Flow engine: failed to send PDF error notification", msgErr);
+  }
+
+  return false;
 }
 
 async function executeTagConversationNode(params: {
@@ -2434,7 +2620,14 @@ async function runFlowQueue(params: {
         queue,
       });
 
-      await executeGeneratePdfNode({
+      await persistFlowContinuation({
+        supabase: params.supabase,
+        conversationId: params.conversationId,
+        currentNodeId: current.id,
+        queue: [current, ...queue],
+      });
+
+      const pdfGenerated = await executeGeneratePdfNodeSafely({
         supabase: params.supabase,
         organizationId: params.organizationId,
         metaConfig: params.metaConfig,
@@ -2444,14 +2637,24 @@ async function runFlowQueue(params: {
         data: data as GeneratePdfNodeData,
         inboundMessageId: params.inboundMessageId,
       });
+
+      if (!pdfGenerated) {
+        await completeFlow(params.supabase, params.conversationId);
+        await completeFlowExecution(params.supabase, execId, "abandoned");
+        return "completed" as const;
+      }
       // Give WhatsApp a brief settle window and let upcoming audio cache warm up.
       await Promise.race([audioWarmupPromise, delay(PDF_POST_SEND_SETTLE_MS)]);
 
-      // Touch updated_at so the webhook staleness check knows the flow is still active
-      await params.supabase
-        .from("conversations")
-        .update({ updated_at: new Date().toISOString() })
-        .eq("id", params.conversationId);
+      queue.push(...findNextNodes(current.id, params.edges, params.nodes));
+
+      await persistFlowContinuation({
+        supabase: params.supabase,
+        conversationId: params.conversationId,
+        queue,
+      });
+
+      continue;
     }
 
     if (data.type === "aiCollector") {
