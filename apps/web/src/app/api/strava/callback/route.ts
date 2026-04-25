@@ -20,6 +20,10 @@ import {
   verifyStravaState,
 } from "@/lib/strava";
 import { getCronSecret } from "@/lib/internal-auth";
+import {
+  STRAVA_SUCCESS_MESSAGE,
+  shouldSendStravaSuccessMessageForConversation,
+} from "@/lib/strava-callback-idempotency";
 
 function redirectToStatus(requestUrl: string, status: string, message: string) {
   const url = new URL("/strava/connected", resolveAppOrigin(requestUrl));
@@ -143,29 +147,47 @@ export async function GET(request: Request) {
 
     const { config: metaConfig } = getMetaConfigFromSettings(settings);
 
-    // Send success message
+    // Send success message once per OAuth callback burst.
     try {
-      const successMsg = "Sincronizacao com Strava realizada com sucesso!";
-      const result = await sendMetaWhatsAppTextMessage(
-        {
-          to: connection.contact_phone,
-          body: successMsg,
-        },
-        metaConfig
-      );
+      let shouldSendSuccess = true;
+      try {
+        shouldSendSuccess = await shouldSendStravaSuccessMessageForConversation(
+          supabase,
+          state.conversationId
+        );
+      } catch (dedupeError) {
+        console.error(
+          "Failed to check duplicate Strava success confirmation",
+          dedupeError
+        );
+      }
 
-      await supabase.from("messages").insert({
-        conversation_id: state.conversationId,
-        content: successMsg,
-        type: "text",
-        sender: "bot",
-        wa_message_id: result.messageId,
-      });
+      if (shouldSendSuccess) {
+        const result = await sendMetaWhatsAppTextMessage(
+          {
+            to: connection.contact_phone,
+            body: STRAVA_SUCCESS_MESSAGE,
+          },
+          metaConfig
+        );
 
-      await supabase
-        .from("conversations")
-        .update({ updated_at: new Date().toISOString() })
-        .eq("id", state.conversationId);
+        await supabase.from("messages").insert({
+          conversation_id: state.conversationId,
+          content: STRAVA_SUCCESS_MESSAGE,
+          type: "text",
+          sender: "bot",
+          wa_message_id: result.messageId,
+        });
+
+        await supabase
+          .from("conversations")
+          .update({ updated_at: new Date().toISOString() })
+          .eq("id", state.conversationId);
+      } else {
+        console.log("Skipped duplicate Strava success confirmation", {
+          conversationId: state.conversationId,
+        });
+      }
     } catch (metaError) {
       console.error("Failed to send Strava confirmation on WhatsApp", metaError);
     }
