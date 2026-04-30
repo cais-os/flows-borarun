@@ -43,6 +43,7 @@ import {
   AGENTIC_LOOP_ACTIVE_NODE_ID_KEY,
   AGENTIC_LOOP_SALES_MODE_KEY,
 } from "@/lib/agentic-loop";
+import { buildAgenticFlowVariableContext } from "@/lib/agentic-context";
 import {
   buildNoMatchResponseMessage,
   getMatchedWaitRoute,
@@ -114,7 +115,6 @@ const COMMON_PAYMENT_EMAIL_KEYS = [
   "customer_email",
 ];
 const REUSABLE_PAYMENT_RECORD_MAX_AGE_MS = 1000 * 60 * 60 * 48;
-const MAX_AGENTIC_CONTEXT_VARIABLES = 25;
 
 function getChatCompletionTokenParams(model: string | undefined, maxTokens: number) {
   if (typeof model === "string" && model.toLowerCase().startsWith("gpt-5")) {
@@ -332,25 +332,6 @@ function findClosestUpstreamGeneratePdfNode(
   }
 
   return null;
-}
-
-function buildAgenticFlowVariableContext(variables: Record<string, string>) {
-  const entries = Object.entries(variables)
-    .filter(([key, value]) => {
-      if (!value?.trim()) return false;
-      if (key.startsWith("__")) return false;
-      if (key.startsWith("_")) return false;
-      return true;
-    })
-    .slice(0, MAX_AGENTIC_CONTEXT_VARIABLES);
-
-  if (entries.length === 0) {
-    return "Nenhuma variavel relevante do flow foi encontrada.";
-  }
-
-  return entries
-    .map(([key, value]) => `- ${key}: ${value}`)
-    .join("\n");
 }
 
 async function loadAgenticConversationHistory(params: {
@@ -770,7 +751,7 @@ async function runAgenticLoopTurn(params: {
     "Responda em portugues brasileiro, de forma natural, curta e consultiva.",
     "O PDF inicial do plano de corrida ja foi entregue anteriormente nesta conversa.",
     params.trigger === "node_entry"
-      ? "Voce acabou de entrar neste no logo apos a entrega do PDF. Envie agora uma primeira mensagem curta para iniciar a conversa naturalmente, sem esperar o usuario falar de novo."
+      ? "Voce acabou de entrar neste no logo apos a entrega do PDF. Nao pergunte se o usuario ja olhou o plano. Envie agora uma primeira mensagem curta conectando o PDF ao objetivo do usuario e abrindo o proximo passo."
       : "O usuario acabou de responder nesta conversa. Continue a partir do que ele disse por ultimo.",
     currentSubscriptionContext,
     paymentContext,
