@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildStravaCoachContext } from "@/lib/strava";
 import { COACH_ACOMPANHAMENTO_PROMPT } from "@/lib/prompts/coach-acompanhamento";
+import { isSubscriptionStatusQuestion } from "@/lib/subscription-intent";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -312,13 +313,6 @@ por conversa, conforme o contexto. Nunca pareça um vendedor.`);
   return lines.join("\n");
 }
 
-function normalizeAiCoachText(text: string) {
-  return text
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
-}
-
 function formatSubscriptionDate(date: string | null) {
   if (!date) return null;
 
@@ -328,22 +322,6 @@ function formatSubscriptionDate(date: string | null) {
   }
 
   return parsed.toLocaleDateString("pt-BR");
-}
-
-function isSubscriptionStatusQuestion(userMessage: string) {
-  const normalized = normalizeAiCoachText(userMessage);
-  const hasSubscriptionKeyword =
-    /\b(assinatura|assinante|premium|trial|teste|plano)\b/.test(normalized);
-  const hasPaymentKeyword =
-    /\b(pagamento|paguei|pago|mercado pago|pix|cartao|cobranca)\b/.test(
-      normalized
-    );
-  const hasVerificationIntent =
-    /\b(verifica|verificar|confirm|confirmar|confirmado|entrou|caiu|aprovad|ativo|liberad|acesso|status|sou|estou|recebi)\b/.test(
-      normalized
-    );
-
-  return hasPaymentKeyword || (hasSubscriptionKeyword && hasVerificationIntent);
 }
 
 function buildSubscriptionStatusResponse(params: {
