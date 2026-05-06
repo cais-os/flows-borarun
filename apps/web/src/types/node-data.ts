@@ -98,6 +98,8 @@ export type SendMessageNodeData = {
   imageCaption?: string;
   videoCaption?: string;
   aiPrompt?: string;
+  includeConversationHistory?: boolean;
+  historyWindowMessages?: number;
   typingSeconds?: number;
   interactiveType?: "none" | "buttons" | "list";
   replyButtons?: WhatsAppReplyButton[];

@@ -1,13 +1,17 @@
 "use client";
 
+import { useMemo, useState } from "react";
+import { CalendarDays, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  buildCustomDateRange,
+  formatDateInputValue,
+  getPresetRange,
+  type DateRange,
+  type Preset,
+} from "./date-range-utils";
 
-export interface DateRange {
-  from: string;
-  to: string;
-}
-
-type Preset = "7d" | "30d" | "90d" | "all";
+export type { DateRange } from "./date-range-utils";
 
 const PRESETS: Array<{ key: Preset; label: string }> = [
   { key: "7d", label: "7 dias" },
@@ -15,15 +19,6 @@ const PRESETS: Array<{ key: Preset; label: string }> = [
   { key: "90d", label: "90 dias" },
   { key: "all", label: "Todos" },
 ];
-
-function getPresetRange(preset: Preset): DateRange {
-  if (preset === "all") return { from: "", to: "" };
-
-  const days = preset === "7d" ? 7 : preset === "30d" ? 30 : 90;
-  const from = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-  const to = new Date().toISOString();
-  return { from, to };
-}
 
 interface DateRangeFilterProps {
   value: DateRange;
@@ -36,34 +31,96 @@ export function DateRangeFilter({
   onChange,
   className,
 }: DateRangeFilterProps) {
-  const activePreset = PRESETS.find((p) => {
-    const range = getPresetRange(p.key);
-    if (p.key === "all") return !value.from && !value.to;
-    // Rough match — within 1 hour tolerance
-    if (!value.from) return false;
-    const diff = Math.abs(
-      new Date(range.from).getTime() - new Date(value.from).getTime()
-    );
-    return diff < 3600000;
-  });
+  const [customFrom, setCustomFrom] = useState(
+    formatDateInputValue(value.from)
+  );
+  const [customTo, setCustomTo] = useState(formatDateInputValue(value.to));
+  const activePreset = useMemo(
+    () =>
+      PRESETS.find((preset) => {
+        const range = getPresetRange(preset.key);
+        if (preset.key === "all") return !value.from && !value.to;
+        if (!value.from) return false;
+
+        const diff = Math.abs(
+          new Date(range.from).getTime() - new Date(value.from).getTime()
+        );
+        return diff < 3600000;
+      }),
+    [value.from, value.to]
+  );
+  const customRangeIsActive = Boolean(value.from || value.to) && !activePreset;
+  const canApplyCustom = Boolean(customFrom || customTo);
+
+  function applyPresetRange(preset: Preset) {
+    const range = getPresetRange(preset);
+    setCustomFrom(formatDateInputValue(range.from));
+    setCustomTo(formatDateInputValue(range.to));
+    onChange(range);
+  }
+
+  function applyCustomRange() {
+    const range = buildCustomDateRange(customFrom, customTo);
+    setCustomFrom(formatDateInputValue(range.from));
+    setCustomTo(formatDateInputValue(range.to));
+    onChange(range);
+  }
 
   return (
-    <div className={cn("flex items-center gap-1", className)}>
-      {PRESETS.map((preset) => (
+    <div className={cn("flex flex-wrap items-center gap-2", className)}>
+      <div className="flex items-center gap-1">
+        {PRESETS.map((preset) => (
+          <button
+            key={preset.key}
+            type="button"
+            onClick={() => applyPresetRange(preset.key)}
+            className={cn(
+              "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+              activePreset?.key === preset.key
+                ? "bg-slate-900 text-white"
+                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            )}
+          >
+            {preset.label}
+          </button>
+        ))}
+      </div>
+
+      <div
+        className={cn(
+          "flex flex-wrap items-center gap-2 rounded-xl border bg-white px-2 py-1.5 shadow-sm",
+          customRangeIsActive ? "border-slate-400" : "border-slate-200"
+        )}
+      >
+        <CalendarDays size={14} className="text-slate-400" />
+        <label className="flex items-center gap-1 text-xs font-medium text-slate-500">
+          De
+          <input
+            type="date"
+            value={customFrom}
+            onChange={(event) => setCustomFrom(event.target.value)}
+            className="h-7 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700 outline-none focus:border-slate-400"
+          />
+        </label>
+        <label className="flex items-center gap-1 text-xs font-medium text-slate-500">
+          Ate
+          <input
+            type="date"
+            value={customTo}
+            onChange={(event) => setCustomTo(event.target.value)}
+            className="h-7 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700 outline-none focus:border-slate-400"
+          />
+        </label>
         <button
-          key={preset.key}
           type="button"
-          onClick={() => onChange(getPresetRange(preset.key))}
-          className={cn(
-            "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
-            activePreset?.key === preset.key
-              ? "bg-slate-900 text-white"
-              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-          )}
+          onClick={applyCustomRange}
+          disabled={!canApplyCustom}
+          className="inline-flex h-7 items-center gap-1 rounded-md bg-slate-900 px-2.5 text-xs font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
         >
-          {preset.label}
+          <Check size={13} />
+          Aplicar
         </button>
-      ))}
+      </div>
     </div>
   );
 }

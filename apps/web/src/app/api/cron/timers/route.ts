@@ -10,16 +10,19 @@ import {
   sendMetaWhatsAppTextMessage,
 } from "@/lib/meta";
 import { validateCronAuthorization } from "@/lib/internal-auth";
+import {
+  AGENTIC_SALES_FOLLOW_UP_AFTER_HOURS,
+  AGENTIC_SALES_FOLLOW_UP_KIND,
+  AGENTIC_SALES_FOLLOW_UP_LOOKBACK_HOURS,
+  AGENTIC_SALES_FOLLOW_UP_MESSAGE,
+  getAgenticSalesFollowUpDecision,
+  type AgenticSalesFollowUpMessage,
+} from "@/lib/agentic-sales-follow-up";
 
 const PAYMENT_FOLLOW_UP_AFTER_MINUTES = 45;
 const PAYMENT_FOLLOW_UP_LOOKBACK_HOURS = 24;
 const PAYMENT_FOLLOW_UP_MESSAGE =
   "Conseguiu abrir o link para ativar o Premium? Se preferir Pix ou cartao e o checkout nao mostrar a melhor opcao, me responde aqui que eu te ajudo.";
-const POST_PDF_AGENTIC_SALES_NODE_ID = "agenticLoop-1776965078875";
-const AGENTIC_SALES_FOLLOW_UP_AFTER_HOURS = 3;
-const AGENTIC_SALES_FOLLOW_UP_LOOKBACK_HOURS = 48;
-const AGENTIC_SALES_FOLLOW_UP_MESSAGE =
-  "Passando rapido: o PDF que te enviei e o ponto de partida. No Premium, por R$39/mes, eu acompanho sua semana e ajusto o plano quando rotina, dor ou treino mudarem. Quer que eu te envie o link para ativar ou prefere que eu te mostre como funcionaria no seu caso?";
 
 type PendingPaymentRow = {
   id: string;
@@ -49,14 +52,9 @@ type AgenticSalesFollowUpConversationRow = {
   organization_id: string;
   subscription_status: string | null;
   subscription_plan: string | null;
+  current_node_id: string | null;
+  flow_variables: Record<string, string> | null;
   updated_at: string;
-};
-
-type AgenticSalesFollowUpMessageRow = {
-  sender: string | null;
-  node_id: string | null;
-  metadata: Record<string, unknown> | null;
-  created_at: string;
 };
 
 async function processPendingPaymentFollowUps(
@@ -207,10 +205,10 @@ async function processAgenticSalesFollowUps(
   const { data: conversations, error } = await supabase
     .from("conversations")
     .select(
-      "id, contact_phone, organization_id, subscription_status, subscription_plan, updated_at"
+      "id, contact_phone, organization_id, subscription_status, subscription_plan, current_node_id, flow_variables, updated_at"
     )
     .eq("status", "paused")
-    .eq("current_node_id", POST_PDF_AGENTIC_SALES_NODE_ID)
+    .not("current_node_id", "is", null)
     .gte("updated_at", lookback)
     .lte("updated_at", cutoff)
     .order("updated_at", { ascending: true })
@@ -234,50 +232,22 @@ async function processAgenticSalesFollowUps(
       continue;
     }
 
-    if (
-      conversation.subscription_status === "active" &&
-      conversation.subscription_plan === "premium"
-    ) {
-      skipped++;
-      continue;
-    }
-
     const { data: recentMessages } = await supabase
       .from("messages")
       .select("sender, node_id, metadata, created_at")
       .eq("conversation_id", conversation.id)
-      .gte("created_at", conversation.updated_at)
+      .gte("created_at", lookback)
       .order("created_at", { ascending: true })
       .limit(80);
 
     const messages =
-      (recentMessages || []) as AgenticSalesFollowUpMessageRow[];
-    const latestAgenticBotMessage = messages
-      .filter(
-        (message) =>
-          message.node_id === POST_PDF_AGENTIC_SALES_NODE_ID &&
-          message.sender === "bot"
-      )
-      .at(-1);
+      (recentMessages || []) as AgenticSalesFollowUpMessage[];
+    const followUpDecision = getAgenticSalesFollowUpDecision({
+      conversation,
+      messages,
+    });
 
-    const alreadyFollowedUp = messages.some(
-      (message) =>
-        message.metadata?.agentic_sales_follow_up_kind ===
-        "post_pdf_agent_silence"
-    );
-    const userRepliedAfterLatestBot =
-      latestAgenticBotMessage &&
-      messages.some(
-        (message) =>
-          message.sender === "contact" &&
-          message.created_at > latestAgenticBotMessage.created_at
-      );
-
-    if (
-      !latestAgenticBotMessage ||
-      alreadyFollowedUp ||
-      userRepliedAfterLatestBot
-    ) {
+    if (!followUpDecision.shouldSend) {
       skipped++;
       continue;
     }
@@ -306,12 +276,13 @@ async function processAgenticSalesFollowUps(
         content: AGENTIC_SALES_FOLLOW_UP_MESSAGE,
         type: "text",
         sender: "bot",
-        nodeId: POST_PDF_AGENTIC_SALES_NODE_ID,
+        nodeId: followUpDecision.nodeId,
         waMessageId: sent.messageId,
         metadata: {
-          agentic_sales_follow_up_for: latestAgenticBotMessage.created_at,
-          agentic_sales_follow_up_kind: "post_pdf_agent_silence",
-          agentic_sales_follow_up_node_id: POST_PDF_AGENTIC_SALES_NODE_ID,
+          agentic_sales_follow_up_for:
+            followUpDecision.latestAgenticBotMessageAt,
+          agentic_sales_follow_up_kind: AGENTIC_SALES_FOLLOW_UP_KIND,
+          agentic_sales_follow_up_node_id: followUpDecision.nodeId,
         },
       });
 

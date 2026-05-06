@@ -3,6 +3,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildStravaCoachContext } from "@/lib/strava";
 import { COACH_ACOMPANHAMENTO_PROMPT } from "@/lib/prompts/coach-acompanhamento";
 import { isSubscriptionStatusQuestion } from "@/lib/subscription-intent";
+import {
+  buildInitialFreePlanPricingResponse,
+  shouldAnswerInitialPlanPricing,
+} from "@/lib/initial-plan-pricing";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -573,6 +577,10 @@ export async function generateCoachResponse(
     subscription_expires_at: null,
   };
   const paymentData = (latestPayment as ConversationPaymentData | null) || null;
+
+  if (shouldAnswerInitialPlanPricing(userMessage, vars)) {
+    return { message: buildInitialFreePlanPricingResponse() };
+  }
 
   if (isSubscriptionStatusQuestion(userMessage)) {
     return buildSubscriptionStatusResponse({

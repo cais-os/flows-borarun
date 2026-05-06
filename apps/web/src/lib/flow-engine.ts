@@ -45,11 +45,19 @@ import {
 } from "@/lib/agentic-loop";
 import { buildAgenticFlowVariableContext } from "@/lib/agentic-context";
 import {
+  buildAiSendMessageChatMessages,
+  type AiChatMessage,
+} from "@/lib/ai-message-context";
+import {
   buildNoMatchResponseMessage,
   getMatchedWaitRoute,
   normalizeWaitForReplyNodeData,
 } from "@/lib/wait-for-reply";
 import { persistConversationMessage } from "@/lib/conversation-messages";
+import {
+  buildInitialFreePlanPricingResponse,
+  shouldAnswerInitialPlanPricing,
+} from "@/lib/initial-plan-pricing";
 import { convertToOgg, getAudioFormat, needsOggConversion } from "@/lib/audio-converter";
 import { getCronSecret } from "@/lib/internal-auth";
 import {
@@ -1406,7 +1414,12 @@ function shouldApplyScopedTrigger(
 async function generateAiNodeResponse(
   supabase: SupabaseClient,
   prompt: string,
-  organizationId: string
+  organizationId: string,
+  options?: {
+    conversationId?: string;
+    includeConversationHistory?: boolean;
+    historyWindowMessages?: number;
+  }
 ): Promise<string> {
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -1421,21 +1434,24 @@ async function generateAiNodeResponse(
   const model = guidelines?.model || "gpt-4o-mini";
   const temperature = guidelines?.temperature ?? 0.7;
   const maxTokens = guidelines?.max_tokens ?? 500;
+  const conversationHistory =
+    options?.includeConversationHistory && options.conversationId
+      ? ((await loadAgenticConversationHistory({
+          supabase,
+          conversationId: options.conversationId,
+          limit: options.historyWindowMessages || 20,
+        })) as AiChatMessage[])
+      : [];
 
   const completion = await openai.chat.completions.create({
     model,
     temperature,
-    max_tokens: maxTokens,
-    messages: [
-      {
-        role: "system",
-        content:
-          "Voce e um assistente dentro de um flow automatizado de WhatsApp. " +
-          "Responda em portugues brasileiro, de forma natural e concisa (ideal para WhatsApp). " +
-          "Siga exatamente as instrucoes do prompt abaixo.",
-      },
-      { role: "user", content: prompt },
-    ],
+    ...getChatCompletionTokenParams(model, maxTokens),
+    messages: buildAiSendMessageChatMessages({
+      prompt,
+      conversationHistory,
+      includeConversationHistory: Boolean(options?.includeConversationHistory),
+    }) as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
   });
 
   return (
@@ -1914,7 +1930,13 @@ async function executeSendMessageNode(params: {
       const aiText = await generateAiNodeResponse(
         params.supabase,
         aiPrompt,
-        params.organizationId
+        params.organizationId,
+        {
+          conversationId: params.conversationId,
+          includeConversationHistory:
+            params.data.includeConversationHistory === true,
+          historyWindowMessages: params.data.historyWindowMessages,
+        }
       );
       await sendTextAndPersist({
         supabase: params.supabase,
@@ -3545,6 +3567,42 @@ export async function resumeFlow(
     const state = stateRaw
       ? JSON.parse(stateRaw)
       : { collectedFields: {}, attemptCount: 0 };
+
+    if (shouldAnswerInitialPlanPricing(userAnswer, variables)) {
+      const pricingResponse = [
+        buildInitialFreePlanPricingResponse(),
+        "Pode me mandar os dados que pedi para eu montar o PDF?",
+      ].join(" ");
+
+      try {
+        await sendTextAndPersist({
+          supabase,
+          conversationId,
+          contactPhone,
+          nodeId: currentNode.id,
+          text: pricingResponse,
+          metaConfig: options.metaConfig,
+          inboundMessageId: options.inboundMessageId,
+        });
+      } catch (error) {
+        console.error(
+          "Flow engine: failed to send aiCollector pricing clarification",
+          error
+        );
+      }
+
+      variables.__aiCollector_state = JSON.stringify(state);
+      await supabase
+        .from("conversations")
+        .update({
+          flow_variables: variables,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", conversationId);
+
+      return { status: "waiting" };
+    }
+
     state.attemptCount++;
 
     const extracted = await extractFieldsFromText(
