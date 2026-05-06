@@ -22,9 +22,14 @@ import {
   executeFlow,
   resumeFlow,
 } from "@/lib/flow-engine";
+import { isFirstInboundFromContact } from "@/lib/inbound-contact";
 import { generateCoachResponse, validateProfileUpdates } from "@/lib/ai-coach";
 import { classifyFlowIntent } from "@/lib/intent-classifier";
 import { persistConversationMessage } from "@/lib/conversation-messages";
+import {
+  extractExternalWhatsAppFlowLeadVariables,
+  shouldIgnoreExternalWhatsAppFlowReply,
+} from "@/lib/whatsapp-flow-response";
 import {
   getOrganizationSettingsById,
   getOrganizationSettingsByPhoneNumberId,
@@ -319,8 +324,36 @@ export async function POST(request: Request) {
 
         if (existing) {
           conversationId = existing.id as string;
+          const {
+            count: previousContactMessageCount,
+            error: previousContactMessagesError,
+          } = await supabase
+            .from("messages")
+            .select("id", { count: "exact", head: true })
+            .eq("conversation_id", conversationId)
+            .eq("sender", "contact");
+
+          if (previousContactMessagesError) {
+            console.error(
+              "[webhook] failed to count previous contact messages",
+              {
+                conversationId,
+                error: previousContactMessagesError,
+              }
+            );
+          }
+
+          isNewContact = isFirstInboundFromContact({
+            existingConversation: existing,
+            previousContactMessageCount: previousContactMessagesError
+              ? null
+              : previousContactMessageCount,
+          });
         } else {
-          isNewContact = true;
+          isNewContact = isFirstInboundFromContact({
+            existingConversation: null,
+            previousContactMessageCount: null,
+          });
           const { data: created } = await supabase
             .from("conversations")
             .insert({
@@ -534,6 +567,78 @@ export async function POST(request: Request) {
             content: content.substring(0, 50),
           });
 
+          const incomingFlowResponseData =
+            (message as Record<string, unknown>).__flowResponseData as
+              | Record<string, unknown>
+              | undefined;
+
+          if (incomingFlowResponseData) {
+            let expectedCurrentNodeType = "";
+
+            if (
+              conversationStatus === "paused" &&
+              existing?.active_flow_id &&
+              existing?.current_node_id
+            ) {
+              const { data: flowDataForReply } = await supabase
+                .from("flows")
+                .select("nodes")
+                .eq("organization_id", organizationId)
+                .eq("id", existing.active_flow_id)
+                .single();
+
+              const nodes = Array.isArray(flowDataForReply?.nodes)
+                ? (flowDataForReply.nodes as Array<{
+                    id: string;
+                    data: { type?: string };
+                  }>)
+                : [];
+              const currentNode = nodes.find(
+                (node) => node.id === existing.current_node_id
+              );
+              expectedCurrentNodeType = currentNode?.data?.type || "";
+            }
+
+            if (
+              shouldIgnoreExternalWhatsAppFlowReply({
+                hasFlowResponseData: true,
+                currentNodeType: expectedCurrentNodeType,
+              })
+            ) {
+              const leadVariables = extractExternalWhatsAppFlowLeadVariables(
+                incomingFlowResponseData
+              );
+
+              if (Object.keys(leadVariables).length > 0) {
+                const { data: convVars } = await supabase
+                  .from("conversations")
+                  .select("flow_variables")
+                  .eq("id", conversationId)
+                  .single();
+
+                const vars =
+                  (convVars?.flow_variables as Record<string, string>) || {};
+
+                await supabase
+                  .from("conversations")
+                  .update({
+                    flow_variables: { ...vars, ...leadVariables },
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq("id", conversationId);
+              }
+
+              console.log("[meta/webhook] saved external WhatsApp Flow reply", {
+                conversationId,
+                currentNodeType: expectedCurrentNodeType || null,
+                savedLeadFields: Object.keys(leadVariables).filter(
+                  (key) => !key.startsWith("__")
+                ),
+              });
+              continue;
+            }
+          }
+
           const stravaIntent =
             type === "text" && content ? detectStravaIntent(content) : null;
 
@@ -742,6 +847,11 @@ export async function POST(request: Request) {
                 currentNode.data.routes.length > 0;
             }
 
+            const flowResponseData =
+              (message as Record<string, unknown>).__flowResponseData as
+                | Record<string, unknown>
+                | undefined;
+
             if (currentNodeType === "waitTimer") {
               await resumeFlow(supabase, conversationId, contactPhone, content, {
                 inboundMessageId: message.id,
@@ -807,11 +917,6 @@ export async function POST(request: Request) {
 
             if (currentNodeType === "whatsappFlow") {
               // WhatsApp Flow form response via nfm_reply
-              const flowResponseData =
-                (message as Record<string, unknown>).__flowResponseData as
-                  | Record<string, string>
-                  | undefined;
-
               if (!flowResponseData) {
                 console.log("[meta/webhook] ignoring message while waiting for WhatsApp Flow response", {
                   conversationId,
