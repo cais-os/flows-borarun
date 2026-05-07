@@ -511,7 +511,7 @@ async function findReusableStripePaymentRecordId(params: {
   return typeof data?.id === "string" ? data.id : null;
 }
 
-async function sendStripePaymentLinkForNode(params: {
+export async function sendStripePaymentLinkForNode(params: {
   supabase: SupabaseClient;
   organizationId: string;
   conversationId: string;

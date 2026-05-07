@@ -56,6 +56,11 @@ export function extractExternalWhatsAppFlowLeadVariables(
 export function shouldIgnoreExternalWhatsAppFlowReply(params: {
   hasFlowResponseData: boolean;
   currentNodeType: string;
+  isNewContact?: boolean;
 }) {
-  return params.hasFlowResponseData && params.currentNodeType !== "whatsappFlow";
+  return (
+    params.hasFlowResponseData &&
+    params.currentNodeType !== "whatsappFlow" &&
+    params.isNewContact !== true
+  );
 }

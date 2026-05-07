@@ -2,6 +2,7 @@ export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   downloadMetaMedia,
   getMetaConfig,
@@ -21,6 +22,7 @@ import {
   findMatchingFlow,
   executeFlow,
   resumeFlow,
+  sendStripePaymentLinkForNode,
 } from "@/lib/flow-engine";
 import { isFirstInboundFromContact } from "@/lib/inbound-contact";
 import { generateCoachResponse, validateProfileUpdates } from "@/lib/ai-coach";
@@ -30,6 +32,7 @@ import {
   extractExternalWhatsAppFlowLeadVariables,
   shouldIgnoreExternalWhatsAppFlowReply,
 } from "@/lib/whatsapp-flow-response";
+import { getRunningFlowWebhookAction } from "@/lib/running-flow-guard";
 import {
   getOrganizationSettingsById,
   getOrganizationSettingsByPhoneNumberId,
@@ -53,6 +56,8 @@ import {
   formatSubscriptionValidity,
   hasConversationSubscriptionAccess,
 } from "@/lib/subscription-utils";
+import { isSubscriptionPurchaseIntent } from "@/lib/subscription-intent";
+import type { PaymentConfigFields } from "@/types/node-data";
 
 async function simulateTyping(
   messageId: string | undefined,
@@ -116,6 +121,188 @@ type ResolvedMetaWebhookConfig = {
   settings: OrganizationSettings | null;
   config: MetaConfig;
 };
+
+type FlowPaymentOffer = {
+  flowId: string;
+  nodeId: string;
+  paymentData: PaymentConfigFields;
+};
+
+type ActiveFlowPaymentRow = {
+  id: string;
+  nodes: unknown;
+};
+
+function getNodeId(node: unknown) {
+  if (!node || typeof node !== "object") return null;
+  const id = (node as { id?: unknown }).id;
+  return typeof id === "string" && id.trim() ? id : null;
+}
+
+function asPaymentConfig(value: unknown) {
+  if (!value || typeof value !== "object") return null;
+  const data = value as Partial<PaymentConfigFields>;
+  return Number(data.amount) > 0 ? (value as PaymentConfigFields) : null;
+}
+
+function findPaymentOfferInFlow(flow: ActiveFlowPaymentRow) {
+  if (!Array.isArray(flow.nodes)) return null;
+
+  for (const node of flow.nodes) {
+    if (!node || typeof node !== "object") continue;
+    const data = (node as { data?: unknown }).data;
+    if (!data || typeof data !== "object") continue;
+
+    const record = data as { type?: unknown; paymentTool?: unknown };
+    if (record.type !== "agenticLoop") continue;
+
+    const paymentTool = record.paymentTool as
+      | ({ enabled?: unknown } & Partial<PaymentConfigFields>)
+      | null
+      | undefined;
+    if (paymentTool?.enabled !== true) continue;
+
+    const nodeId = getNodeId(node);
+    const paymentData = asPaymentConfig(paymentTool);
+    if (nodeId && paymentData) {
+      return {
+        flowId: flow.id,
+        nodeId,
+        paymentData,
+      } satisfies FlowPaymentOffer;
+    }
+  }
+
+  for (const node of flow.nodes) {
+    if (!node || typeof node !== "object") continue;
+    const data = (node as { data?: unknown }).data;
+    if (!data || typeof data !== "object") continue;
+
+    if ((data as { type?: unknown }).type !== "payment") continue;
+
+    const nodeId = getNodeId(node);
+    const paymentData = asPaymentConfig(data);
+    if (nodeId && paymentData) {
+      return {
+        flowId: flow.id,
+        nodeId,
+        paymentData,
+      } satisfies FlowPaymentOffer;
+    }
+  }
+
+  return null;
+}
+
+async function loadActivePremiumPaymentOffer(params: {
+  supabase: SupabaseClient;
+  organizationId: string;
+}) {
+  const { data, error } = await params.supabase
+    .from("flows")
+    .select("id, nodes")
+    .eq("organization_id", params.organizationId)
+    .eq("is_active", true)
+    .order("updated_at", { ascending: false })
+    .limit(10);
+
+  if (error) {
+    console.error("[meta/webhook] failed to load active payment offer", error);
+    return null;
+  }
+
+  for (const flow of (data || []) as ActiveFlowPaymentRow[]) {
+    const offer = findPaymentOfferInFlow(flow);
+    if (offer) return offer;
+  }
+
+  return null;
+}
+
+async function sendPremiumPaymentOfferForExpiredConversation(params: {
+  supabase: SupabaseClient;
+  organizationId: string;
+  conversationId: string;
+  contactPhone: string;
+  messageId?: string;
+  metaConfig: MetaConfig;
+}) {
+  const offer = await loadActivePremiumPaymentOffer({
+    supabase: params.supabase,
+    organizationId: params.organizationId,
+  });
+
+  if (!offer) return false;
+
+  try {
+    const result = await sendStripePaymentLinkForNode({
+      supabase: params.supabase,
+      organizationId: params.organizationId,
+      conversationId: params.conversationId,
+      contactPhone: params.contactPhone,
+      nodeId: offer.nodeId,
+      paymentData: offer.paymentData,
+      metaConfig: params.metaConfig,
+      inboundMessageId: params.messageId,
+    });
+
+    if (result.status === "sent") {
+      console.log("[meta/webhook] sent premium payment offer from expired gate", {
+        conversationId: params.conversationId,
+        flowId: offer.flowId,
+        nodeId: offer.nodeId,
+        paymentRecordId: result.paymentRecordId,
+      });
+      return true;
+    }
+
+    await simulateTyping(params.messageId, result.message, params.metaConfig);
+    const sendResult = await sendMetaWhatsAppTextMessage(
+      {
+        to: params.contactPhone,
+        body: result.message,
+      },
+      params.metaConfig
+    );
+    await params.supabase.from("messages").insert({
+      conversation_id: params.conversationId,
+      content: result.message,
+      type: "text",
+      sender: "bot",
+      node_id: offer.nodeId,
+      wa_message_id: sendResult.messageId,
+    });
+    return true;
+  } catch (error) {
+    console.error(
+      "[meta/webhook] failed to send premium payment offer from expired gate",
+      error
+    );
+    const fallbackMessage =
+      "Tive um problema ao preparar o link de assinatura agora. Tente me chamar de novo com \"assinar\" em instantes.";
+    await simulateTyping(
+      params.messageId,
+      fallbackMessage,
+      params.metaConfig
+    );
+    const sendResult = await sendMetaWhatsAppTextMessage(
+      {
+        to: params.contactPhone,
+        body: fallbackMessage,
+      },
+      params.metaConfig
+    );
+    await params.supabase.from("messages").insert({
+      conversation_id: params.conversationId,
+      content: fallbackMessage,
+      type: "text",
+      sender: "bot",
+      node_id: offer.nodeId,
+      wa_message_id: sendResult.messageId,
+    });
+    return true;
+  }
+}
 
 async function listWebhookConfigs(): Promise<ResolvedMetaWebhookConfig[]> {
   const configured: ResolvedMetaWebhookConfig[] = [];
@@ -460,21 +647,32 @@ export async function POST(request: Request) {
 
           if (freshConv?.status === "running" && freshConv.active_flow_id) {
             const updatedAt = new Date(freshConv.updated_at as string).getTime();
-            const stalenessMs = 2 * 60 * 1000;
             const queueIds = Array.isArray(freshConv.flow_node_queue)
               ? freshConv.flow_node_queue.filter(
                   (value): value is string =>
                     typeof value === "string" && value.length > 0
                 )
               : [];
-            const hasCheckpoint =
-              (typeof freshConv.current_node_id === "string" &&
-                freshConv.current_node_id.length > 0) ||
-              queueIds.length > 0;
+            const runningFlowAction = getRunningFlowWebhookAction({
+              status: freshConv.status as string | null,
+              activeFlowId: freshConv.active_flow_id as string | null,
+              currentNodeId: freshConv.current_node_id as string | null,
+              flowNodeQueue: freshConv.flow_node_queue,
+              updatedAt: freshConv.updated_at as string | null,
+            });
 
-            if (!hasCheckpoint) {
+            if (runningFlowAction === "skip_processing") {
+              console.log("[webhook] flow actively running, skipping processing", {
+                conversationId,
+                activeFlowId: freshConv.active_flow_id,
+                content: content.substring(0, 50),
+              });
+              continue;
+            }
+
+            if (runningFlowAction === "reset_stale") {
               console.warn(
-                "[webhook] broken running flow without checkpoint, resetting",
+                "[webhook] stale broken running flow without checkpoint, resetting",
                 {
                   conversationId,
                   activeFlowId: freshConv.active_flow_id,
@@ -499,12 +697,6 @@ export async function POST(request: Request) {
                   updated_at: new Date().toISOString(),
                 })
                 .eq("id", conversationId);
-            } else if (Date.now() - updatedAt < stalenessMs) {
-              console.log("[webhook] flow actively running, skipping processing", {
-                conversationId,
-                activeFlowId: freshConv.active_flow_id,
-                content: content.substring(0, 50),
-              });
               continue;
             }
 
@@ -599,35 +791,36 @@ export async function POST(request: Request) {
               expectedCurrentNodeType = currentNode?.data?.type || "";
             }
 
+            const leadVariables = extractExternalWhatsAppFlowLeadVariables(
+              incomingFlowResponseData
+            );
+
+            if (Object.keys(leadVariables).length > 0) {
+              const { data: convVars } = await supabase
+                .from("conversations")
+                .select("flow_variables")
+                .eq("id", conversationId)
+                .single();
+
+              const vars =
+                (convVars?.flow_variables as Record<string, string>) || {};
+
+              await supabase
+                .from("conversations")
+                .update({
+                  flow_variables: { ...vars, ...leadVariables },
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("id", conversationId);
+            }
+
             if (
               shouldIgnoreExternalWhatsAppFlowReply({
                 hasFlowResponseData: true,
                 currentNodeType: expectedCurrentNodeType,
+                isNewContact,
               })
             ) {
-              const leadVariables = extractExternalWhatsAppFlowLeadVariables(
-                incomingFlowResponseData
-              );
-
-              if (Object.keys(leadVariables).length > 0) {
-                const { data: convVars } = await supabase
-                  .from("conversations")
-                  .select("flow_variables")
-                  .eq("id", conversationId)
-                  .single();
-
-                const vars =
-                  (convVars?.flow_variables as Record<string, string>) || {};
-
-                await supabase
-                  .from("conversations")
-                  .update({
-                    flow_variables: { ...vars, ...leadVariables },
-                    updated_at: new Date().toISOString(),
-                  })
-                  .eq("id", conversationId);
-              }
-
               console.log("[meta/webhook] saved external WhatsApp Flow reply", {
                 conversationId,
                 currentNodeType: expectedCurrentNodeType || null,
@@ -1199,6 +1392,26 @@ export async function POST(request: Request) {
             existing?.subscription_status,
             existing?.subscription_expires_at as string | null | undefined
           );
+
+          if (
+            !hasActiveSubscription &&
+            type === "text" &&
+            isSubscriptionPurchaseIntent(content)
+          ) {
+            const paymentOfferSent =
+              await sendPremiumPaymentOfferForExpiredConversation({
+                supabase,
+                organizationId,
+                conversationId,
+                contactPhone,
+                messageId: message.id,
+                metaConfig,
+              });
+
+            if (paymentOfferSent) {
+              continue;
+            }
+          }
 
           if (!hasActiveSubscription) {
             const nudgeMsg = resolvedOrganization.settings?.subscription_nudge_message

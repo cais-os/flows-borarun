@@ -27,7 +27,7 @@ function loadTypeScriptModule(relativePath) {
   return cjsModule.exports;
 }
 
-const { isSubscriptionStatusQuestion } = loadTypeScriptModule(
+const { isSubscriptionPurchaseIntent, isSubscriptionStatusQuestion } = loadTypeScriptModule(
   "./subscription-intent.ts"
 );
 
@@ -43,4 +43,17 @@ test("treats confirmation questions and paid statements as payment status checks
   assert.equal(isSubscriptionStatusQuestion("consegue verificar meu pix?"), true);
   assert.equal(isSubscriptionStatusQuestion("já paguei"), true);
   assert.equal(isSubscriptionStatusQuestion("minha assinatura premium está ativa?"), true);
+});
+
+test("detects purchase intent after the premium nudge", () => {
+  assert.equal(isSubscriptionPurchaseIntent("Assinar"), true);
+  assert.equal(isSubscriptionPurchaseIntent("'assinar'"), true);
+  assert.equal(isSubscriptionPurchaseIntent("Qual valor"), true);
+  assert.equal(isSubscriptionPurchaseIntent("quanto custa?"), true);
+  assert.equal(isSubscriptionPurchaseIntent("quero pagar no pix"), true);
+});
+
+test("does not treat paid confirmations as purchase intent", () => {
+  assert.equal(isSubscriptionPurchaseIntent("ja paguei"), false);
+  assert.equal(isSubscriptionPurchaseIntent("meu pagamento caiu?"), false);
 });

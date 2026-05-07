@@ -58,8 +58,20 @@ test("ignores external WhatsApp Flow replies while waiting on regular flow nodes
     shouldIgnoreExternalWhatsAppFlowReply({
       hasFlowResponseData: true,
       currentNodeType: "aiCollector",
+      isNewContact: false,
     }),
     true
+  );
+});
+
+test("does not ignore first-contact external WhatsApp Flow replies", () => {
+  assert.equal(
+    shouldIgnoreExternalWhatsAppFlowReply({
+      hasFlowResponseData: true,
+      currentNodeType: "",
+      isNewContact: true,
+    }),
+    false
   );
 });
 
@@ -68,6 +80,7 @@ test("keeps native WhatsApp Flow node replies resumable", () => {
     shouldIgnoreExternalWhatsAppFlowReply({
       hasFlowResponseData: true,
       currentNodeType: "whatsappFlow",
+      isNewContact: false,
     }),
     false
   );
