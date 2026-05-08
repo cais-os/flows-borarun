@@ -1,0 +1,296 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+/* Font Face Declarations */
+@font-face {
+  font-family: 'Aloevera';
+  src: url('./assets/fonts/Aloevera-Regular.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Aloevera';
+  src: url('./assets/fonts/Aloevera-Light.otf') format('opentype');
+  font-weight: 300;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Aloevera';
+  src: url('./assets/fonts/Aloevera-Bold.otf') format('opentype');
+  font-weight: 700;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Aloevera';
+  src: url('./assets/fonts/Aloevera-Black.otf') format('opentype');
+  font-weight: 900;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Editor's Note";
+  src: url('./assets/fonts/Editor_sNote-Regular.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Editor's Note";
+  src: url('./assets/fonts/Editor_sNote-Light.otf') format('opentype');
+  font-weight: 300;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Editor's Note";
+  src: url('./assets/fonts/Editor_sNote-Bold.otf') format('opentype');
+  font-weight: 700;
+  font-style: normal;
+}
+
+@layer base {
+  :root {
+    --background: 240 5% 97%;
+    --foreground: 0 0% 0%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 0%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 0%;
+
+    /* BORARUN Primary: #daf46c (lime green vibrant) */
+    --primary: 70 83% 70%;
+    --primary-dark: 70 83% 70%;
+    --primary-foreground: 0 0% 0%;
+
+    /* BORARUN Secondary: #dedcca (light beige/cream) */
+    --secondary: 54 23% 83%;
+    --secondary-foreground: 0 0% 0%;
+
+    --muted: 220 13% 92%;
+    --muted-foreground: 220 13% 40%;
+
+    --accent: 70 83% 70%;
+    --accent-foreground: 0 0% 0%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 70 83% 70%;
+
+    --radius: 1.25rem;
+
+    /* Cal AI custom tokens */
+    --protein: 6 77% 58%;
+    --carb: 34 82% 57%;
+    --fat: 217 87% 59%;
+    --success: 142 71% 45%;
+    --warning: 38 92% 50%;
+    --danger: 4 90% 58%;
+
+    --orange: 25 95% 53%;
+    --blue: 217 91% 60%;
+    --green: 142 76% 36%;
+
+    --ring-bg: 220 13% 85%;
+    --streak-bg: 0 0% 100%;
+  }
+
+  .dark {
+    --background: 222 13% 7%;
+    --foreground: 0 0% 98%;
+
+    --card: 222 13% 10%;
+    --card-foreground: 0 0% 98%;
+
+    --popover: 222 13% 10%;
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 0 0% 98%;
+    --primary-dark: 0 0% 85%;
+    --primary-foreground: 222 13% 7%;
+
+    --secondary: 217 33% 18%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 217 33% 18%;
+    --muted-foreground: 215 20% 65%;
+
+    --accent: 217 33% 18%;
+    --accent-foreground: 0 0% 98%;
+
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 217 33% 18%;
+    --input: 217 33% 18%;
+    --ring: 213 27% 84%;
+
+    --ring-bg: 217 33% 18%;
+    --streak-bg: 217 33% 18%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    scrollbar-gutter: stable;
+    /* Fallback para navegadores que não suportam scrollbar-gutter */
+    overflow-y: scroll;
+  }
+
+  body {
+    @apply text-foreground bg-background;
+    font-family: 'Aloevera', sans-serif;
+    font-weight: 700;
+    /* Bold weight for primary font */
+    overflow-x: hidden;
+  }
+
+  html {
+    overflow-x: hidden;
+  }
+
+  /* BORARUN Brand Typography */
+  .font-brand {
+    font-family: 'Aloevera', sans-serif;
+    font-weight: 900;
+    /* Black weight for BORARUN logo */
+  }
+
+  .font-brand-secondary {
+    font-family: "Editor's Note", serif;
+    font-weight: 400;
+    /* Normal weight for secondary font */
+  }
+
+  .font-brand-tertiary {
+    font-family: 'Inter', sans-serif;
+    font-weight: 400;
+    /* Inter for readable body text */
+  }
+
+  .font-primary {
+    font-family: 'Aloevera', sans-serif;
+    font-weight: 400;
+    /* Primary font for buttons and UI elements */
+  }
+}
+
+/* Prevent layout shift when scrollbar appears */
+.layout-stable {
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+}
+
+/* Mobile viewport fix - considers browser UI elements */
+@media (max-width: 768px) {
+  .h-screen {
+    height: 100dvh;
+  }
+
+  .min-h-screen {
+    min-height: 100dvh;
+  }
+}
+
+/* Safe area insets support for mobile devices */
+@supports (padding: max(0px)) {
+  .pb-safe {
+    /* Adds padding for safe area insets */
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  }
+
+  .pt-safe {
+    padding-top: max(1rem, env(safe-area-inset-top));
+  }
+
+  .pl-safe {
+    padding-left: max(1rem, env(safe-area-inset-left));
+  }
+
+  .pr-safe {
+    padding-right: max(1rem, env(safe-area-inset-right));
+  }
+
+  .p-safe {
+    padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(0.5rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+  }
+
+  .mb-safe {
+    margin-bottom: max(0px, env(safe-area-inset-bottom));
+  }
+
+  .mt-safe {
+    margin-top: max(0px, env(safe-area-inset-top));
+  }
+}
+
+/* Fallback for browsers that don't support env() */
+@supports not (padding: max(0px)) {
+  .pb-safe {
+    padding-bottom: 1rem;
+  }
+
+  .pt-safe {
+    padding-top: 1rem;
+  }
+
+  .pl-safe {
+    padding-left: 1rem;
+  }
+
+  .pr-safe {
+    padding-right: 1rem;
+  }
+
+  .p-safe {
+    padding: 1rem;
+  }
+
+  .mb-safe {
+    margin-bottom: 0px;
+  }
+
+  .mt-safe {
+    margin-top: 0px;
+  }
+}
+
+/* Page bottom padding that accounts for bottom navigation and safe areas */
+.pb-nav {
+  /* Adds space for bottom navigation and safe area insets */
+  padding-bottom: calc(4rem + max(0px, env(safe-area-inset-bottom)));
+}
+
+@supports not (padding: max(0px)) {
+  .pb-nav {
+    padding-bottom: 4rem;
+  }
+}
+
+/* Page bottom padding for pages with FAB (like Balance) */
+.pb-nav-fab {
+  /* Adds space for bottom navigation, FAB, and safe area insets */
+  padding-bottom: calc(5rem + max(0px, env(safe-area-inset-bottom)));
+}
+
+@supports not (padding: max(0px)) {
+  .pb-nav-fab {
+    padding-bottom: 5rem;
+  }
+}

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">gudrun</string>
+    <string name="title_activity_main">gudrun</string>
+    <string name="package_name">com.govakreality.gudrun</string>
+    <string name="custom_url_scheme">com.govakreality.gudrun</string>
+</resources>
