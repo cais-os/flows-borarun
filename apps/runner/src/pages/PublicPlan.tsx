@@ -141,7 +141,7 @@ export default function PublicPlan() {
           </Card>
         )}
 
-        {data?.found !== false && !data?.plan && isGeneratingPlan && (
+        {data && data.found !== false && !data.plan && isGeneratingPlan && (
           <Card className="rounded-[20px] border-none bg-card p-5 shadow-sm">
             <div className="flex items-start gap-3">
               <Loader2 className="mt-0.5 h-5 w-5 shrink-0 animate-spin text-primary" />
@@ -161,7 +161,7 @@ export default function PublicPlan() {
           </Card>
         )}
 
-        {data?.found !== false && !data?.plan && !isGeneratingPlan && (
+        {data && data.found !== false && !data.plan && !isGeneratingPlan && (
           <Card className="rounded-[20px] border-none bg-card p-5 shadow-sm">
             <h2 className="break-words text-xl font-semibold">
               {hasFailedGeneration

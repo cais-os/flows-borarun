@@ -45,8 +45,10 @@ const { buildRunnerPlanUrl, getRunnerAppBaseUrl } = loadTypeScriptModule(
   }
 );
 const { mapPlanToRunnerRows } = loadTypeScriptModule("./plan-mapper.ts");
+const { buildRunnerWebAppMessage } = loadTypeScriptModule("./web-app-message.ts");
 const {
   coercePartialConflictRunnerPlanToGenerating,
+  ensureRunnerProfile,
   getCompletedPublicRunnerPlanAfterConflict,
   isUniqueViolation,
   sanitizeRunnerPlanForPublic,
@@ -132,6 +134,98 @@ test("chooses and trims runner app base URL", () => {
         previousPublicRunnerBaseUrl;
     }
   }
+});
+
+test("builds runner web app message with explicit link placeholder", () => {
+  assert.equal(
+    buildRunnerWebAppMessage({
+      template: "Oi {{nome}}, seu plano esta aqui: {{web_app_link}}",
+      link: "https://runner.example.com/plano/5511999990000",
+      variables: { nome: "Ana" },
+    }),
+    "Oi Ana, seu plano esta aqui: https://runner.example.com/plano/5511999990000"
+  );
+});
+
+test("appends runner web app link when template omits placeholder", () => {
+  assert.equal(
+    buildRunnerWebAppMessage({
+      template: "Seu plano esta pronto.",
+      link: "https://runner.example.com/plano/5511999990000",
+    }),
+    "Seu plano esta pronto.\n\nhttps://runner.example.com/plano/5511999990000"
+  );
+});
+
+test("ensureRunnerProfile can reset stale plan for a new web app link", async () => {
+  const calls = [];
+  const supabase = {
+    from(table) {
+      calls.push(["from", table]);
+
+      if (table === "runner_profiles") {
+        return {
+          upsert(payload, options) {
+            calls.push(["upsert", payload, options]);
+            return {
+              select() {
+                calls.push(["select"]);
+                return {
+                  async single() {
+                    calls.push(["single"]);
+                    return {
+                      data: { id: "profile-1", ...payload },
+                      error: null,
+                    };
+                  },
+                };
+              },
+            };
+          },
+        };
+      }
+
+      if (table === "training_plans") {
+        return {
+          delete() {
+            calls.push(["delete"]);
+            return {
+              async eq(column, value) {
+                calls.push(["eq", column, value]);
+                return { error: null };
+              },
+            };
+          },
+        };
+      }
+
+      throw new Error(`Unexpected table ${table}`);
+    },
+  };
+
+  const profile = await ensureRunnerProfile({
+    supabase,
+    phone: "+55 (11) 99999-0000",
+    conversationId: "conversation-2",
+    organizationId: "organization-1",
+    resetExistingPlan: true,
+  });
+
+  assert.equal(profile.normalized_phone, "5511999990000");
+  assert.deepEqual(asJson(calls[1]), [
+    "upsert",
+    {
+      phone: "+55 (11) 99999-0000",
+      normalized_phone: "5511999990000",
+      conversation_id: "conversation-2",
+      organization_id: "organization-1",
+      generation_status: "idle",
+      generated_at: null,
+      last_error: null,
+    },
+    { onConflict: "normalized_phone" },
+  ]);
+  assert.deepEqual(calls.at(-1), ["eq", "runner_profile_id", "profile-1"]);
 });
 
 test("maps plan weeks and days to Monday-based runner rows", () => {

@@ -10,6 +10,7 @@ import type {
   RandomizerNodeData,
   WaitForReplyNodeData,
   GeneratePdfNodeData,
+  WebAppNodeData,
   WaitTimerNodeData,
   AiCollectorNodeData,
   StravaConnectNodeData,
@@ -27,6 +28,12 @@ import {
 import { createGeneratedAudioAsset } from "@/lib/audio-assets";
 import { buildCapturedVariableValue } from "@/lib/captured-variable";
 import { generatePdf } from "@/lib/pdf-generator";
+import { ensureRunnerProfile } from "@/lib/runner/plan-store";
+import { buildRunnerPlanUrl, getRunnerAppBaseUrl } from "@/lib/runner/url";
+import {
+  buildRunnerWebAppMessage,
+  WEB_APP_LINK_VARIABLE,
+} from "@/lib/runner/web-app-message";
 import {
   buildStravaConnectUrl,
   buildStravaConnectMessage,
@@ -192,6 +199,8 @@ function getEstimatedNodeCostMs(node: FlowNode): number {
   switch (node.data.type) {
     case "generatePdf":
       return 45_000;
+    case "webApp":
+      return 6_000;
     case "payment":
       return 8_000;
     case "stravaConnect":
@@ -2320,6 +2329,112 @@ async function executeGeneratePdfNodeSafely(params: {
   return false;
 }
 
+async function executeWebAppNodeSafely(params: {
+  supabase: SupabaseClient;
+  organizationId: string;
+  metaConfig: MetaConfig;
+  conversationId: string;
+  contactPhone: string;
+  node: FlowNode;
+  data: WebAppNodeData;
+  inboundMessageId?: string;
+}): Promise<boolean> {
+  try {
+    if (!params.contactPhone.trim()) {
+      throw new Error("Cannot create runner web app link without contact phone.");
+    }
+
+    const webAppLink = buildRunnerPlanUrl({
+      baseUrl: getRunnerAppBaseUrl(),
+      phone: params.contactPhone,
+    });
+    const flowVariables = await getConversationVariables(
+      params.supabase,
+      params.conversationId
+    );
+    const runnerProfile = await ensureRunnerProfile({
+      supabase: params.supabase,
+      phone: params.contactPhone,
+      conversationId: params.conversationId,
+      organizationId: params.organizationId,
+      resetExistingPlan: true,
+    });
+    const updatedVariables = {
+      ...flowVariables,
+      [WEB_APP_LINK_VARIABLE]: webAppLink,
+      _runner_web_app_link: webAppLink,
+      _runner_profile_id: String(runnerProfile.id || ""),
+      _runner_web_app_generated_at: new Date().toISOString(),
+    };
+
+    const { error: variablesError } = await params.supabase
+      .from("conversations")
+      .update({ flow_variables: updatedVariables })
+      .eq("id", params.conversationId);
+
+    if (variablesError) {
+      throw variablesError;
+    }
+
+    const message = buildRunnerWebAppMessage({
+      template: params.data.message,
+      link: webAppLink,
+      variables: updatedVariables,
+    });
+
+    await applyTypingDelay(params.inboundMessageId, undefined, params.metaConfig);
+    const result = await sendMetaWhatsAppTextMessage(
+      {
+        to: params.contactPhone,
+        body: message,
+      },
+      params.metaConfig
+    );
+
+    await persistConversationMessage({
+      supabase: params.supabase,
+      conversationId: params.conversationId,
+      content: message,
+      type: "text",
+      sender: "bot",
+      nodeId: params.node.id,
+      waMessageId: result.messageId,
+      metadata: {
+        runner_profile_id: runnerProfile.id || null,
+        runner_web_app_link: webAppLink,
+      },
+    });
+
+    return true;
+  } catch (error) {
+    console.error("Flow engine: failed to send runner web app link", {
+      conversationId: params.conversationId,
+      nodeId: params.node.id,
+      error,
+    });
+
+    try {
+      await sendTextAndPersist({
+        supabase: params.supabase,
+        conversationId: params.conversationId,
+        contactPhone: params.contactPhone,
+        nodeId: params.node.id,
+        text:
+          "Tive um problema ao preparar seu link do plano agora. Ja estamos verificando isso e em instantes voce pode tentar novamente.",
+        metaConfig: params.metaConfig,
+        inboundMessageId: params.inboundMessageId,
+      });
+    } catch (messageError) {
+      console.error(
+        "Flow engine: failed to send runner web app failure notification",
+        messageError
+      );
+    }
+
+    return false;
+  }
+}
+
 async function executeTagConversationNode(params: {
   supabase: SupabaseClient;
   organizationId: string;
@@ -2659,6 +2774,34 @@ async function runFlowQueue(params: {
         queue,
       });
 
+      continue;
+    }
+
+    if (data.type === "webApp") {
+      const webAppSent = await executeWebAppNodeSafely({
+        supabase: params.supabase,
+        organizationId: params.organizationId,
+        metaConfig: params.metaConfig,
+        conversationId: params.conversationId,
+        contactPhone: params.contactPhone,
+        node: current,
+        data: data as WebAppNodeData,
+        inboundMessageId: params.inboundMessageId,
+      });
+
+      if (!webAppSent) {
+        await completeFlow(params.supabase, params.conversationId);
+        await completeFlowExecution(params.supabase, execId, "abandoned");
+        return "completed" as const;
+      }
+
+      await delay(DEFAULT_MESSAGE_ORDER_DELAY_MS);
+      await params.supabase
+        .from("conversations")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("id", params.conversationId);
+
+      queue.push(...findNextNodes(current.id, params.edges, params.nodes));
       continue;
     }
 

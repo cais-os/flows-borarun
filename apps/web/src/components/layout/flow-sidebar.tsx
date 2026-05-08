@@ -13,6 +13,7 @@ import {
   Link,
   Sparkles,
   BrainCircuit,
+  Smartphone,
 } from "lucide-react";
 import { NODE_TYPES } from "@/types/flow";
 import { NODE_CONFIG } from "@/lib/constants";
@@ -71,6 +72,11 @@ const nodeItems: PaletteNodeItem[] = [
     type: NODE_TYPES.GENERATE_PDF,
     icon: <FileText size={20} />,
     ...NODE_CONFIG[NODE_TYPES.GENERATE_PDF],
+  },
+  {
+    type: NODE_TYPES.WEB_APP,
+    icon: <Smartphone size={20} />,
+    ...NODE_CONFIG[NODE_TYPES.WEB_APP],
   },
   {
     type: NODE_TYPES.WAIT_TIMER,

@@ -10,6 +10,7 @@ import { TagConversationEditor } from "./tag-conversation-editor";
 import { RandomizerEditor } from "./randomizer-editor";
 import { WaitForReplyEditor } from "./wait-for-reply-editor";
 import { GeneratePdfEditor } from "./generate-pdf-editor";
+import { WebAppEditor } from "./web-app-editor";
 import { WaitTimerEditor } from "./wait-timer-editor";
 import { FinishFlowEditor } from "./finish-flow-editor";
 import { AiCollectorEditor } from "./ai-collector-editor";
@@ -26,6 +27,7 @@ import type {
   RandomizerNodeData,
   WaitForReplyNodeData,
   GeneratePdfNodeData,
+  WebAppNodeData,
   WaitTimerNodeData,
   FinishFlowNodeData,
   AiCollectorNodeData,
@@ -140,6 +142,12 @@ export function NodeEditorPanel() {
             <GeneratePdfEditor
               nodeId={selectedNodeId}
               data={nodeData as GeneratePdfNodeData}
+            />
+          )}
+          {nodeData.type === "webApp" && (
+            <WebAppEditor
+              nodeId={selectedNodeId}
+              data={nodeData as WebAppNodeData}
             />
           )}
           {nodeData.type === "waitTimer" && (

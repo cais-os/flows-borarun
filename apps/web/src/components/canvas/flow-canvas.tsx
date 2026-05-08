@@ -17,6 +17,7 @@ import "@xyflow/react/dist/style.css";
 import { useFlowStore } from "@/hooks/use-flow-store";
 import { NODE_TYPES } from "@/types/flow";
 import { createDefaultSplits } from "@/lib/constants";
+import { DEFAULT_WEB_APP_MESSAGE } from "@/lib/runner/web-app-message";
 import { createDefaultWaitRoutes } from "@/lib/wait-for-reply";
 
 import { TriggerNode } from "@/components/nodes/trigger-node";
@@ -25,6 +26,7 @@ import { TagConversationNode } from "@/components/nodes/tag-conversation-node";
 import { RandomizerNode } from "@/components/nodes/randomizer-node";
 import { WaitForReplyNode } from "@/components/nodes/wait-for-reply-node";
 import { GeneratePdfNode } from "@/components/nodes/generate-pdf-node";
+import { WebAppNode } from "@/components/nodes/web-app-node";
 import { WaitTimerNode } from "@/components/nodes/wait-timer-node";
 import { FinishFlowNode } from "@/components/nodes/finish-flow-node";
 import { AiCollectorNode } from "@/components/nodes/ai-collector-node";
@@ -41,6 +43,7 @@ import type {
   RandomizerNodeData,
   WaitForReplyNodeData,
   GeneratePdfNodeData,
+  WebAppNodeData,
   WaitTimerNodeData,
   FinishFlowNodeData,
   AiCollectorNodeData,
@@ -66,6 +69,7 @@ const nodeTypes = {
   [NODE_TYPES.RANDOMIZER]: RandomizerNode,
   [NODE_TYPES.WAIT_FOR_REPLY]: WaitForReplyNode,
   [NODE_TYPES.GENERATE_PDF]: GeneratePdfNode,
+  [NODE_TYPES.WEB_APP]: WebAppNode,
   [NODE_TYPES.WAIT_TIMER]: WaitTimerNode,
   [NODE_TYPES.FINISH_FLOW]: FinishFlowNode,
   [NODE_TYPES.AI_COLLECTOR]: AiCollectorNode,
@@ -119,6 +123,12 @@ export function getDefaultData(type: string, preset?: PaletteNodePreset) {
       } satisfies WaitForReplyNodeData;
     case NODE_TYPES.GENERATE_PDF:
       return { type: "generatePdf", label: "Gerar PDF", templateId: "" } satisfies GeneratePdfNodeData;
+    case NODE_TYPES.WEB_APP:
+      return {
+        type: "webApp",
+        label: "Web App",
+        message: DEFAULT_WEB_APP_MESSAGE,
+      } satisfies WebAppNodeData;
     case NODE_TYPES.WAIT_TIMER:
       return { type: "waitTimer", label: "Temporizador", timeoutMinutes: 45 } satisfies WaitTimerNodeData;
     case NODE_TYPES.FINISH_FLOW:

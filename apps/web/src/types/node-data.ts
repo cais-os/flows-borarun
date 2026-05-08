@@ -5,6 +5,7 @@ export type NodeData =
   | RandomizerNodeData
   | WaitForReplyNodeData
   | GeneratePdfNodeData
+  | WebAppNodeData
   | WaitTimerNodeData
   | FinishFlowNodeData
   | AiCollectorNodeData
@@ -143,6 +144,13 @@ export type GeneratePdfNodeData = {
   templateId: string;
   aiPrompt?: string;
   fileName?: string;
+  [key: string]: unknown;
+};
+
+export type WebAppNodeData = {
+  type: "webApp";
+  label: string;
+  message?: string;
   [key: string]: unknown;
 };
 

@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { mapPlanToRunnerRows } from "@/lib/runner/plan-mapper";
 import { normalizeRunnerPhone } from "@/lib/runner/phone";
 
-type RunnerSupabaseClient = SupabaseClient<any, any, any>;
+type RunnerSupabaseClient = SupabaseClient;
 type PublicRunnerProfile = ReturnType<typeof sanitizeRunnerProfileForPublic>;
 type PublicRunnerPlan = ReturnType<typeof sanitizeRunnerPlanForPublic>;
 type PublicRunnerTraining = ReturnType<typeof sanitizeRunnerTrainingForPublic>;
@@ -183,6 +183,7 @@ export async function ensureRunnerProfile(params: {
   phone: string;
   conversationId: string;
   organizationId: string;
+  resetExistingPlan?: boolean;
 }) {
   const normalizedPhone = normalizeRunnerPhone(params.phone);
   const { data, error } = await params.supabase
@@ -193,6 +194,9 @@ export async function ensureRunnerProfile(params: {
         normalized_phone: normalizedPhone,
         conversation_id: params.conversationId,
         organization_id: params.organizationId,
+        generation_status: "idle",
+        generated_at: null,
+        last_error: null,
       },
       { onConflict: "normalized_phone" }
     )
@@ -200,6 +204,16 @@ export async function ensureRunnerProfile(params: {
     .single();
 
   if (error) throw error;
+
+  if (params.resetExistingPlan) {
+    const { error: deletePlanError } = await params.supabase
+      .from("training_plans")
+      .delete()
+      .eq("runner_profile_id", data.id);
+
+    if (deletePlanError) throw deletePlanError;
+  }
+
   return data;
 }
 

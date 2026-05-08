@@ -32,6 +32,11 @@ export const NODE_CONFIG = {
     color: "#EF4444",
     description: "Gera um PDF personalizado com IA e envia pelo WhatsApp",
   },
+  [NODE_TYPES.WEB_APP]: {
+    label: "Web App",
+    color: "#06B6D4",
+    description: "Envia o link publico personalizado do plano no app",
+  },
   [NODE_TYPES.WAIT_TIMER]: {
     label: "Temporizador",
     color: "#F59E0B",

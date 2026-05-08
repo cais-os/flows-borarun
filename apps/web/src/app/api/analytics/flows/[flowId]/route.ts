@@ -34,6 +34,7 @@ function getNodeLabel(data: NodeData): string {
     randomizer: "Randomizador",
     tagConversation: "Adicionar tag",
     generatePdf: "Gerar PDF",
+    webApp: "Web App",
     waitTimer: "Aguardar tempo",
     finishFlow: "Finalizar flow",
     aiCollector: "AI Coletor",

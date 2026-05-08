@@ -19,6 +19,7 @@ export const NODE_TYPES = {
   RANDOMIZER: "randomizer",
   WAIT_FOR_REPLY: "waitForReply",
   GENERATE_PDF: "generatePdf",
+  WEB_APP: "webApp",
   WAIT_TIMER: "waitTimer",
   FINISH_FLOW: "finishFlow",
   AI_COLLECTOR: "aiCollector",

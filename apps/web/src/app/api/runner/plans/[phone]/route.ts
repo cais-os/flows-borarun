@@ -103,54 +103,77 @@ export async function OPTIONS() {
 export async function GET(request: Request, { params }: RouteContext) {
   const { phone } = await params;
   const supabase = createServerClient();
-  const webAppLink = buildWebAppLink(request, phone);
-  const publicPlan = await getPublicRunnerPlan({ supabase, phone });
+  let webAppLink = "";
 
-  if (!publicPlan) {
+  try {
+    webAppLink = buildWebAppLink(request, phone);
+    const publicPlan = await getPublicRunnerPlan({ supabase, phone });
+
+    if (!publicPlan) {
+      return jsonResponse(
+        {
+          profile: null,
+          plan: null,
+          trainings: [],
+          webAppLink,
+        },
+        { status: 404 }
+      );
+    }
+
+    return jsonResponse({
+      ...publicPlan,
+      webAppLink,
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to load runner plan";
+
+    console.error("[runner-plans] Failed to load plan:", error);
+
     return jsonResponse(
       {
+        error: message,
         profile: null,
         plan: null,
         trainings: [],
         webAppLink,
       },
-      { status: 404 }
+      { status: 500 }
     );
   }
-
-  return jsonResponse({
-    ...publicPlan,
-    webAppLink,
-  });
 }
 
 export async function POST(request: Request, { params }: RouteContext) {
   const { phone } = await params;
   const supabase = createServerClient();
-  const webAppLink = buildWebAppLink(request, phone);
-  const profile = await getRunnerProfileByPhone(supabase, phone);
-
-  if (!profile) {
-    return jsonResponse(
-      {
-        profile: null,
-        plan: null,
-        trainings: [],
-        webAppLink,
-      },
-      { status: 404 }
-    );
-  }
-
-  const existing = await getPublicRunnerPlan({ supabase, phone });
-  if (existing?.plan && existing.trainings.length > 0) {
-    return jsonResponse({
-      ...existing,
-      webAppLink,
-    });
-  }
+  let webAppLink = "";
+  let profile: Awaited<ReturnType<typeof getRunnerProfileByPhone>> | null = null;
 
   try {
+    webAppLink = buildWebAppLink(request, phone);
+    profile = await getRunnerProfileByPhone(supabase, phone);
+
+    if (!profile) {
+      return jsonResponse(
+        {
+          profile: null,
+          plan: null,
+          trainings: [],
+          webAppLink,
+        },
+        { status: 404 }
+      );
+    }
+
+    const existing = await getPublicRunnerPlan({ supabase, phone });
+    if (existing?.plan && existing.trainings.length > 0) {
+      return jsonResponse({
+        ...existing,
+        webAppLink,
+      });
+    }
+
     const { data: conversation, error: conversationError } = await supabase
       .from("conversations")
       .select("id, organization_id, flow_variables")
@@ -220,12 +243,14 @@ export async function POST(request: Request, { params }: RouteContext) {
         : "Failed to generate runner plan";
 
     try {
-      await markProfileGenerationStatus({
-        supabase,
-        profileId: profile.id,
-        status: "failed",
-        lastError: message,
-      });
+      if (profile) {
+        await markProfileGenerationStatus({
+          supabase,
+          profileId: profile.id,
+          status: "failed",
+          lastError: message,
+        });
+      }
     } catch (statusError) {
       console.error("[runner-plans] Failed to mark generation failure:", statusError);
     }
