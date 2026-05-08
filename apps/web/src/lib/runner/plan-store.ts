@@ -104,8 +104,7 @@ function isCompleteOrSafeConflictResult(
   return (
     !publicPlan ||
     !publicPlan.plan ||
-    publicPlan.trainings.length > 0 ||
-    isTerminalGenerationStatus(publicPlan.profile?.generation_status)
+    publicPlan.trainings.length > 0
   );
 }
 
@@ -117,12 +116,7 @@ export function coercePartialConflictRunnerPlanToGenerating(
   }
 
   return {
-    profile: publicPlan.profile
-      ? {
-          ...publicPlan.profile,
-          generation_status: "generating",
-        }
-      : null,
+    profile: publicPlan.profile,
     plan: null,
     trainings: [],
   };
@@ -152,6 +146,13 @@ export async function getCompletedPublicRunnerPlanAfterConflict(params: {
 
     if (isCompleteOrSafeConflictResult(latest)) {
       return latest;
+    }
+
+    if (
+      latest &&
+      isTerminalGenerationStatus(latest.profile?.generation_status)
+    ) {
+      return coercePartialConflictRunnerPlanToGenerating(latest);
     }
 
     if (attempt < attempts - 1 && delayMs > 0) {

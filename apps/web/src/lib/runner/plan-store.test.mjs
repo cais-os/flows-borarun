@@ -398,7 +398,7 @@ test("coerces exhausted partial conflict result back to generating", () => {
   });
 });
 
-test("keeps complete or terminal conflict result unchanged", () => {
+test("keeps complete conflict result unchanged", () => {
   const withTraining = {
     profile: {
       phone: "+55 11 99999-0000",
@@ -410,23 +410,38 @@ test("keeps complete or terminal conflict result unchanged", () => {
     plan: { goal_type: "distance" },
     trainings: [{ week_number: 1 }],
   };
-  const completedWithoutTraining = {
-    ...withTraining,
-    profile: {
-      ...withTraining.profile,
-      generation_status: "completed",
-    },
-    trainings: [],
-  };
 
   assert.deepEqual(
     asJson(coercePartialConflictRunnerPlanToGenerating(withTraining)),
     withTraining
   );
-  assert.deepEqual(
-    asJson(coercePartialConflictRunnerPlanToGenerating(completedWithoutTraining)),
-    completedWithoutTraining
-  );
+});
+
+test("coerces terminal partial conflict result to no plan", () => {
+  for (const generationStatus of ["completed", "failed"]) {
+    const terminalWithoutTraining = {
+      profile: {
+        phone: "+55 11 99999-0000",
+        normalized_phone: "5511999990000",
+        generation_status: generationStatus,
+        generated_at: "2026-05-08T10:00:00.000Z",
+        last_error: generationStatus === "failed" ? "generation failed" : null,
+      },
+      plan: { goal_type: "distance" },
+      trainings: [],
+    };
+
+    assert.deepEqual(
+      asJson(
+        coercePartialConflictRunnerPlanToGenerating(terminalWithoutTraining)
+      ),
+      {
+        profile: terminalWithoutTraining.profile,
+        plan: null,
+        trainings: [],
+      }
+    );
+  }
 });
 
 test("retries conflict reload until trainings are visible", async () => {
