@@ -33,6 +33,8 @@ function loadTypeScriptModule(relativePath, requireOverrides = {}) {
     process,
     console,
     URL,
+    setTimeout,
+    clearTimeout,
   });
   return cjsModule.exports;
 }
@@ -49,6 +51,7 @@ const { buildRunnerWebAppMessage } = loadTypeScriptModule("./web-app-message.ts"
 const {
   coercePartialConflictRunnerPlanToGenerating,
   ensureRunnerProfile,
+  generateAndPersistRunnerPlan,
   getCompletedPublicRunnerPlanAfterConflict,
   isUniqueViolation,
   sanitizeRunnerPlanForPublic,
@@ -57,6 +60,11 @@ const {
 } = loadTypeScriptModule("./plan-store.ts", {
   "@/lib/runner/phone": { normalizeRunnerPhone },
   "@/lib/runner/plan-mapper": { mapPlanToRunnerRows },
+  "@/lib/training-plan-generator": {
+    generateTrainingPlanData: async () => {
+      throw new Error("generateTrainingPlanData should be injected in tests");
+    },
+  },
 });
 
 function asJson(value) {
@@ -226,6 +234,109 @@ test("ensureRunnerProfile can reset stale plan for a new web app link", async ()
     { onConflict: "normalized_phone" },
   ]);
   assert.deepEqual(calls.at(-1), ["eq", "runner_profile_id", "profile-1"]);
+});
+
+test("generateAndPersistRunnerPlan saves an AI plan before returning the public plan", async () => {
+  const statusUpdates = [];
+  const conversationUpdates = [];
+  const generatedInputs = [];
+  const persistedCalls = [];
+  const publicPlan = {
+    profile: { generation_status: "completed" },
+    plan: { goal_type: "5 km" },
+    trainings: [{ week_number: 1 }],
+  };
+  const supabase = {
+    from(table) {
+      if (table === "runner_profiles") {
+        return {
+          update(payload) {
+            statusUpdates.push(payload);
+            return {
+              async eq(column, value) {
+                statusUpdates.push({ column, value });
+                return { error: null };
+              },
+            };
+          },
+        };
+      }
+
+      if (table === "conversations") {
+        return {
+          update(payload) {
+            conversationUpdates.push(payload);
+            return {
+              async eq(column, value) {
+                conversationUpdates.push({ column, value });
+                return { error: null };
+              },
+            };
+          },
+        };
+      }
+
+      throw new Error(`Unexpected table ${table}`);
+    },
+  };
+
+  const result = await generateAndPersistRunnerPlan({
+    supabase,
+    runnerProfileId: "profile-1",
+    conversationId: "conversation-1",
+    organizationId: "organization-1",
+    flowVariables: {
+      objetivo: "Correr 5 km",
+      data_inicio_plano: "2026-05-12",
+      web_app_link: "https://runner.example.com/plano/5511999990000",
+    },
+    now: () => new Date("2026-05-08T12:00:00.000Z"),
+    generatePlanData: async ({ flowVariables }) => {
+      generatedInputs.push(flowVariables);
+      return {
+        planData: {
+          perfil_atleta: { objetivo: "Correr 5 km" },
+          semanas: [],
+        },
+        coachingSummary: { risco: "baixo" },
+      };
+    },
+    persistPlan: async (params) => {
+      persistedCalls.push(params);
+      return publicPlan;
+    },
+  });
+
+  assert.deepEqual(asJson(statusUpdates[0]), {
+    generation_status: "generating",
+    last_error: null,
+  });
+  assert.deepEqual(asJson(generatedInputs[0]), {
+    objetivo: "Correr 5 km",
+    data_inicio_plano: "2026-05-12",
+    web_app_link: "https://runner.example.com/plano/5511999990000",
+  });
+  assert.equal(persistedCalls[0].runnerProfileId, "profile-1");
+  assert.equal(persistedCalls[0].conversationId, "conversation-1");
+  assert.equal(persistedCalls[0].organizationId, "organization-1");
+  assert.equal(persistedCalls[0].startDate, "2026-05-12");
+  assert.deepEqual(asJson(persistedCalls[0].planData), {
+    perfil_atleta: { objetivo: "Correr 5 km" },
+    semanas: [],
+  });
+
+  const savedVariables = conversationUpdates[0].flow_variables;
+  assert.equal(savedVariables._plan_generated_at, "2026-05-08T12:00:00.000Z");
+  assert.equal(
+    savedVariables._training_plan,
+    JSON.stringify({
+      perfil_atleta: { objetivo: "Correr 5 km" },
+      semanas: [],
+    })
+  );
+  assert.equal(savedVariables._coaching_summary, JSON.stringify({ risco: "baixo" }));
+  assert.deepEqual(asJson(result.publicPlan), publicPlan);
+  assert.deepEqual(asJson(result.flowVariables), asJson(savedVariables));
 });
 
 test("maps plan weeks and days to Monday-based runner rows", () => {

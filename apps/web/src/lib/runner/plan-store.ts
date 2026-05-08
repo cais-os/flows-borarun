@@ -2,6 +2,10 @@ import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { mapPlanToRunnerRows } from "@/lib/runner/plan-mapper";
 import { normalizeRunnerPhone } from "@/lib/runner/phone";
+import {
+  generateTrainingPlanData,
+  type TrainingPlanGenerationResult,
+} from "@/lib/training-plan-generator";
 
 type RunnerSupabaseClient = SupabaseClient;
 type PublicRunnerProfile = ReturnType<typeof sanitizeRunnerProfileForPublic>;
@@ -12,6 +16,11 @@ type PublicRunnerPlanPayload = {
   plan: PublicRunnerPlan;
   trainings: PublicRunnerTraining[];
 };
+type FlowVariables = Record<string, string>;
+type GenerateRunnerPlanData = (params: {
+  flowVariables: FlowVariables;
+}) => Promise<TrainingPlanGenerationResult>;
+type PersistRunnerPlanFn = typeof persistRunnerPlan;
 
 const PROFILE_INTERNAL_COLUMNS =
   "id, phone, normalized_phone, conversation_id, organization_id, generation_status, generated_at, last_error";
@@ -20,6 +29,7 @@ const PLAN_PUBLIC_COLUMNS =
 const PLAN_QUERY_COLUMNS = `id, ${PLAN_PUBLIC_COLUMNS}`;
 const TRAINING_PUBLIC_COLUMNS =
   "week_number, day_of_week, date, type, name, title, description, distance, pace, duration, elapsed_time, completed, completed_at, actual_distance, actual_elapsed_time, actual_time, actual_pace, difficulty_level, feedbacks, source";
+const DEFAULT_RUNNER_PLAN_GENERATION_TIMEOUT_MS = 45_000;
 
 export function sanitizeRunnerProfileForPublic(
   profile: Record<string, unknown> | null | undefined
@@ -92,6 +102,60 @@ export function isUniqueViolation(error: unknown) {
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function serializePlanVariable(value: Record<string, unknown>) {
+  return JSON.stringify(value);
+}
+
+function resolvePlanStartDate(flowVariables: FlowVariables, generatedAt: string) {
+  return typeof flowVariables.data_inicio_plano === "string" &&
+    /^\d{4}-\d{2}-\d{2}/.test(flowVariables.data_inicio_plano)
+    ? flowVariables.data_inicio_plano.slice(0, 10)
+    : generatedAt.slice(0, 10);
+}
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  message: string
+): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+export async function markRunnerProfileGenerationStatus(params: {
+  supabase: RunnerSupabaseClient;
+  profileId: string;
+  status: "generating" | "failed";
+  lastError?: string;
+}) {
+  const payload =
+    params.status === "failed"
+      ? {
+          generation_status: params.status,
+          last_error: params.lastError || "Failed to generate runner plan",
+        }
+      : {
+          generation_status: params.status,
+          last_error: null,
+        };
+
+  const { error } = await params.supabase
+    .from("runner_profiles")
+    .update(payload)
+    .eq("id", params.profileId);
+
+  if (error) throw error;
 }
 
 function isTerminalGenerationStatus(status: unknown) {
@@ -355,4 +419,83 @@ export async function persistRunnerPlan(params: {
     supabase: params.supabase,
     phone: String(profile.phone || ""),
   });
+}
+
+export async function generateAndPersistRunnerPlan(params: {
+  supabase: RunnerSupabaseClient;
+  runnerProfileId: string;
+  conversationId: string;
+  organizationId: string;
+  flowVariables: FlowVariables;
+  generationTimeoutMs?: number;
+  now?: () => Date;
+  generatePlanData?: GenerateRunnerPlanData;
+  persistPlan?: PersistRunnerPlanFn;
+}) {
+  const generatePlanData = params.generatePlanData || generateTrainingPlanData;
+  const persistPlan = params.persistPlan || persistRunnerPlan;
+
+  await markRunnerProfileGenerationStatus({
+    supabase: params.supabase,
+    profileId: params.runnerProfileId,
+    status: "generating",
+  });
+
+  try {
+    const { planData, coachingSummary } = await withTimeout(
+      generatePlanData({
+        flowVariables: params.flowVariables,
+      }),
+      params.generationTimeoutMs ?? DEFAULT_RUNNER_PLAN_GENERATION_TIMEOUT_MS,
+      "Runner plan generation timed out"
+    );
+    const planGeneratedAt = (params.now || (() => new Date()))().toISOString();
+    const startDate = resolvePlanStartDate(params.flowVariables, planGeneratedAt);
+    const nextFlowVariables: FlowVariables = {
+      ...params.flowVariables,
+      _training_plan: serializePlanVariable(planData),
+      _coaching_summary: serializePlanVariable(coachingSummary),
+      _plan_generated_at: planGeneratedAt,
+    };
+
+    const { error: updateConversationError } = await params.supabase
+      .from("conversations")
+      .update({ flow_variables: nextFlowVariables })
+      .eq("id", params.conversationId);
+
+    if (updateConversationError) throw updateConversationError;
+
+    const publicPlan = await persistPlan({
+      supabase: params.supabase,
+      runnerProfileId: params.runnerProfileId,
+      conversationId: params.conversationId,
+      organizationId: params.organizationId,
+      startDate,
+      planData,
+      coachingSummary,
+    });
+
+    return {
+      publicPlan,
+      flowVariables: nextFlowVariables,
+      planData,
+      coachingSummary,
+    };
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to generate runner plan";
+
+    try {
+      await markRunnerProfileGenerationStatus({
+        supabase: params.supabase,
+        profileId: params.runnerProfileId,
+        status: "failed",
+        lastError: message,
+      });
+    } catch (statusError) {
+      console.error("[runner-plans] Failed to mark generation failure:", statusError);
+    }
+
+    throw error;
+  }
 }

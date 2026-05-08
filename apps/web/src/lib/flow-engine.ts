@@ -28,7 +28,10 @@ import {
 import { createGeneratedAudioAsset } from "@/lib/audio-assets";
 import { buildCapturedVariableValue } from "@/lib/captured-variable";
 import { generatePdf } from "@/lib/pdf-generator";
-import { ensureRunnerProfile } from "@/lib/runner/plan-store";
+import {
+  ensureRunnerProfile,
+  generateAndPersistRunnerPlan,
+} from "@/lib/runner/plan-store";
 import { buildRunnerPlanUrl, getRunnerAppBaseUrl } from "@/lib/runner/url";
 import {
   buildRunnerWebAppMessage,
@@ -116,6 +119,7 @@ const PDF_POST_SEND_SETTLE_MS = 750;
 const PDF_GENERATION_TIMEOUT_MS = 90_000;
 const PDF_DELIVERY_TIMEOUT_MS = 45_000;
 const PDF_GENERATION_MAX_ATTEMPTS = 2;
+const WEB_APP_GENERATION_TIMEOUT_MS = 45_000;
 const DEFAULT_MESSAGE_ORDER_DELAY_MS = 900;
 const AUDIO_MESSAGE_ORDER_DELAY_MS = 350;
 const UPCOMING_AUDIO_PREWARM_LIMIT = 2;
@@ -200,7 +204,7 @@ function getEstimatedNodeCostMs(node: FlowNode): number {
     case "generatePdf":
       return 45_000;
     case "webApp":
-      return 6_000;
+      return WEB_APP_GENERATION_TIMEOUT_MS;
     case "payment":
       return 8_000;
     case "stravaConnect":
@@ -2367,19 +2371,23 @@ async function executeWebAppNodeSafely(params: {
       _runner_web_app_generated_at: new Date().toISOString(),
     };
 
-    const { error: variablesError } = await params.supabase
-      .from("conversations")
-      .update({ flow_variables: updatedVariables })
-      .eq("id", params.conversationId);
-
-    if (variablesError) {
-      throw variablesError;
+    if (!runnerProfile.id) {
+      throw new Error("Runner profile was created without an id.");
     }
+
+    const generationResult = await generateAndPersistRunnerPlan({
+      supabase: params.supabase,
+      runnerProfileId: String(runnerProfile.id),
+      conversationId: params.conversationId,
+      organizationId: params.organizationId,
+      flowVariables: updatedVariables,
+      generationTimeoutMs: WEB_APP_GENERATION_TIMEOUT_MS,
+    });
 
     const message = buildRunnerWebAppMessage({
       template: params.data.message,
       link: webAppLink,
-      variables: updatedVariables,
+      variables: generationResult.flowVariables,
     });
 
     await applyTypingDelay(params.inboundMessageId, undefined, params.metaConfig);
@@ -2402,6 +2410,7 @@ async function executeWebAppNodeSafely(params: {
       metadata: {
         runner_profile_id: runnerProfile.id || null,
         runner_web_app_link: webAppLink,
+        runner_plan_generated: true,
       },
     });
 
@@ -2420,7 +2429,7 @@ async function executeWebAppNodeSafely(params: {
         contactPhone: params.contactPhone,
         nodeId: params.node.id,
         text:
-          "Tive um problema ao preparar seu link do plano agora. Ja estamos verificando isso e em instantes voce pode tentar novamente.",
+          "Tive um problema ao gerar seu plano agora. Ja estamos verificando isso e em instantes voce pode tentar novamente.",
         metaConfig: params.metaConfig,
         inboundMessageId: params.inboundMessageId,
       });
