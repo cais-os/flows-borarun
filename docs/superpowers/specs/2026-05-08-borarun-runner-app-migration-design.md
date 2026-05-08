@@ -9,6 +9,7 @@ Approved direction from the user:
 - Add a new flow node named "Web App" that sends a personalized public runner-app link to the WhatsApp user.
 - The runner app must be able to generate the training plan with AI inside the web app too.
 - The public runner URL must include the user's phone number.
+- Authentication, subscription UI, and subscription gating from the original BoraRun app are not part of the final runner experience. They can remain temporarily during migration if that keeps the app easier to move, but payment and premium rules belong to the current flows system.
 
 ## Context
 
@@ -27,12 +28,14 @@ The main architectural risk is forcing the BoraRun Vite app into the existing Ne
 - Let the new node either generate a plan before sending the link or send a link to a plan that can be generated inside the runner app.
 - Let the runner app generate a training plan with AI through a server-side API, never from the browser directly.
 - Keep the current PDF flow available so the user can manually swap active flows after testing.
+- Treat original BoraRun auth and subscription code as migration carry-over only, then remove or bypass it once the public runner route is stable.
 
 ## Non-Goals
 
 - Do not replace the current active flow automatically.
 - Do not remove the existing PDF node.
 - Do not require athlete login for the first version of the runner link.
+- Do not use the original BoraRun subscription gating, checkout, or plan-access rules in the final runner experience.
 - Do not port the full flow builder into the BoraRun app.
 - Do not expose OpenAI, Supabase service role, Stripe, or Mercado Pago secrets to the runner frontend.
 
@@ -179,11 +182,31 @@ Initial adaptation:
 - Keep Vite/React and React Router for lower migration risk.
 - Keep BoraRun components, hooks, assets, and styles.
 - Remove or bypass login requirements for the public plan route.
+- Remove or bypass subscription checks, subscription banners, checkout pages, and plan-lock rules for the public runner experience.
 - Add a public route `/plano/:phone`.
-- Keep protected/authenticated routes only if they compile cleanly and do not block the public plan route.
+- Keep protected/authenticated routes only temporarily if they compile cleanly and do not block the public plan route. After the migration is stable, delete or isolate auth-dependent routes that are not needed.
 - Adjust Supabase client usage so public reads go through safe server/API endpoints when needed.
 
 The public route should be the first production-ready path. Other BoraRun app pages can remain present, but the migration is successful only when `/plano/:phone` can render the generated plan end to end.
+
+## Auth And Subscription Scope
+
+The final runner app should be a public plan viewer and training experience launched from WhatsApp. It should not own subscription state.
+
+Authentication:
+
+- No login is required to open `/plano/:phone`.
+- Auth code from the original BoraRun app can be copied during the first migration only if removing it immediately would slow down the move.
+- Auth-dependent pages should not be part of the critical public flow.
+- After the public runner route works, remove or quarantine unused auth screens, auth hooks, and protected-route wrappers.
+
+Subscriptions:
+
+- The runner app should not decide whether the user is premium.
+- The runner app should not create checkout sessions or manage customer portals.
+- Subscription banners and week-locking from the original BoraRun app should be removed or bypassed.
+- Premium conversion, payment links, subscription status, and follow-up messaging stay in `apps/web` through the flow builder, payment nodes, agentic loop, Stripe/Mercado Pago integrations, and conversation records.
+- If the runner app needs to show a premium CTA, it should be presentation-only and route the user back to WhatsApp or a flow-generated payment path rather than owning billing logic.
 
 ## Supabase
 
@@ -195,6 +218,7 @@ Use this storage direction:
 - Adapt or recreate `training_plans` so plans can belong to `runner_profile_id` for public WhatsApp users, while preserving compatibility with the original app's expected fields.
 - Adapt or recreate `weekly_trainings` so each row belongs to `training_plan_id` and can be rendered by the BoraRun UI.
 - Keep auth-owned columns from the source app only where authenticated app routes still need them; the public `/plano/:phone` route should not require `auth.users`.
+- Do not migrate subscription tables as active runner-app dependencies unless another part of the existing flows system requires them.
 - Keep `conversations.flow_variables._training_plan`, `_coaching_summary`, `_plan_generated_at`, and `_runner_app_link` updated for the flow builder and coach context.
 
 Migration rules:
@@ -228,14 +252,16 @@ To keep access to future improvements from the original BoraRun repo:
 ## Rollout
 
 1. Add `apps/runner` and get it building locally.
-2. Add or adapt Supabase schema needed for runner plans.
-3. Add public plan loading/generation APIs.
-4. Add `/plano/:phone` to the runner app.
-5. Add the new `Web App` node in the flow builder UI.
-6. Add flow-engine execution for the node.
-7. Verify with a test conversation and phone number.
-8. Leave existing active flows unchanged.
-9. User manually swaps the active flow from PDF node to Web App node after testing.
+2. Bypass auth and subscription checks for the public `/plano/:phone` path.
+3. Add or adapt Supabase schema needed for runner plans.
+4. Add public plan loading/generation APIs.
+5. Add `/plano/:phone` to the runner app.
+6. Add the new `Web App` node in the flow builder UI.
+7. Add flow-engine execution for the node.
+8. Verify with a test conversation and phone number.
+9. Remove or isolate unused auth/subscription code after the migrated public path is stable.
+10. Leave existing active flows unchanged.
+11. User manually swaps the active flow from PDF node to Web App node after testing.
 
 ## Verification
 
@@ -249,6 +275,7 @@ Minimum verification before calling the implementation complete:
 - Public runner route opens by phone with no login.
 - If no plan exists, the runner app can generate one through the server-side API.
 - If a plan exists, the runner app renders it without regenerating.
+- Public plan viewing is not blocked by login, trial status, subscription status, or week-locking logic from the original BoraRun app.
 - Existing PDF node still works or remains untouched by the change.
 
 ## Open Implementation Notes
