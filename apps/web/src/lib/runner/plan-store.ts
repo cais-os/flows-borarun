@@ -4,6 +4,14 @@ import { mapPlanToRunnerRows } from "@/lib/runner/plan-mapper";
 import { normalizeRunnerPhone } from "@/lib/runner/phone";
 
 type RunnerSupabaseClient = SupabaseClient<any, any, any>;
+type PublicRunnerProfile = ReturnType<typeof sanitizeRunnerProfileForPublic>;
+type PublicRunnerPlan = ReturnType<typeof sanitizeRunnerPlanForPublic>;
+type PublicRunnerTraining = ReturnType<typeof sanitizeRunnerTrainingForPublic>;
+type PublicRunnerPlanPayload = {
+  profile: PublicRunnerProfile;
+  plan: PublicRunnerPlan;
+  trainings: PublicRunnerTraining[];
+};
 
 const PROFILE_INTERNAL_COLUMNS =
   "id, phone, normalized_phone, conversation_id, organization_id, generation_status, generated_at, last_error";
@@ -80,6 +88,78 @@ export function isUniqueViolation(error: unknown) {
     (typeof candidate.message === "string" &&
       candidate.message.toLowerCase().includes("duplicate key"))
   );
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTerminalGenerationStatus(status: unknown) {
+  return status === "completed" || status === "failed";
+}
+
+function isCompleteOrSafeConflictResult(
+  publicPlan: PublicRunnerPlanPayload | null
+) {
+  return (
+    !publicPlan ||
+    !publicPlan.plan ||
+    publicPlan.trainings.length > 0 ||
+    isTerminalGenerationStatus(publicPlan.profile?.generation_status)
+  );
+}
+
+export function coercePartialConflictRunnerPlanToGenerating(
+  publicPlan: PublicRunnerPlanPayload | null
+) {
+  if (!publicPlan || isCompleteOrSafeConflictResult(publicPlan)) {
+    return publicPlan;
+  }
+
+  return {
+    profile: publicPlan.profile
+      ? {
+          ...publicPlan.profile,
+          generation_status: "generating",
+        }
+      : null,
+    plan: null,
+    trainings: [],
+  };
+}
+
+export async function getCompletedPublicRunnerPlanAfterConflict(params: {
+  supabase: RunnerSupabaseClient;
+  phone: string;
+  attempts?: number;
+  delayMs?: number;
+  loadPublicPlan?: () => Promise<PublicRunnerPlanPayload | null>;
+}) {
+  const attempts = Math.max(1, params.attempts ?? 5);
+  const delayMs = Math.max(0, params.delayMs ?? 250);
+  const loadPublicPlan =
+    params.loadPublicPlan ||
+    (() =>
+      getPublicRunnerPlan({
+        supabase: params.supabase,
+        phone: params.phone,
+      }));
+
+  let latest: PublicRunnerPlanPayload | null = null;
+
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    latest = await loadPublicPlan();
+
+    if (isCompleteOrSafeConflictResult(latest)) {
+      return latest;
+    }
+
+    if (attempt < attempts - 1 && delayMs > 0) {
+      await delay(delayMs);
+    }
+  }
+
+  return coercePartialConflictRunnerPlanToGenerating(latest);
 }
 
 export async function getRunnerProfileByPhone(
@@ -215,7 +295,7 @@ export async function persistRunnerPlan(params: {
 
   if (planResult.error) {
     if (!existingPlan && isUniqueViolation(planResult.error)) {
-      return getPublicRunnerPlan({
+      return getCompletedPublicRunnerPlanAfterConflict({
         supabase: params.supabase,
         phone: String(profile.phone || ""),
       });

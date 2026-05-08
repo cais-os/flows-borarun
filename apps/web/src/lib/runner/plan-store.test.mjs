@@ -46,6 +46,8 @@ const { buildRunnerPlanUrl, getRunnerAppBaseUrl } = loadTypeScriptModule(
 );
 const { mapPlanToRunnerRows } = loadTypeScriptModule("./plan-mapper.ts");
 const {
+  coercePartialConflictRunnerPlanToGenerating,
+  getCompletedPublicRunnerPlanAfterConflict,
   isUniqueViolation,
   sanitizeRunnerPlanForPublic,
   sanitizeRunnerProfileForPublic,
@@ -359,4 +361,103 @@ test("detects postgres unique violations for idempotent reload", () => {
   );
   assert.equal(isUniqueViolation({ code: "42P01", message: "missing table" }), false);
   assert.equal(isUniqueViolation(null), false);
+});
+
+test("coerces exhausted partial conflict result back to generating", () => {
+  const publicPlan = coercePartialConflictRunnerPlanToGenerating({
+    profile: {
+      phone: "+55 11 99999-0000",
+      normalized_phone: "5511999990000",
+      generation_status: "generating",
+      generated_at: null,
+      last_error: null,
+    },
+    plan: {
+      goal_type: "distance",
+      goal_distance: 5,
+      race_date: null,
+      start_date: "2026-05-11",
+      total_weeks: 8,
+      total_distance: 120,
+      completed_distance: 0,
+      completed_weeks: 0,
+    },
+    trainings: [],
+  });
+
+  assert.deepEqual(asJson(publicPlan), {
+    profile: {
+      phone: "+55 11 99999-0000",
+      normalized_phone: "5511999990000",
+      generation_status: "generating",
+      generated_at: null,
+      last_error: null,
+    },
+    plan: null,
+    trainings: [],
+  });
+});
+
+test("keeps complete or terminal conflict result unchanged", () => {
+  const withTraining = {
+    profile: {
+      phone: "+55 11 99999-0000",
+      normalized_phone: "5511999990000",
+      generation_status: "generating",
+      generated_at: null,
+      last_error: null,
+    },
+    plan: { goal_type: "distance" },
+    trainings: [{ week_number: 1 }],
+  };
+  const completedWithoutTraining = {
+    ...withTraining,
+    profile: {
+      ...withTraining.profile,
+      generation_status: "completed",
+    },
+    trainings: [],
+  };
+
+  assert.deepEqual(
+    asJson(coercePartialConflictRunnerPlanToGenerating(withTraining)),
+    withTraining
+  );
+  assert.deepEqual(
+    asJson(coercePartialConflictRunnerPlanToGenerating(completedWithoutTraining)),
+    completedWithoutTraining
+  );
+});
+
+test("retries conflict reload until trainings are visible", async () => {
+  const partial = {
+    profile: {
+      phone: "+55 11 99999-0000",
+      normalized_phone: "5511999990000",
+      generation_status: "generating",
+      generated_at: null,
+      last_error: null,
+    },
+    plan: { goal_type: "distance" },
+    trainings: [],
+  };
+  const complete = {
+    ...partial,
+    trainings: [{ week_number: 1 }],
+  };
+  const calls = [];
+
+  const result = await getCompletedPublicRunnerPlanAfterConflict({
+    supabase: {},
+    phone: "+55 11 99999-0000",
+    attempts: 3,
+    delayMs: 0,
+    loadPublicPlan: async () => {
+      calls.push(Date.now());
+      return calls.length === 1 ? partial : complete;
+    },
+  });
+
+  assert.equal(calls.length, 2);
+  assert.deepEqual(asJson(result), complete);
 });
