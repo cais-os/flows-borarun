@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
-import { CalendarDays, Loader2, RefreshCw, Route } from "lucide-react";
+import { AlertCircle, CalendarDays, Loader2, RefreshCw, Route } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -40,6 +40,17 @@ export default function PublicPlan() {
     () => groupByWeek(data?.trainings || []),
     [data?.trainings]
   );
+  const generationStatus = data?.profile?.generation_status;
+  const isGeneratingPlan = generationStatus === "generating";
+  const hasFailedGeneration = generationStatus === "failed";
+  const canGenerate =
+    !data?.plan &&
+    data?.found !== false &&
+    !isGeneratingPlan &&
+    (generationStatus === "idle" ||
+      generationStatus === "failed" ||
+      generationStatus === null ||
+      generationStatus === undefined);
 
   useEffect(() => {
     let alive = true;
@@ -114,17 +125,58 @@ export default function PublicPlan() {
           </div>
         )}
 
-        {!data?.plan && (
+        {data?.found === false && (
           <Card className="rounded-[20px] border-none bg-card p-5 shadow-sm">
-            <h2 className="text-xl font-semibold">Plano ainda nao gerado</h2>
+            <div className="flex items-start gap-3">
+              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
+              <div className="min-w-0">
+                <h2 className="break-words text-xl font-semibold">
+                  Link nao encontrado
+                </h2>
+                <p className="mt-2 break-words text-sm text-muted-foreground">
+                  Peca um novo link pelo WhatsApp.
+                </p>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {data?.found !== false && !data?.plan && isGeneratingPlan && (
+          <Card className="rounded-[20px] border-none bg-card p-5 shadow-sm">
+            <div className="flex items-start gap-3">
+              <Loader2 className="mt-0.5 h-5 w-5 shrink-0 animate-spin text-primary" />
+              <div className="min-w-0">
+                <h2 className="break-words text-xl font-semibold">
+                  Plano em geracao
+                </h2>
+                <p className="mt-2 break-words text-sm text-muted-foreground">
+                  Estamos montando seu plano. Volte em instantes para conferir.
+                </p>
+              </div>
+            </div>
+            <Button className="mt-5 w-full font-semibold" disabled>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Gerando plano
+            </Button>
+          </Card>
+        )}
+
+        {data?.found !== false && !data?.plan && !isGeneratingPlan && (
+          <Card className="rounded-[20px] border-none bg-card p-5 shadow-sm">
+            <h2 className="break-words text-xl font-semibold">
+              {hasFailedGeneration
+                ? "Nao foi possivel gerar o plano"
+                : "Plano ainda nao gerado"}
+            </h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              Vamos montar seu plano com base nas respostas enviadas pelo
-              WhatsApp.
+              {hasFailedGeneration && data?.profile?.last_error
+                ? data.profile.last_error
+                : "Vamos montar seu plano com base nas respostas enviadas pelo WhatsApp."}
             </p>
             <Button
               className="mt-5 w-full font-semibold"
               onClick={generate}
-              disabled={generating}
+              disabled={generating || !canGenerate}
             >
               {generating ? (
                 <>
@@ -145,9 +197,9 @@ export default function PublicPlan() {
           <>
             <Card className="rounded-[20px] border-none bg-card p-5 shadow-sm">
               <div className="flex items-start justify-between gap-4">
-                <div>
+                <div className="min-w-0">
                   <p className="text-sm text-muted-foreground">Objetivo</p>
-                  <h2 className="mt-1 text-2xl font-bold">
+                  <h2 className="mt-1 break-words text-2xl font-bold">
                     {data.plan.goal_type || "Corrida"}
                   </h2>
                 </div>
@@ -175,6 +227,18 @@ export default function PublicPlan() {
             </Card>
 
             <section className="mt-5 space-y-4">
+              {weeks.length === 0 && (
+                <Card className="rounded-[20px] border-none bg-card p-5 shadow-sm">
+                  <h3 className="break-words text-xl font-bold">
+                    Treinos ainda nao disponiveis
+                  </h3>
+                  <p className="mt-2 break-words text-sm text-muted-foreground">
+                    O resumo do plano ja esta pronto, mas os treinos ainda nao
+                    foram carregados para este link.
+                  </p>
+                </Card>
+              )}
+
               {weeks.map(([weekNumber, trainings]) => (
                 <Card
                   key={weekNumber}
@@ -192,11 +256,11 @@ export default function PublicPlan() {
                         className="rounded-xl border border-border p-3"
                       >
                         <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="font-semibold">
+                          <div className="min-w-0">
+                            <p className="break-words font-semibold">
                               {training.title || training.name || "Treino"}
                             </p>
-                            <p className="mt-1 text-xs text-muted-foreground">
+                            <p className="mt-1 break-words text-xs text-muted-foreground">
                               {training.day_of_week || "Dia a definir"}
                               {training.description
                                 ? ` - ${training.description}`
