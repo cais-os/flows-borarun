@@ -45,6 +45,19 @@ const { buildRunnerPlanUrl, getRunnerAppBaseUrl } = loadTypeScriptModule(
   }
 );
 const { mapPlanToRunnerRows } = loadTypeScriptModule("./plan-mapper.ts");
+const {
+  isUniqueViolation,
+  sanitizeRunnerPlanForPublic,
+  sanitizeRunnerProfileForPublic,
+  sanitizeRunnerTrainingForPublic,
+} = loadTypeScriptModule("./plan-store.ts", {
+  "@/lib/runner/phone": { normalizeRunnerPhone },
+  "@/lib/runner/plan-mapper": { mapPlanToRunnerRows },
+});
+
+function asJson(value) {
+  return JSON.parse(JSON.stringify(value));
+}
 
 test("normalizes phone to digits", () => {
   assert.equal(normalizeRunnerPhone("+55 (11) 99999-0000"), "5511999990000");
@@ -228,4 +241,122 @@ test("infers long and interval training types from Portuguese plan text", () => 
 
   assert.equal(result.trainings[0].type, "long");
   assert.equal(result.trainings[1].type, "interval");
+});
+
+test("sanitizes public runner profile fields", () => {
+  const publicProfile = sanitizeRunnerProfileForPublic({
+    id: "profile-1",
+    phone: "+55 11 99999-0000",
+    normalized_phone: "5511999990000",
+    generation_status: "completed",
+    generated_at: "2026-05-08T10:00:00.000Z",
+    last_error: null,
+    public_access_key: "secret",
+    conversation_id: "conversation-1",
+    organization_id: "organization-1",
+    created_at: "2026-05-01T10:00:00.000Z",
+    updated_at: "2026-05-02T10:00:00.000Z",
+  });
+
+  assert.deepEqual(asJson(publicProfile), {
+    phone: "+55 11 99999-0000",
+    normalized_phone: "5511999990000",
+    generation_status: "completed",
+    generated_at: "2026-05-08T10:00:00.000Z",
+    last_error: null,
+  });
+});
+
+test("sanitizes public runner plan fields", () => {
+  const publicPlan = sanitizeRunnerPlanForPublic({
+    id: "plan-1",
+    runner_profile_id: "profile-1",
+    conversation_id: "conversation-1",
+    organization_id: "organization-1",
+    raw_plan: { hidden: true },
+    coaching_summary: { hidden: true },
+    goal_type: "distance",
+    goal_distance: 5,
+    race_date: "2026-07-01",
+    start_date: "2026-05-11",
+    total_weeks: 8,
+    total_distance: 120,
+    completed_distance: 10,
+    completed_weeks: 1,
+    created_at: "2026-05-01T10:00:00.000Z",
+    updated_at: "2026-05-02T10:00:00.000Z",
+  });
+
+  assert.deepEqual(asJson(publicPlan), {
+    goal_type: "distance",
+    goal_distance: 5,
+    race_date: "2026-07-01",
+    start_date: "2026-05-11",
+    total_weeks: 8,
+    total_distance: 120,
+    completed_distance: 10,
+    completed_weeks: 1,
+  });
+});
+
+test("sanitizes public runner training fields", () => {
+  const publicTraining = sanitizeRunnerTrainingForPublic({
+    id: "training-1",
+    training_plan_id: "plan-1",
+    week_number: 1,
+    day_of_week: "Segunda",
+    date: "2026-05-11",
+    type: "easy",
+    name: "Rodagem",
+    title: "Rodagem leve",
+    description: "3 km leve",
+    distance: 3,
+    pace: "8:00/km",
+    duration: 24,
+    elapsed_time: 1440,
+    completed: true,
+    completed_at: "2026-05-11T12:00:00.000Z",
+    actual_distance: 3.1,
+    actual_elapsed_time: 1450,
+    actual_time: "00:24:10",
+    actual_pace: "7:48/km",
+    difficulty_level: 2,
+    feedbacks: ["ok"],
+    source: "plan",
+    created_at: "2026-05-01T10:00:00.000Z",
+    updated_at: "2026-05-02T10:00:00.000Z",
+  });
+
+  assert.deepEqual(asJson(publicTraining), {
+    week_number: 1,
+    day_of_week: "Segunda",
+    date: "2026-05-11",
+    type: "easy",
+    name: "Rodagem",
+    title: "Rodagem leve",
+    description: "3 km leve",
+    distance: 3,
+    pace: "8:00/km",
+    duration: 24,
+    elapsed_time: 1440,
+    completed: true,
+    completed_at: "2026-05-11T12:00:00.000Z",
+    actual_distance: 3.1,
+    actual_elapsed_time: 1450,
+    actual_time: "00:24:10",
+    actual_pace: "7:48/km",
+    difficulty_level: 2,
+    feedbacks: ["ok"],
+    source: "plan",
+  });
+});
+
+test("detects postgres unique violations for idempotent reload", () => {
+  assert.equal(isUniqueViolation({ code: "23505" }), true);
+  assert.equal(
+    isUniqueViolation({ message: "duplicate key value violates unique constraint" }),
+    true
+  );
+  assert.equal(isUniqueViolation({ code: "42P01", message: "missing table" }), false);
+  assert.equal(isUniqueViolation(null), false);
 });

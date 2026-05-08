@@ -5,6 +5,83 @@ import { normalizeRunnerPhone } from "@/lib/runner/phone";
 
 type RunnerSupabaseClient = SupabaseClient<any, any, any>;
 
+const PROFILE_INTERNAL_COLUMNS =
+  "id, phone, normalized_phone, conversation_id, organization_id, generation_status, generated_at, last_error";
+const PLAN_PUBLIC_COLUMNS =
+  "goal_type, goal_distance, race_date, start_date, total_weeks, total_distance, completed_distance, completed_weeks";
+const PLAN_QUERY_COLUMNS = `id, ${PLAN_PUBLIC_COLUMNS}`;
+const TRAINING_PUBLIC_COLUMNS =
+  "week_number, day_of_week, date, type, name, title, description, distance, pace, duration, elapsed_time, completed, completed_at, actual_distance, actual_elapsed_time, actual_time, actual_pace, difficulty_level, feedbacks, source";
+
+export function sanitizeRunnerProfileForPublic(
+  profile: Record<string, unknown> | null | undefined
+) {
+  if (!profile) return null;
+
+  return {
+    phone: profile.phone ?? null,
+    normalized_phone: profile.normalized_phone ?? null,
+    generation_status: profile.generation_status ?? null,
+    generated_at: profile.generated_at ?? null,
+    last_error: profile.last_error ?? null,
+  };
+}
+
+export function sanitizeRunnerPlanForPublic(
+  plan: Record<string, unknown> | null | undefined
+) {
+  if (!plan) return null;
+
+  return {
+    goal_type: plan.goal_type ?? null,
+    goal_distance: plan.goal_distance ?? null,
+    race_date: plan.race_date ?? null,
+    start_date: plan.start_date ?? null,
+    total_weeks: plan.total_weeks ?? null,
+    total_distance: plan.total_distance ?? null,
+    completed_distance: plan.completed_distance ?? null,
+    completed_weeks: plan.completed_weeks ?? null,
+  };
+}
+
+export function sanitizeRunnerTrainingForPublic(
+  training: Record<string, unknown>
+) {
+  return {
+    week_number: training.week_number ?? null,
+    day_of_week: training.day_of_week ?? null,
+    date: training.date ?? null,
+    type: training.type ?? null,
+    name: training.name ?? null,
+    title: training.title ?? null,
+    description: training.description ?? null,
+    distance: training.distance ?? null,
+    pace: training.pace ?? null,
+    duration: training.duration ?? null,
+    elapsed_time: training.elapsed_time ?? null,
+    completed: training.completed ?? null,
+    completed_at: training.completed_at ?? null,
+    actual_distance: training.actual_distance ?? null,
+    actual_elapsed_time: training.actual_elapsed_time ?? null,
+    actual_time: training.actual_time ?? null,
+    actual_pace: training.actual_pace ?? null,
+    difficulty_level: training.difficulty_level ?? null,
+    feedbacks: training.feedbacks ?? null,
+    source: training.source ?? null,
+  };
+}
+
+export function isUniqueViolation(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+
+  const candidate = error as { code?: unknown; message?: unknown };
+  return (
+    candidate.code === "23505" ||
+    (typeof candidate.message === "string" &&
+      candidate.message.toLowerCase().includes("duplicate key"))
+  );
+}
+
 export async function getRunnerProfileByPhone(
   supabase: RunnerSupabaseClient,
   phone: string
@@ -12,7 +89,7 @@ export async function getRunnerProfileByPhone(
   const normalizedPhone = normalizeRunnerPhone(phone);
   const { data, error } = await supabase
     .from("runner_profiles")
-    .select("*")
+    .select(PROFILE_INTERNAL_COLUMNS)
     .eq("normalized_phone", normalizedPhone)
     .maybeSingle();
 
@@ -54,7 +131,7 @@ export async function getPublicRunnerPlan(params: {
 
   const { data: plan, error: planError } = await params.supabase
     .from("training_plans")
-    .select("*")
+    .select(PLAN_QUERY_COLUMNS)
     .eq("runner_profile_id", profile.id)
     .maybeSingle();
 
@@ -62,7 +139,7 @@ export async function getPublicRunnerPlan(params: {
 
   if (!plan) {
     return {
-      profile,
+      profile: sanitizeRunnerProfileForPublic(profile),
       plan: null,
       trainings: [],
     };
@@ -70,7 +147,7 @@ export async function getPublicRunnerPlan(params: {
 
   const { data: trainings, error: trainingsError } = await params.supabase
     .from("weekly_trainings")
-    .select("*")
+    .select(TRAINING_PUBLIC_COLUMNS)
     .eq("training_plan_id", plan.id)
     .order("week_number", { ascending: true })
     .order("date", { ascending: true });
@@ -78,9 +155,9 @@ export async function getPublicRunnerPlan(params: {
   if (trainingsError) throw trainingsError;
 
   return {
-    profile,
-    plan,
-    trainings: trainings || [],
+    profile: sanitizeRunnerProfileForPublic(profile),
+    plan: sanitizeRunnerPlanForPublic(plan),
+    trainings: (trainings || []).map(sanitizeRunnerTrainingForPublic),
   };
 }
 
@@ -136,7 +213,16 @@ export async function persistRunnerPlan(params: {
         .select()
         .single();
 
-  if (planResult.error) throw planResult.error;
+  if (planResult.error) {
+    if (!existingPlan && isUniqueViolation(planResult.error)) {
+      return getPublicRunnerPlan({
+        supabase: params.supabase,
+        phone: String(profile.phone || ""),
+      });
+    }
+
+    throw planResult.error;
+  }
   const plan = planResult.data;
 
   const { error: deleteError } = await params.supabase

@@ -3,6 +3,7 @@ import {
   getPublicRunnerPlan,
   getRunnerProfileByPhone,
   persistRunnerPlan,
+  sanitizeRunnerProfileForPublic,
 } from "@/lib/runner/plan-store";
 import { buildRunnerPlanUrl, getRunnerAppBaseUrl } from "@/lib/runner/url";
 import { createServerClient } from "@/lib/supabase/server";
@@ -15,6 +16,8 @@ type RouteContext = {
 };
 
 type FlowVariables = Record<string, string>;
+
+const GENERATION_TIMEOUT_MS = 45_000;
 
 function corsHeaders() {
   return {
@@ -45,6 +48,24 @@ function buildWebAppLink(request: Request, phone: string) {
 
 function serializePlanVariable(value: Record<string, unknown>) {
   return JSON.stringify(value);
+}
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  message: string
+): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 async function markProfileGenerationStatus(params: {
@@ -147,10 +168,19 @@ export async function POST(request: Request, { params }: RouteContext) {
 
     const flowVariables =
       ((conversation.flow_variables as FlowVariables | null) || {});
-    const { planData, coachingSummary } = await generateTrainingPlanData({
-      flowVariables,
-    });
+    const { planData, coachingSummary } = await withTimeout(
+      generateTrainingPlanData({
+        flowVariables,
+      }),
+      GENERATION_TIMEOUT_MS,
+      "Runner plan generation timed out"
+    );
     const planGeneratedAt = new Date().toISOString();
+    const startDate =
+      typeof flowVariables.data_inicio_plano === "string" &&
+      /^\d{4}-\d{2}-\d{2}/.test(flowVariables.data_inicio_plano)
+        ? flowVariables.data_inicio_plano.slice(0, 10)
+        : planGeneratedAt.slice(0, 10);
     const nextFlowVariables: FlowVariables = {
       ...flowVariables,
       _training_plan: serializePlanVariable(planData),
@@ -170,13 +200,17 @@ export async function POST(request: Request, { params }: RouteContext) {
       runnerProfileId: profile.id,
       conversationId: conversation.id,
       organizationId: conversation.organization_id,
-      startDate: planGeneratedAt,
+      startDate,
       planData,
       coachingSummary,
     });
 
     return jsonResponse({
-      ...(persisted || { profile, plan: null, trainings: [] }),
+      ...(persisted || {
+        profile: sanitizeRunnerProfileForPublic(profile),
+        plan: null,
+        trainings: [],
+      }),
       webAppLink,
     });
   } catch (error) {
@@ -201,7 +235,7 @@ export async function POST(request: Request, { params }: RouteContext) {
     return jsonResponse(
       {
         error: message,
-        profile,
+        profile: sanitizeRunnerProfileForPublic(profile),
         plan: null,
         trainings: [],
         webAppLink,
