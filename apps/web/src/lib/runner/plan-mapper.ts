@@ -45,8 +45,15 @@ function toIsoDate(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
+function getMondayAnchor(startDate: string) {
+  const start = new Date(`${startDate}T00:00:00.000Z`);
+  const day = start.getUTCDay();
+  const daysSinceMonday = day === 0 ? 6 : day - 1;
+  return addDays(start, -daysSinceMonday);
+}
+
 function getWeekStart(startDate: string, weekIndex: number) {
-  return addDays(new Date(`${startDate}T00:00:00.000Z`), weekIndex * 7);
+  return addDays(getMondayAnchor(startDate), weekIndex * 7);
 }
 
 function inferTrainingType(day: JsonRecord) {

@@ -32,6 +32,7 @@ function loadTypeScriptModule(relativePath, requireOverrides = {}) {
     require: customRequire,
     process,
     console,
+    URL,
   });
   return cjsModule.exports;
 }
@@ -56,6 +57,28 @@ test("builds phone-based runner URL from trailing-slash base URL", () => {
       phone: "+55 (11) 99999-0000",
     }),
     "https://runner.example.com/plano/5511999990000"
+  );
+});
+
+test("rejects missing runner URL base", () => {
+  assert.throws(
+    () =>
+      buildRunnerPlanUrl({
+        baseUrl: "   ",
+        phone: "+55 (11) 99999-0000",
+      }),
+    /absolute http\(s\) base URL/i
+  );
+});
+
+test("rejects non-http runner URL base", () => {
+  assert.throws(
+    () =>
+      buildRunnerPlanUrl({
+        baseUrl: "ftp://runner.example.com",
+        phone: "+55 (11) 99999-0000",
+      }),
+    /absolute http\(s\) base URL/i
   );
 });
 
@@ -144,6 +167,36 @@ test("maps plan weeks and days to Monday-based runner rows", () => {
   assert.equal(result.trainings[1].date, "2026-05-13");
   assert.equal(result.trainings[1].day_of_week, "Quarta");
   assert.equal(result.trainings[1].type, "long");
+});
+
+test("anchors non-Monday start dates to the Monday of that week", () => {
+  const result = mapPlanToRunnerRows({
+    runnerProfileId: "profile-1",
+    trainingPlanId: "plan-1",
+    startDate: "2026-05-08",
+    planData: {
+      semanas: [
+        {
+          semana: 1,
+          dias: [
+            {
+              dia: "Segunda",
+              treino: "Rodagem leve",
+              distancia_km: "3",
+            },
+            {
+              dia: "Quarta",
+              treino: "Tiros curtos",
+              distancia_km: "4",
+            },
+          ],
+        },
+      ],
+    },
+  });
+
+  assert.equal(result.trainings[0].date, "2026-05-04");
+  assert.equal(result.trainings[1].date, "2026-05-06");
 });
 
 test("infers long and interval training types from Portuguese plan text", () => {
