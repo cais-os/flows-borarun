@@ -98,7 +98,8 @@ create table if not exists public.weekly_trainings (
   difficulty_level integer check (difficulty_level between 1 and 5),
   feedbacks text,
   source text not null default 'plan',
-  created_at timestamptz not null default timezone('utc', now())
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now())
 );
 
 create index if not exists weekly_trainings_plan_week_idx
@@ -106,5 +107,11 @@ create index if not exists weekly_trainings_plan_week_idx
 
 create index if not exists weekly_trainings_runner_profile_date_idx
   on public.weekly_trainings(runner_profile_id, date);
+
+drop trigger if exists trg_weekly_trainings_set_updated_at on public.weekly_trainings;
+create trigger trg_weekly_trainings_set_updated_at
+before update on public.weekly_trainings
+for each row
+execute function public.set_updated_at_timestamp();
 
 alter table public.weekly_trainings enable row level security;
