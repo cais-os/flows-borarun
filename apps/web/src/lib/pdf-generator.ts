@@ -1,22 +1,12 @@
-import OpenAI from "openai";
 import chromium from "@sparticuz/chromium-min";
 import puppeteer from "puppeteer-core";
 import { renderPdfTemplateHtml } from "@/lib/pdf-template-renderer";
-import { PLANEJADOR_INICIAL_PROMPT } from "@/lib/prompts/planejador-inicial";
-import { normalizeTrainingPlan } from "@/lib/training-plan";
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-const DEFAULT_INSTRUCTION = `Você é um treinador de corrida especialista. Com base nas informações do aluno abaixo, gere um plano de treino personalizado.`;
-
-const JSON_FORMAT_INSTRUCTION = `
-
-IMPORTANTE: Retorne APENAS um JSON válido (sem markdown, sem código, sem explicações) com EXATAMENTE 2 chaves raiz:
-1. "training_plan" — com as sub-chaves: perfil_atleta, logica_plano, semanas
-2. "coaching_summary" — com o resumo interno para o coach de acompanhamento`;
+import { generateTrainingPlanData } from "@/lib/training-plan-generator";
 
 async function getBrowser() {
-  const isLocal = !!process.env.PLAYWRIGHT_BROWSERS_PATH || process.env.NODE_ENV === "development";
+  const isLocal =
+    !!process.env.PLAYWRIGHT_BROWSERS_PATH ||
+    process.env.NODE_ENV === "development";
 
   if (isLocal) {
     // Local dev: use system chromium or playwright
@@ -61,61 +51,12 @@ export async function generatePdf(params: {
   stravaContext?: string;
 }): Promise<GeneratePdfResult> {
   // 1. Generate structured plan from AI
-  const variablesSummary = Object.entries(params.flowVariables)
-    .map(([key, value]) => `${key}: ${value}`)
-    .join("\n");
-
-  const usePlanejadorPrompt = !params.aiPrompt;
-  const baseInstruction = usePlanejadorPrompt
-    ? PLANEJADOR_INICIAL_PROMPT + JSON_FORMAT_INSTRUCTION
-    : (params.aiPrompt || DEFAULT_INSTRUCTION) + JSON_FORMAT_INSTRUCTION;
-  const adjustmentInstruction = params.adjustmentRequest?.trim()
-    ? `\n\nAJUSTE SOLICITADO PELO USUARIO:\n${params.adjustmentRequest.trim()}\n\nGere uma nova versao do plano incorporando esse pedido de forma coerente, segura e personalizada. Preserve o restante do contexto sempre que fizer sentido e mantenha o foco em treinos de corrida.`
-    : "";
-  const instruction = `${baseInstruction}${adjustmentInstruction}`;
-
-  const userContent = params.stravaContext
-    ? `Informações do aluno:\n${variablesSummary}\n\nDados do Strava:\n${params.stravaContext}`
-    : `Informações do aluno:\n${variablesSummary}`;
-
-  const completion = await openai.chat.completions.create({
-    model: "gpt-5.4-mini",
-    messages: [
-      {
-        role: "system",
-        content: instruction,
-      },
-      {
-        role: "user",
-        content: userContent,
-      },
-    ],
-    response_format: { type: "json_object" },
-  });
-
-  const aiResponse = completion.choices[0]?.message?.content || "{}";
-
-  // Parse JSON from AI response
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(aiResponse);
-  } catch {
-    // Fallback: try to extract JSON from response
-    const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
-    try {
-      parsed = JSON.parse(jsonMatch ? jsonMatch[0] : aiResponse);
-    } catch {
-      console.error("Failed to parse AI response as JSON:", aiResponse);
-      parsed = { error: "Falha ao gerar plano", raw: aiResponse };
-    }
-  }
-
-  // Extract the two root keys
-  const rawPlanData = (parsed.training_plan as Record<string, unknown>) || parsed;
-  const planData = normalizeTrainingPlan(rawPlanData, {
+  const { planData, coachingSummary } = await generateTrainingPlanData({
     flowVariables: params.flowVariables,
+    aiPrompt: params.aiPrompt,
+    adjustmentRequest: params.adjustmentRequest,
+    stravaContext: params.stravaContext,
   });
-  const coachingSummary = (parsed.coaching_summary as Record<string, unknown>) || {};
 
   // 2. Interpolate template with AI-generated data + flow variables
   const html = renderPdfTemplateHtml({
