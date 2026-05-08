@@ -17,6 +17,7 @@ import CheckoutSuccess from "./pages/CheckoutSuccess";
 import WeekView from "./pages/WeekView";
 import Plan from "./pages/Plan";
 import Trainer from "./pages/Trainer";
+import PublicPlan from "./pages/PublicPlan";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -32,6 +33,7 @@ const App = () => (
             <Routes>
               <Route path="/" element={<Landing />} />
               <Route path="/auth" element={<Auth />} />
+              <Route path="/plano/:phone" element={<PublicPlan />} />
               <Route
                 path="/subscription"
                 element={
