@@ -112,9 +112,25 @@ test("buildTrainingPlanUserContent includes flow variables and Strava context", 
     stravaContext: "Ultima corrida: 5 km em ritmo leve",
   });
 
-  assert.match(content, /Inform/);
+  assert.match(content, /^Informações do aluno:/);
   assert.match(content, /nome: Caio/);
   assert.match(content, /objetivo: correr 10k/);
   assert.match(content, /Dados do Strava:/);
   assert.match(content, /Ultima corrida: 5 km em ritmo leve/);
+});
+
+test("keeps the original PDF generator prompt wording", () => {
+  const source = fs.readFileSync(
+    path.join(import.meta.dirname, "./training-plan-generator.ts"),
+    "utf8"
+  );
+
+  assert.match(
+    source,
+    /const DEFAULT_INSTRUCTION = `Você é um treinador de corrida especialista\. Com base nas informações do aluno abaixo, gere um plano de treino personalizado\.`;/
+  );
+  assert.match(
+    source,
+    /const JSON_FORMAT_INSTRUCTION = `\n\nIMPORTANTE: Retorne APENAS um JSON válido \(sem markdown, sem código, sem explicações\) com EXATAMENTE 2 chaves raiz:\n1\. "training_plan" — com as sub-chaves: perfil_atleta, logica_plano, semanas\n2\. "coaching_summary" — com o resumo interno para o coach de acompanhamento`;/
+  );
 });

@@ -4,13 +4,13 @@ import { normalizeTrainingPlan } from "@/lib/training-plan";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-const DEFAULT_INSTRUCTION = `Voce e um treinador de corrida especialista. Com base nas informacoes do aluno abaixo, gere um plano de treino personalizado.`;
+const DEFAULT_INSTRUCTION = `Você é um treinador de corrida especialista. Com base nas informações do aluno abaixo, gere um plano de treino personalizado.`;
 
 const JSON_FORMAT_INSTRUCTION = `
 
-IMPORTANTE: Retorne APENAS um JSON valido (sem markdown, sem codigo, sem explicacoes) com EXATAMENTE 2 chaves raiz:
-1. "training_plan" - com as sub-chaves: perfil_atleta, logica_plano, semanas
-2. "coaching_summary" - com o resumo interno para o coach de acompanhamento`;
+IMPORTANTE: Retorne APENAS um JSON válido (sem markdown, sem código, sem explicações) com EXATAMENTE 2 chaves raiz:
+1. "training_plan" — com as sub-chaves: perfil_atleta, logica_plano, semanas
+2. "coaching_summary" — com o resumo interno para o coach de acompanhamento`;
 
 export type TrainingPlanGenerationResult = {
   planData: Record<string, unknown>;
@@ -40,8 +40,8 @@ export function buildTrainingPlanUserContent(params: {
     .join("\n");
 
   return params.stravaContext
-    ? `Informacoes do aluno:\n${variablesSummary}\n\nDados do Strava:\n${params.stravaContext}`
-    : `Informacoes do aluno:\n${variablesSummary}`;
+    ? `Informações do aluno:\n${variablesSummary}\n\nDados do Strava:\n${params.stravaContext}`
+    : `Informações do aluno:\n${variablesSummary}`;
 }
 
 export function parseTrainingPlanCompletion(
