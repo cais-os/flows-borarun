@@ -147,6 +147,17 @@ function getChatCompletionTokenParams(model: string | undefined, maxTokens: numb
   return { max_tokens: maxTokens };
 }
 
+function getChatCompletionTemperatureParams(
+  model: string | undefined,
+  temperature: number
+) {
+  if (typeof model === "string" && model.toLowerCase().startsWith("gpt-5")) {
+    return {};
+  }
+
+  return { temperature };
+}
+
 function findNextNodes(
   nodeId: string,
   edges: FlowEdge[],
@@ -843,7 +854,7 @@ async function runAgenticLoopTurn(params: {
   const model = params.loopData.model || "gpt-4o";
   const completion = await openai.chat.completions.create({
     model,
-    temperature: 0.6,
+    ...getChatCompletionTemperatureParams(model, 0.6),
     ...getChatCompletionTokenParams(model, 400),
     tools,
     tool_choice: tools.length > 0 ? "auto" : undefined,
@@ -1462,7 +1473,7 @@ async function generateAiNodeResponse(
 
   const completion = await openai.chat.completions.create({
     model,
-    temperature,
+    ...getChatCompletionTemperatureParams(model, temperature),
     ...getChatCompletionTokenParams(model, maxTokens),
     messages: buildAiSendMessageChatMessages({
       prompt,
