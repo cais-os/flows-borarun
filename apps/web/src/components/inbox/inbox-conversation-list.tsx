@@ -7,6 +7,7 @@ interface InboxConversationListProps {
   conversations: DbConversation[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  emptyMessage?: string;
 }
 
 function ConversationItem({
@@ -100,11 +101,12 @@ export function InboxConversationList({
   conversations,
   selectedId,
   onSelect,
+  emptyMessage = "Nenhuma conversa recebida",
 }: InboxConversationListProps) {
   if (conversations.length === 0) {
     return (
       <div className="flex items-center justify-center h-full text-sm text-gray-400 px-4 text-center">
-        Nenhuma conversa recebida
+        {emptyMessage}
       </div>
     );
   }

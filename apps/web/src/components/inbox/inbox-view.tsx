@@ -1,14 +1,27 @@
 "use client";
 
-import { useState } from "react";
-import { BookOpen, Loader2, MessageCircle, Tags, Zap } from "lucide-react";
+import { useMemo, useState } from "react";
+import { BookOpen, Loader2, MessageCircle, Search, Tags, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useConversations } from "@/hooks/use-conversations";
 import { InboxConversationList } from "./inbox-conversation-list";
 import { InboxChatPanel } from "./inbox-chat-panel";
 import { ShortcutsManager } from "./shortcuts-manager";
 import { GuidelinesManager } from "./guidelines-manager";
 import { TagsManager } from "./tags-manager";
+
+function normalizeSearchText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function normalizePhoneSearch(value: string) {
+  return value.replace(/\D/g, "");
+}
 
 export function InboxView() {
   const {
@@ -23,6 +36,25 @@ export function InboxView() {
   const [showTags, setShowTags] = useState(false);
   const [showGuidelines, setShowGuidelines] = useState(false);
   const [tagsVersion, setTagsVersion] = useState(0);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const trimmedSearchQuery = searchQuery.trim();
+  const filteredConversations = useMemo(() => {
+    if (!trimmedSearchQuery) return conversations;
+
+    const textQuery = normalizeSearchText(trimmedSearchQuery);
+    const phoneQuery = normalizePhoneSearch(trimmedSearchQuery);
+
+    return conversations.filter((conversation) => {
+      const contactName = normalizeSearchText(conversation.contact_name || "");
+      const contactPhone = normalizePhoneSearch(conversation.contact_phone || "");
+
+      return (
+        contactName.includes(textQuery) ||
+        Boolean(phoneQuery && contactPhone.includes(phoneQuery))
+      );
+    });
+  }, [conversations, trimmedSearchQuery]);
 
   if (loading) {
     return (
@@ -38,7 +70,33 @@ export function InboxView() {
         <div className="px-4 py-3 border-b space-y-2">
           <div>
             <h2 className="text-sm font-semibold text-gray-700">Conversas WhatsApp</h2>
-            <p className="text-xs text-gray-400">{conversations.length} conversa(s)</p>
+            <p className="text-xs text-gray-400">
+              {trimmedSearchQuery
+                ? `${filteredConversations.length} de ${conversations.length} conversa(s)`
+                : `${conversations.length} conversa(s)`}
+            </p>
+          </div>
+          <div className="relative">
+            <Search
+              size={15}
+              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400"
+            />
+            <Input
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Buscar por nome ou numero"
+              className="h-9 rounded-lg border-gray-200 bg-gray-50 pl-8 pr-8 text-sm"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-200 hover:text-gray-600"
+                aria-label="Limpar busca"
+              >
+                <X size={13} />
+              </button>
+            )}
           </div>
           <div className="flex items-center gap-1">
             <Button
@@ -71,9 +129,14 @@ export function InboxView() {
           </div>
         </div>
         <InboxConversationList
-          conversations={conversations}
+          conversations={filteredConversations}
           selectedId={selectedId}
           onSelect={setSelectedId}
+          emptyMessage={
+            trimmedSearchQuery
+              ? "Nenhuma conversa encontrada para essa busca"
+              : "Nenhuma conversa recebida"
+          }
         />
       </div>
 
