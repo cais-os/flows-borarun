@@ -128,6 +128,7 @@ export function getDefaultData(type: string, preset?: PaletteNodePreset) {
         type: "webApp",
         label: "Web App",
         message: DEFAULT_WEB_APP_MESSAGE,
+        ctaButtonText: "Abrir meu plano",
       } satisfies WebAppNodeData;
     case NODE_TYPES.WAIT_TIMER:
       return { type: "waitTimer", label: "Temporizador", timeoutMinutes: 45 } satisfies WaitTimerNodeData;

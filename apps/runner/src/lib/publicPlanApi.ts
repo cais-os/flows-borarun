@@ -23,6 +23,7 @@ export type PublicRunnerPlanResponse = {
     completed_weeks: number | null;
   } | null;
   trainings: Array<{
+    id: string | null;
     week_number: number | null;
     day_of_week: string | null;
     date: string | null;
@@ -40,7 +41,7 @@ export type PublicRunnerPlanResponse = {
     actual_elapsed_time: number | null;
     actual_time: string | null;
     actual_pace: string | null;
-    difficulty_level: string | null;
+    difficulty_level: number | null;
     feedbacks: string | null;
     source: string | null;
   }>;
@@ -75,6 +76,8 @@ function asString(value: unknown) {
 }
 
 function asNumber(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : null;
 }
@@ -128,6 +131,7 @@ function normalizePublicRunnerPlanResponse(
       const item = asRecord(training);
 
       return {
+        id: asString(item.id),
         week_number: asNumber(item.week_number),
         day_of_week: asString(item.day_of_week),
         date: asString(item.date),
@@ -145,7 +149,7 @@ function normalizePublicRunnerPlanResponse(
         actual_elapsed_time: asNumber(item.actual_elapsed_time),
         actual_time: asString(item.actual_time),
         actual_pace: asString(item.actual_pace),
-        difficulty_level: asString(item.difficulty_level),
+        difficulty_level: asNumber(item.difficulty_level),
         feedbacks: asString(item.feedbacks),
         source: asString(item.source),
       };
@@ -192,6 +196,42 @@ export async function generatePublicRunnerPlan(phone: string) {
         ? payload.error
         : "Nao foi possivel gerar o plano."
     );
+  }
+
+  return normalizePublicRunnerPlanResponse(await response.json());
+}
+
+export async function updatePublicRunnerTraining(
+  phone: string,
+  params: {
+    trainingId: string;
+    completed: boolean;
+    actualDistance?: number | null;
+    actualElapsedTime?: number | null;
+    actualTime?: string | null;
+    actualPace?: string | null;
+    difficultyLevel?: number | null;
+    feedbacks?: string | null;
+  }
+) {
+  const baseUrl = getFlowApiBaseUrl();
+  const response = await fetch(
+    `${baseUrl}/api/runner/plans/${encodeURIComponent(phone)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+    }
+  );
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    const errorMessage =
+      typeof payload.error === "string"
+        ? payload.error
+        : "Nao foi possivel atualizar o treino.";
+
+    throw new Error(errorMessage);
   }
 
   return normalizePublicRunnerPlanResponse(await response.json());

@@ -28,7 +28,7 @@ const PLAN_PUBLIC_COLUMNS =
   "goal_type, goal_distance, race_date, start_date, total_weeks, total_distance, completed_distance, completed_weeks";
 const PLAN_QUERY_COLUMNS = `id, ${PLAN_PUBLIC_COLUMNS}`;
 const TRAINING_PUBLIC_COLUMNS =
-  "week_number, day_of_week, date, type, name, title, description, distance, pace, duration, elapsed_time, completed, completed_at, actual_distance, actual_elapsed_time, actual_time, actual_pace, difficulty_level, feedbacks, source";
+  "id, week_number, day_of_week, date, type, name, title, description, distance, pace, duration, elapsed_time, completed, completed_at, actual_distance, actual_elapsed_time, actual_time, actual_pace, difficulty_level, feedbacks, source";
 const DEFAULT_RUNNER_PLAN_GENERATION_TIMEOUT_MS = 45_000;
 
 export function sanitizeRunnerProfileForPublic(
@@ -66,6 +66,7 @@ export function sanitizeRunnerTrainingForPublic(
   training: Record<string, unknown>
 ) {
   return {
+    id: training.id ?? null,
     week_number: training.week_number ?? null,
     day_of_week: training.day_of_week ?? null,
     date: training.date ?? null,

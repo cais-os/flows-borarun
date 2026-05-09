@@ -151,6 +151,7 @@ export type WebAppNodeData = {
   type: "webApp";
   label: string;
   message?: string;
+  ctaButtonText?: string;
   [key: string]: unknown;
 };
 

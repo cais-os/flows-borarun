@@ -9,7 +9,10 @@ import type {
   AgenticLoopNodeData,
 } from "@/types/node-data";
 import type { ChatMessage } from "@/types/simulator";
-import { buildRunnerWebAppMessage } from "@/lib/runner/web-app-message";
+import {
+  buildRunnerWebAppCtaBodyText,
+  DEFAULT_WEB_APP_CTA_BUTTON_TEXT,
+} from "@/lib/runner/web-app-message";
 import {
   getSendMessageInteractiveOptions,
   getSendMessageInteractiveType,
@@ -21,8 +24,6 @@ import {
   normalizeWaitForReplyNodeData,
   summarizeCapturedValueLocally,
 } from "./wait-for-reply";
-
-const SIMULATED_WEB_APP_LINK = "https://app.borarun.com.br/plano/5511999999999";
 
 interface PauseState {
   nodeId: string;
@@ -304,15 +305,16 @@ async function processSimulationQueue(
 
     if (data.type === "webApp") {
       const variables = callbacks.getFlowVariables();
-      const link = variables.web_app_link || SIMULATED_WEB_APP_LINK;
+      const buttonText =
+        (data as WebAppNodeData).ctaButtonText?.trim() ||
+        DEFAULT_WEB_APP_CTA_BUTTON_TEXT;
 
       callbacks.onMessage({
         id: createMessageId("msg"),
-        content: buildRunnerWebAppMessage({
+        content: `${buildRunnerWebAppCtaBodyText({
           template: (data as WebAppNodeData).message,
-          link,
           variables,
-        }),
+        })}\n\n[Botao: ${buttonText}]`,
         type: "text",
         sender: "bot",
         nodeId: current.id,

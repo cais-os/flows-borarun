@@ -4,7 +4,10 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useFlowStore } from "@/hooks/use-flow-store";
-import { DEFAULT_WEB_APP_MESSAGE } from "@/lib/runner/web-app-message";
+import {
+  DEFAULT_WEB_APP_CTA_BUTTON_TEXT,
+  DEFAULT_WEB_APP_MESSAGE,
+} from "@/lib/runner/web-app-message";
 import type { WebAppNodeData } from "@/types/node-data";
 
 interface WebAppEditorProps {
@@ -30,7 +33,19 @@ export function WebAppEditor({ nodeId, data }: WebAppEditorProps) {
       </div>
 
       <div className="space-y-2">
-        <Label>Mensagem com o link</Label>
+        <Label>Texto do botao</Label>
+        <Input
+          value={data.ctaButtonText || ""}
+          onChange={(event) => update({ ctaButtonText: event.target.value })}
+          placeholder={DEFAULT_WEB_APP_CTA_BUTTON_TEXT}
+        />
+        <p className="text-xs text-gray-500">
+          Se vazio, usa <code className="rounded bg-gray-100 px-1">{DEFAULT_WEB_APP_CTA_BUTTON_TEXT}</code>.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label>Mensagem do botao</Label>
         <Textarea
           value={data.message || ""}
           onChange={(event) => update({ message: event.target.value })}
@@ -38,9 +53,8 @@ export function WebAppEditor({ nodeId, data }: WebAppEditorProps) {
           rows={5}
         />
         <p className="text-xs text-gray-500">
-          Use <code className="rounded bg-gray-100 px-1">{"{{web_app_link}}"}</code>{" "}
-          para posicionar o link. Se a variavel nao estiver na mensagem, o
-          link sera adicionado no final.
+          Se usar <code className="rounded bg-gray-100 px-1">{"{{web_app_link}}"}</code>, ele sera
+          removido da mensagem do botao e usado como URL nativa do WhatsApp.
         </p>
       </div>
     </div>

@@ -19,6 +19,9 @@ export function WebAppNode({ id, data, selected }: NodeProps) {
       color={config.color}
       selected={selected}
     >
+      <div className="truncate rounded bg-cyan-100 px-1.5 py-0.5 text-cyan-800">
+        Botao: {nodeData.ctaButtonText || "Abrir meu plano"}
+      </div>
       {nodeData.message?.trim() ? (
         <div className="truncate rounded bg-cyan-50 px-1.5 py-0.5 text-cyan-700">
           {nodeData.message}

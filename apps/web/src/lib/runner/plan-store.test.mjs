@@ -47,7 +47,8 @@ const { buildRunnerPlanUrl, getRunnerAppBaseUrl } = loadTypeScriptModule(
   }
 );
 const { mapPlanToRunnerRows } = loadTypeScriptModule("./plan-mapper.ts");
-const { buildRunnerWebAppMessage } = loadTypeScriptModule("./web-app-message.ts");
+const { buildRunnerWebAppCtaBodyText, buildRunnerWebAppMessage } =
+  loadTypeScriptModule("./web-app-message.ts");
 const {
   coercePartialConflictRunnerPlanToGenerating,
   ensureRunnerProfile,
@@ -162,6 +163,25 @@ test("appends runner web app link when template omits placeholder", () => {
       link: "https://runner.example.com/plano/5511999990000",
     }),
     "Seu plano esta pronto.\n\nhttps://runner.example.com/plano/5511999990000"
+  );
+});
+
+test("builds runner web app CTA body without exposing URL placeholder", () => {
+  assert.equal(
+    buildRunnerWebAppCtaBodyText({
+      template: "Oi {{nome}}, seu plano esta pronto.\n\n{{web_app_link}}",
+      variables: { nome: "Ana" },
+    }),
+    "Oi Ana, seu plano esta pronto."
+  );
+});
+
+test("uses a button-oriented body for the default runner web app message", () => {
+  assert.equal(
+    buildRunnerWebAppCtaBodyText({
+      template: "Seu plano de corrida esta pronto. Abra aqui: {{web_app_link}}",
+    }),
+    "Seu plano de corrida esta pronto. Toque no botao abaixo para abrir."
   );
 });
 
@@ -535,6 +555,7 @@ test("sanitizes public runner training fields", () => {
   });
 
   assert.deepEqual(asJson(publicTraining), {
+    id: "training-1",
     week_number: 1,
     day_of_week: "Segunda",
     date: "2026-05-11",

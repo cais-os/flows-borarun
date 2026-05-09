@@ -6,6 +6,8 @@ import { toast } from '@/hooks/use-toast';
 import { normalizePhone } from '@/lib/phoneUtils';
 import { track } from '@/lib/analytics';
 
+const isPublicPlanRoute = () =>
+  typeof window !== 'undefined' && window.location.pathname.startsWith('/plano/');
 
 export const useAuth = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -56,7 +58,9 @@ export const useAuth = () => {
 
         // Handle auth events
         if (event === 'SIGNED_OUT') {
-          navigate('/auth');
+          if (!isPublicPlanRoute()) {
+            navigate('/auth');
+          }
           return;
         }
 

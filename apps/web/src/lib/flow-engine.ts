@@ -34,7 +34,9 @@ import {
 } from "@/lib/runner/plan-store";
 import { buildRunnerPlanUrl, getRunnerAppBaseUrl } from "@/lib/runner/url";
 import {
+  buildRunnerWebAppCtaBodyText,
   buildRunnerWebAppMessage,
+  DEFAULT_WEB_APP_CTA_BUTTON_TEXT,
   WEB_APP_LINK_VARIABLE,
 } from "@/lib/runner/web-app-message";
 import {
@@ -2386,35 +2388,77 @@ async function executeWebAppNodeSafely(params: {
       generationTimeoutMs: WEB_APP_GENERATION_TIMEOUT_MS,
     });
 
-    const message = buildRunnerWebAppMessage({
+    await applyTypingDelay(params.inboundMessageId, undefined, params.metaConfig);
+    const bodyText = buildRunnerWebAppCtaBodyText({
       template: params.data.message,
-      link: webAppLink,
       variables: generationResult.flowVariables,
     });
+    const buttonText =
+      params.data.ctaButtonText?.trim() || DEFAULT_WEB_APP_CTA_BUTTON_TEXT;
 
-    await applyTypingDelay(params.inboundMessageId, undefined, params.metaConfig);
-    const result = await sendMetaWhatsAppTextMessage(
-      {
-        to: params.contactPhone,
-        body: message,
-      },
-      params.metaConfig
-    );
+    try {
+      const result = await sendMetaWhatsAppCtaUrlMessage(
+        {
+          to: params.contactPhone,
+          bodyText,
+          buttonText,
+          url: webAppLink,
+        },
+        params.metaConfig
+      );
 
-    await persistConversationMessage({
-      supabase: params.supabase,
-      conversationId: params.conversationId,
-      content: message,
-      type: "text",
-      sender: "bot",
-      nodeId: params.node.id,
-      waMessageId: result.messageId,
-      metadata: {
-        runner_profile_id: runnerProfile.id || null,
-        runner_web_app_link: webAppLink,
-        runner_plan_generated: true,
-      },
-    });
+      await persistConversationMessage({
+        supabase: params.supabase,
+        conversationId: params.conversationId,
+        content: bodyText,
+        type: "interactive",
+        sender: "bot",
+        nodeId: params.node.id,
+        waMessageId: result.messageId,
+        metadata: {
+          runner_profile_id: runnerProfile.id || null,
+          runner_web_app_link: webAppLink,
+          runner_plan_generated: true,
+          whatsapp_interactive_kind: "cta_url",
+          whatsapp_button_text: buttonText,
+        },
+      });
+    } catch (ctaError) {
+      console.error(
+        "Flow engine: failed to send runner web app CTA, falling back to text",
+        ctaError
+      );
+
+      const fallbackMessage = buildRunnerWebAppMessage({
+        template: params.data.message,
+        link: webAppLink,
+        variables: generationResult.flowVariables,
+      });
+      const result = await sendMetaWhatsAppTextMessage(
+        {
+          to: params.contactPhone,
+          body: fallbackMessage,
+        },
+        params.metaConfig
+      );
+
+      await persistConversationMessage({
+        supabase: params.supabase,
+        conversationId: params.conversationId,
+        content: fallbackMessage,
+        type: "text",
+        sender: "bot",
+        nodeId: params.node.id,
+        waMessageId: result.messageId,
+        metadata: {
+          runner_profile_id: runnerProfile.id || null,
+          runner_web_app_link: webAppLink,
+          runner_plan_generated: true,
+          whatsapp_interactive_kind: "cta_url_fallback_text",
+          whatsapp_button_text: buttonText,
+        },
+      });
+    }
 
     return true;
   } catch (error) {

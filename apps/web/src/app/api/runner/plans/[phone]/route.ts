@@ -20,7 +20,7 @@ function corsHeaders() {
   return {
     "Access-Control-Allow-Origin":
       process.env.RUNNER_APP_ALLOWED_ORIGIN || "*",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, PATCH, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
   };
 }
@@ -163,6 +163,182 @@ export async function POST(request: Request, { params }: RouteContext) {
       {
         error: message,
         profile: sanitizeRunnerProfileForPublic(profile),
+        plan: null,
+        trainings: [],
+        webAppLink,
+      },
+      { status: 500 }
+    );
+  }
+}
+
+function optionalNumber(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function optionalInteger(value: unknown) {
+  const numeric = optionalNumber(value);
+  if (numeric === null) return null;
+  const integer = Math.trunc(numeric);
+  return integer >= 1 && integer <= 5 ? integer : null;
+}
+
+async function refreshRunnerPlanCompletionTotals(
+  supabase: ReturnType<typeof createServerClient>,
+  trainingPlanId: string
+) {
+  const { data: trainings, error } = await supabase
+    .from("weekly_trainings")
+    .select("week_number, distance, actual_distance, completed")
+    .eq("training_plan_id", trainingPlanId);
+
+  if (error) throw error;
+
+  const weekStats = new Map<number, { total: number; completed: number }>();
+  const completedDistance = (trainings || []).reduce((sum, training) => {
+    const weekNumber = Number(training.week_number || 0);
+    if (weekNumber) {
+      const stats = weekStats.get(weekNumber) || { total: 0, completed: 0 };
+      stats.total += 1;
+      if (training.completed) stats.completed += 1;
+      weekStats.set(weekNumber, stats);
+    }
+
+    if (!training.completed) return sum;
+    return sum + Number(training.actual_distance ?? training.distance ?? 0);
+  }, 0);
+  const completedWeeks = Array.from(weekStats.values()).filter(
+    (stats) => stats.total > 0 && stats.completed === stats.total
+  ).length;
+
+  const { error: updateError } = await supabase
+    .from("training_plans")
+    .update({
+      completed_distance: completedDistance,
+      completed_weeks: completedWeeks,
+    })
+    .eq("id", trainingPlanId);
+
+  if (updateError) throw updateError;
+}
+
+export async function PATCH(request: Request, { params }: RouteContext) {
+  const { phone } = await params;
+  const supabase = createServerClient();
+  let webAppLink = "";
+
+  try {
+    webAppLink = buildWebAppLink(request, phone);
+    const payload = (await request.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
+    const trainingId =
+      typeof payload.trainingId === "string" ? payload.trainingId.trim() : "";
+    const completed =
+      typeof payload.completed === "boolean" ? payload.completed : null;
+
+    if (!trainingId || completed === null) {
+      return jsonResponse(
+        {
+          error: "trainingId and completed are required",
+          profile: null,
+          plan: null,
+          trainings: [],
+          webAppLink,
+        },
+        { status: 400 }
+      );
+    }
+
+    const profile = await getRunnerProfileByPhone(supabase, phone);
+    if (!profile) {
+      return jsonResponse(
+        {
+          profile: null,
+          plan: null,
+          trainings: [],
+          webAppLink,
+        },
+        { status: 404 }
+      );
+    }
+
+    const updatePayload = completed
+      ? {
+          completed: true,
+          completed_at: new Date().toISOString(),
+          actual_distance: optionalNumber(payload.actualDistance),
+          actual_elapsed_time: optionalNumber(payload.actualElapsedTime),
+          actual_time:
+            typeof payload.actualTime === "string" ? payload.actualTime : null,
+          actual_pace:
+            typeof payload.actualPace === "string" ? payload.actualPace : null,
+          difficulty_level: optionalInteger(payload.difficultyLevel),
+          feedbacks:
+            typeof payload.feedbacks === "string" ? payload.feedbacks : null,
+        }
+      : {
+          completed: false,
+          completed_at: null,
+          actual_distance: null,
+          actual_elapsed_time: null,
+          actual_time: null,
+          actual_pace: null,
+          difficulty_level: null,
+          feedbacks: null,
+        };
+
+    const { data: updatedTraining, error: updateError } = await supabase
+      .from("weekly_trainings")
+      .update(updatePayload)
+      .eq("id", trainingId)
+      .eq("runner_profile_id", profile.id)
+      .select("training_plan_id")
+      .maybeSingle();
+
+    if (updateError) throw updateError;
+    if (!updatedTraining?.training_plan_id) {
+      return jsonResponse(
+        {
+          error: "Training not found",
+          profile: sanitizeRunnerProfileForPublic(profile),
+          plan: null,
+          trainings: [],
+          webAppLink,
+        },
+        { status: 404 }
+      );
+    }
+
+    await refreshRunnerPlanCompletionTotals(
+      supabase,
+      String(updatedTraining.training_plan_id)
+    );
+
+    const publicPlan = await getPublicRunnerPlan({ supabase, phone });
+
+    return jsonResponse({
+      ...(publicPlan || {
+        profile: sanitizeRunnerProfileForPublic(profile),
+        plan: null,
+        trainings: [],
+      }),
+      webAppLink,
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to update training";
+
+    console.error("[runner-plans] Failed to update training:", error);
+
+    return jsonResponse(
+      {
+        error: message,
+        profile: null,
         plan: null,
         trainings: [],
         webAppLink,
