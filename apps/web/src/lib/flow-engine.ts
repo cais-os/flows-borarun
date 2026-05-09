@@ -84,8 +84,10 @@ import {
   createWhatsAppFlow,
   updateWhatsAppFlowJson,
   publishWhatsAppFlow,
+  getMetaWhatsAppFlowFirstScreenId,
   sendTypingIndicator,
 } from "@/lib/meta";
+import { resolveWhatsAppFlowInitialScreenId } from "@/lib/whatsapp-flow-send";
 import {
   getSendMessageInteractiveType,
   hasWhatsAppListItems,
@@ -3186,8 +3188,20 @@ async function runFlowQueue(params: {
         }
 
         if (!flowId) {
-          console.error("Flow engine: WhatsApp Flow node has no flowId and no builder screens — skipping.");
-        } else {
+          throw new Error(
+            "WhatsApp Flow node has no flowId and no builder screens."
+          );
+        }
+
+        const screenId = await resolveWhatsAppFlowInitialScreenId({
+          source: flowData.source,
+          firstScreenId: flowData.firstScreenId,
+          builderScreenId: flowData.screens?.[0]?.id,
+          flowId,
+          fetchExternalFirstScreenId: (externalFlowId) =>
+            getMetaWhatsAppFlowFirstScreenId(externalFlowId, params.metaConfig),
+        });
+
           // Generate a unique flow_token that ties this response back to
           // this conversation + node so the data endpoint can resume it.
           const flowToken = `${params.conversationId}:${current.id}:${Date.now()}`;
@@ -3209,7 +3223,7 @@ async function runFlowQueue(params: {
               headerText: flowData.headerText || undefined,
               bodyText,
               ctaText: flowData.ctaText || "Abrir formulario",
-              screenId: flowData.firstScreenId || flowData.screens?.[0]?.id || "WELCOME_SCREEN",
+              screenId,
               mode: flowData.draftMode ? "draft" : "published",
             },
             params.metaConfig
@@ -3226,6 +3240,7 @@ async function runFlowQueue(params: {
             metadata: {
               whatsapp_flow_id: flowId,
               flow_token: flowToken,
+              whatsapp_flow_screen_id: screenId,
               whatsapp_interactive_kind: "flow",
               whatsapp_button_text: flowData.ctaText || "Abrir formulario",
             },
@@ -3247,9 +3262,26 @@ async function runFlowQueue(params: {
             queue,
           });
           return "paused" as const;
-        }
       } catch (error) {
         console.error("Flow engine: failed to send WhatsApp Flow", error);
+        await sendTextAndPersist({
+          supabase: params.supabase,
+          conversationId: params.conversationId,
+          contactPhone: params.contactPhone,
+          nodeId: current.id,
+          text:
+            "Tive um problema ao abrir o questionario agora. Ja estamos verificando isso e em instantes voce pode tentar novamente.",
+          metaConfig: params.metaConfig,
+          inboundMessageId: params.inboundMessageId,
+        }).catch((messageError) => {
+          console.error(
+            "Flow engine: failed to send WhatsApp Flow failure notification",
+            messageError
+          );
+        });
+        await completeFlow(params.supabase, params.conversationId);
+        await completeFlowExecution(params.supabase, execId, "abandoned");
+        return "completed" as const;
       }
     }
 

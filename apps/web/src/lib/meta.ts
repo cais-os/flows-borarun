@@ -5,6 +5,7 @@ import {
   buildWhatsAppListPayload,
   buildWhatsAppReplyButtonsPayload,
 } from "@/lib/whatsapp";
+import { extractFirstScreenIdFromWhatsAppFlowJson } from "@/lib/whatsapp-flow-send";
 
 export type MetaConfig = {
   systemToken: string;
@@ -848,6 +849,49 @@ export async function publishWhatsAppFlow(
     { method: "POST" },
     config
   );
+}
+
+export async function getMetaWhatsAppFlowFirstScreenId(
+  flowId: string,
+  configOverride?: MetaConfig
+) {
+  const assets = await metaGraphRequest<{
+    data?: Array<{
+      name?: string;
+      asset_type?: string;
+      download_url?: string;
+    }>;
+  }>(`${flowId}/assets`, {}, configOverride);
+  const flowJsonAsset = assets.data?.find(
+    (asset) =>
+      asset.asset_type === "FLOW_JSON" &&
+      typeof asset.download_url === "string" &&
+      asset.download_url.trim()
+  );
+
+  if (!flowJsonAsset?.download_url) {
+    throw createMetaError("WhatsApp Flow JSON asset not found", { flowId });
+  }
+
+  const response = await fetch(flowJsonAsset.download_url, {
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw createMetaError("Failed to download WhatsApp Flow JSON", {
+      flowId,
+      status: response.status,
+    });
+  }
+
+  const flowJson = await response.json();
+  const firstScreenId = extractFirstScreenIdFromWhatsAppFlowJson(flowJson);
+
+  if (!firstScreenId) {
+    throw createMetaError("WhatsApp Flow JSON has no first screen", { flowId });
+  }
+
+  return firstScreenId;
 }
 
 /**
