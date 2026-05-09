@@ -13,7 +13,7 @@ create table if not exists public.runner_profiles (
   conversation_id uuid references public.conversations(id) on delete set null,
   phone text not null,
   normalized_phone text not null unique,
-  public_access_key text not null default encode(gen_random_bytes(16), 'hex'),
+  public_access_key text not null default replace(gen_random_uuid()::text, '-', ''),
   generation_status public.runner_generation_status not null default 'idle',
   generated_at timestamptz,
   last_error text,
