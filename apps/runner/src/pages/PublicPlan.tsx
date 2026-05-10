@@ -32,6 +32,7 @@ import {
   type PublicRunnerPlanResponse,
 } from "@/lib/publicPlanApi";
 import { paceSecondsToFormatted } from "@/lib/utils";
+import { filterVisibleTrainingsFromDate } from "@/lib/visibleTrainings";
 
 type PublicTraining = PublicRunnerPlanResponse["trainings"][number];
 type PublicTab = "agenda" | "plano";
@@ -719,6 +720,16 @@ export default function PublicPlan() {
     if (!selectedTrainingId || !data) return null;
     return data.trainings.find((training) => training.id === selectedTrainingId) || null;
   }, [data, selectedTrainingId]);
+  const visibleData = useMemo(
+    () =>
+      data
+        ? {
+            ...data,
+            trainings: filterVisibleTrainingsFromDate(data.trainings),
+          }
+        : null,
+    [data]
+  );
   const selectedRunnerTraining = selectedTraining
     ? getRunnerComponentTraining(selectedTraining)
     : null;
@@ -945,11 +956,11 @@ export default function PublicPlan() {
           </div>
         )}
 
-        {data?.plan && (
+        {visibleData?.plan && (
           <>
             {activeTab === "agenda" ? (
               <AgendaView
-                data={data}
+                data={visibleData}
                 selectedDate={selectedDate}
                 currentWeek={currentWeek}
                 onDateSelect={handleDateSelect}
@@ -964,8 +975,8 @@ export default function PublicPlan() {
               />
             ) : (
               <>
-                <PlanSummary data={data} />
-                <PlanView data={data} />
+                <PlanSummary data={visibleData} />
+                <PlanView data={visibleData} />
               </>
             )}
           </>
@@ -989,7 +1000,7 @@ export default function PublicPlan() {
         />
       )}
 
-      {data?.plan && (
+      {visibleData?.plan && (
         <PublicBottomNav activeTab={activeTab} onTabChange={setActiveTab} />
       )}
     </main>
