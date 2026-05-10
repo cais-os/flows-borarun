@@ -11,6 +11,7 @@ const require = createRequire(import.meta.url);
 function loadTypeScriptModule(relativePath) {
   const filename = path.join(import.meta.dirname, relativePath);
   const source = fs.readFileSync(filename, "utf8");
+  const openAiCalls = [];
   const output = ts.transpileModule(source, {
     compilerOptions: {
       module: ts.ModuleKind.CommonJS,
@@ -28,13 +29,28 @@ function loadTypeScriptModule(relativePath) {
           constructor() {
             this.chat = {
               completions: {
-                create: async () => ({
-                  choices: [{ message: { content: "{}" } }],
+                create: async (args) => ({
+                  choices: [
+                    {
+                      message: {
+                        content: JSON.stringify({
+                          training_plan: { semanas: [] },
+                          coaching_summary: {},
+                        }),
+                      },
+                    },
+                  ],
+                  _args: openAiCalls.push(args),
                 }),
               },
             };
           }
         },
+      };
+    }
+    if (specifier === "@/lib/ai-models") {
+      return {
+        DEFAULT_TRAINING_PLAN_MODEL: "gpt-5.4-mini",
       };
     }
     if (specifier === "@/lib/prompts/planejador-inicial") {
@@ -52,10 +68,15 @@ function loadTypeScriptModule(relativePath) {
     process,
     console,
   });
-  return cjsModule.exports;
+  return { ...cjsModule.exports, __openAiCalls: openAiCalls };
 }
 
-const { buildTrainingPlanUserContent, parseTrainingPlanCompletion } =
+const {
+  __openAiCalls,
+  buildTrainingPlanUserContent,
+  generateTrainingPlanData,
+  parseTrainingPlanCompletion,
+} =
   loadTypeScriptModule("./training-plan-generator.ts");
 
 function plain(value) {
@@ -117,6 +138,20 @@ test("buildTrainingPlanUserContent includes flow variables and Strava context", 
   assert.match(content, /objetivo: correr 10k/);
   assert.match(content, /Dados do Strava:/);
   assert.match(content, /Ultima corrida: 5 km em ritmo leve/);
+});
+
+test("generateTrainingPlanData uses the dedicated training plan model", async () => {
+  __openAiCalls.length = 0;
+
+  await generateTrainingPlanData({
+    flowVariables: {
+      nome: "Teresinha",
+      objetivo: "saude",
+    },
+  });
+
+  assert.equal(__openAiCalls.length, 1);
+  assert.equal(__openAiCalls[0].model, "gpt-5.4-mini");
 });
 
 test("keeps the original PDF generator prompt wording", () => {

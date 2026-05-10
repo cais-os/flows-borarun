@@ -30,6 +30,7 @@ function loadTypeScriptModule(relativePath) {
 const {
   AI_MODEL_OPTIONS,
   DEFAULT_AI_MODEL,
+  DEFAULT_TRAINING_PLAN_MODEL,
   getChatCompletionTemperatureParams,
   getChatCompletionTokenParams,
 } = loadTypeScriptModule("./ai-models.ts");
@@ -37,6 +38,11 @@ const {
 test("uses gpt-5.5 as the default AI model exposed in model selectors", () => {
   assert.equal(DEFAULT_AI_MODEL, "gpt-5.5");
   assert.equal(AI_MODEL_OPTIONS[0].value, "gpt-5.5");
+});
+
+test("keeps structured training plan generation on the faster planner model", () => {
+  assert.equal(DEFAULT_TRAINING_PLAN_MODEL, "gpt-5.4-mini");
+  assert.notEqual(DEFAULT_TRAINING_PLAN_MODEL, DEFAULT_AI_MODEL);
 });
 
 test("omits temperature for gpt-5 chat completion models", () => {

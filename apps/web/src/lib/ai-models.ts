@@ -1,4 +1,5 @@
 export const DEFAULT_AI_MODEL = "gpt-5.5";
+export const DEFAULT_TRAINING_PLAN_MODEL = "gpt-5.4-mini";
 
 export const AI_MODEL_OPTIONS = [
   { value: "gpt-5.5", label: "GPT-5.5" },
