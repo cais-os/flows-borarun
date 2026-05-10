@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { PLANEJADOR_INICIAL_PROMPT } from "@/lib/prompts/planejador-inicial";
 import { normalizeTrainingPlan } from "@/lib/training-plan";
+import { DEFAULT_AI_MODEL } from "@/lib/ai-models";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -78,7 +79,7 @@ export async function generateTrainingPlanData(params: {
   const instruction = `${baseInstruction}${adjustmentInstruction}`;
 
   const completion = await openai.chat.completions.create({
-    model: "gpt-5.4-mini",
+    model: DEFAULT_AI_MODEL,
     messages: [
       {
         role: "system",

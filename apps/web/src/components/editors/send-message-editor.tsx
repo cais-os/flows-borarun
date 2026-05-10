@@ -35,6 +35,7 @@ import {
   WHATSAPP_REPLY_BUTTON_LIMIT,
   WHATSAPP_REPLY_BUTTON_TITLE_LIMIT,
 } from "@/lib/whatsapp";
+import { resolveAiSendMessageHistorySettings } from "@/lib/ai-message-context";
 import type {
   AiCollectorNodeData,
   SendMessageNodeData,
@@ -105,6 +106,7 @@ export function SendMessageEditor({ nodeId, data }: SendMessageEditorProps) {
   const listItems = data.listItems || [];
   const interactiveType = getSendMessageInteractiveType(data);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
+  const historySettings = resolveAiSendMessageHistorySettings(data);
   const [metaTemplates, setMetaTemplates] = useState<MetaTemplate[]>([]);
   const [metaTemplatesRequestState, setMetaTemplatesRequestState] = useState<
     "idle" | "loading" | "ready" | "error"
@@ -965,6 +967,57 @@ export function SendMessageEditor({ nodeId, data }: SendMessageEditorProps) {
             A IA vai gerar uma resposta personalizada com base nesse prompt. O
             texto gerado sera enviado como mensagem ao usuario.
           </p>
+
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs text-gray-700">
+                  Historico da conversa
+                </Label>
+                <p className="text-xs text-gray-500">
+                  Quando ativo, este no envia as mensagens recentes anteriores
+                  junto com o prompt para a IA entender o que o usuario acabou
+                  de falar.
+                </p>
+              </div>
+              <label className="flex shrink-0 items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={historySettings.includeConversationHistory}
+                  onChange={(event) =>
+                    update({
+                      includeConversationHistory: event.target.checked,
+                      historyWindowMessages:
+                        data.historyWindowMessages || 20,
+                    })
+                  }
+                  className="rounded border-gray-300"
+                />
+                Ativo
+              </label>
+            </div>
+
+            {historySettings.includeConversationHistory ? (
+              <div className="mt-3 max-w-36 space-y-1.5">
+                <Label className="text-xs text-gray-600">Mensagens</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={historySettings.historyWindowMessages}
+                  onChange={(event) =>
+                    update({
+                      historyWindowMessages: Math.max(
+                        1,
+                        Number(event.target.value) || 20
+                      ),
+                    })
+                  }
+                  className="h-9 text-sm"
+                />
+              </div>
+            ) : null}
+          </div>
 
           <div className="space-y-2 rounded-lg border border-dashed border-gray-200 bg-gray-50 p-3">
             <div className="space-y-1">

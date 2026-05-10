@@ -19,6 +19,7 @@ import { NODE_TYPES } from "@/types/flow";
 import { createDefaultSplits } from "@/lib/constants";
 import { DEFAULT_WEB_APP_MESSAGE } from "@/lib/runner/web-app-message";
 import { createDefaultWaitRoutes } from "@/lib/wait-for-reply";
+import { DEFAULT_AI_MODEL } from "@/lib/ai-models";
 
 import { TriggerNode } from "@/components/nodes/trigger-node";
 import { SendMessageNode } from "@/components/nodes/send-message-node";
@@ -96,6 +97,8 @@ export function getDefaultData(type: string, preset?: PaletteNodePreset) {
           messageType: "ai",
           interactiveType: "none",
           variant: "freeAi",
+          includeConversationHistory: true,
+          historyWindowMessages: 20,
         } satisfies SendMessageNodeData;
       }
 
@@ -174,7 +177,7 @@ export function getDefaultData(type: string, preset?: PaletteNodePreset) {
         type: "agenticLoop",
         label: "Agente IA",
         systemPrompt: "",
-        model: "gpt-4o",
+        model: DEFAULT_AI_MODEL,
         autoStart: true,
         maxTurns: 10,
         historyWindowMessages: 20,

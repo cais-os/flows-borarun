@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useFlowStore } from "@/hooks/use-flow-store";
+import { AI_MODEL_OPTIONS, DEFAULT_AI_MODEL } from "@/lib/ai-models";
 import type {
   AgenticLoopPdfToolConfig,
   AgenticLoopPaymentToolConfig,
@@ -148,10 +149,21 @@ export function AgenticLoopEditor({
       <div className="grid grid-cols-3 gap-2">
         <div className="flex flex-col gap-1.5">
           <Label className="text-xs">Modelo</Label>
-          <Input
-            value={data.model ?? "gpt-4o"}
-            onChange={(event) => patch({ model: event.target.value })}
-          />
+          <Select
+            value={data.model ?? DEFAULT_AI_MODEL}
+            onValueChange={(value) => patch({ model: value })}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {AI_MODEL_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="flex flex-col gap-1.5">
           <Label className="text-xs">Max turnos</Label>

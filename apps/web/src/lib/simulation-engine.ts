@@ -24,6 +24,7 @@ import {
   normalizeWaitForReplyNodeData,
   summarizeCapturedValueLocally,
 } from "./wait-for-reply";
+import { DEFAULT_AI_MODEL } from "./ai-models";
 
 interface PauseState {
   nodeId: string;
@@ -261,8 +262,8 @@ async function processSimulationQueue(
         id: createMessageId("sys"),
         content:
           loopData.autoStart !== false
-            ? `Agente IA iniciaria a conversa automaticamente (${loopData.model || "gpt-4o"}, ${loopData.handoffTargets?.length ?? 0} handoffs)`
-            : `Agente IA pausado (${loopData.model || "gpt-4o"}, ${loopData.handoffTargets?.length ?? 0} handoffs)`,
+            ? `Agente IA iniciaria a conversa automaticamente (${loopData.model || DEFAULT_AI_MODEL}, ${loopData.handoffTargets?.length ?? 0} handoffs)`
+            : `Agente IA pausado (${loopData.model || DEFAULT_AI_MODEL}, ${loopData.handoffTargets?.length ?? 0} handoffs)`,
         type: "system",
         sender: "system",
         timestamp: new Date(),

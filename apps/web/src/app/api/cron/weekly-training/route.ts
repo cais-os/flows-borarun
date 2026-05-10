@@ -9,6 +9,11 @@ import { getOrganizationSettingsById } from "@/lib/organization";
 import { buildStravaCoachContext } from "@/lib/strava";
 import { validateCronAuthorization } from "@/lib/internal-auth";
 import { hasConversationSubscriptionAccess } from "@/lib/subscription-utils";
+import {
+  DEFAULT_AI_MODEL,
+  getChatCompletionTemperatureParams,
+  getChatCompletionTokenParams,
+} from "@/lib/ai-models";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -125,13 +130,13 @@ export async function GET(request: Request) {
       ].filter(Boolean).join("\n\n");
 
       const completion = await openai.chat.completions.create({
-        model: "gpt-5.4-mini",
+        model: DEFAULT_AI_MODEL,
         messages: [
           { role: "system", content: WEEKLY_PROMPT },
           { role: "user", content: userContent },
         ],
-        max_tokens: 1000,
-        temperature: 0.7,
+        ...getChatCompletionTokenParams(DEFAULT_AI_MODEL, 1000),
+        ...getChatCompletionTemperatureParams(DEFAULT_AI_MODEL, 0.7),
       });
 
       const weeklyTraining = completion.choices[0]?.message?.content;

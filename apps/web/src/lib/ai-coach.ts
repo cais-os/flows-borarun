@@ -7,6 +7,11 @@ import {
   buildInitialFreePlanPricingResponse,
   shouldAnswerInitialPlanPricing,
 } from "@/lib/initial-plan-pricing";
+import {
+  DEFAULT_AI_MODEL,
+  getChatCompletionTemperatureParams,
+  getChatCompletionTokenParams,
+} from "@/lib/ai-models";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -59,7 +64,7 @@ async function fetchAiGuidelines(
   if (data?.system_prompt) {
     return {
       system_prompt: data.system_prompt,
-      model: data.model || "gpt-5.4-mini",
+      model: data.model || DEFAULT_AI_MODEL,
       temperature: data.temperature ?? 0.7,
       max_tokens: data.max_tokens ?? 1000,
     };
@@ -67,7 +72,7 @@ async function fetchAiGuidelines(
 
   return {
     system_prompt: COACH_ACOMPANHAMENTO_PROMPT,
-    model: "gpt-5.4-mini",
+    model: DEFAULT_AI_MODEL,
     temperature: 0.7,
     max_tokens: 1000,
   };
@@ -642,8 +647,11 @@ export async function generateCoachResponse(
   const completion = await openai.chat.completions.create({
     model: guidelines.model,
     messages,
-    max_tokens: guidelines.max_tokens,
-    temperature: guidelines.temperature,
+    ...getChatCompletionTokenParams(guidelines.model, guidelines.max_tokens),
+    ...getChatCompletionTemperatureParams(
+      guidelines.model,
+      guidelines.temperature
+    ),
   });
 
   const rawResponse = completion.choices[0]?.message?.content || "Desculpe, não consegui gerar uma resposta. Pode repetir?";

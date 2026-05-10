@@ -3,6 +3,12 @@ export type AiChatMessage = {
   content: string;
 };
 
+export type AiSendMessageHistorySettingsInput = {
+  variant?: string;
+  includeConversationHistory?: boolean;
+  historyWindowMessages?: number;
+};
+
 const BASE_AI_SEND_MESSAGE_SYSTEM_PROMPT =
   "Voce e um assistente dentro de um flow automatizado de WhatsApp. " +
   "Responda em portugues brasileiro, de forma natural e concisa (ideal para WhatsApp). " +
@@ -26,4 +32,14 @@ export function buildAiSendMessageChatMessages(params: {
     ...(params.includeConversationHistory ? params.conversationHistory || [] : []),
     { role: "user", content: params.prompt },
   ];
+}
+
+export function resolveAiSendMessageHistorySettings(
+  data: AiSendMessageHistorySettingsInput
+) {
+  return {
+    includeConversationHistory:
+      data.includeConversationHistory ?? data.variant === "freeAi",
+    historyWindowMessages: data.historyWindowMessages || 20,
+  };
 }

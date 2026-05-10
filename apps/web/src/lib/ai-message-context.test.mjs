@@ -27,9 +27,10 @@ function loadTypeScriptModule(relativePath) {
   return cjsModule.exports;
 }
 
-const { buildAiSendMessageChatMessages } = loadTypeScriptModule(
-  "./ai-message-context.ts"
-);
+const {
+  buildAiSendMessageChatMessages,
+  resolveAiSendMessageHistorySettings,
+} = loadTypeScriptModule("./ai-message-context.ts");
 
 test("builds a plain AI send-message prompt without conversation history", () => {
   const messages = buildAiSendMessageChatMessages({
@@ -63,5 +64,33 @@ test("includes recent conversation history when the AI send-message node asks fo
   assert.match(
     String(messages[0].content),
     /historico recente da conversa/i
+  );
+});
+
+test("defaults free AI send-message nodes to include recent history", () => {
+  assert.deepEqual(
+    Object.entries(
+      resolveAiSendMessageHistorySettings({
+        variant: "freeAi",
+      })
+    ),
+    [
+      ["includeConversationHistory", true],
+      ["historyWindowMessages", 20],
+    ]
+  );
+
+  assert.deepEqual(
+    Object.entries(
+      resolveAiSendMessageHistorySettings({
+        variant: "freeAi",
+        includeConversationHistory: false,
+        historyWindowMessages: 8,
+      })
+    ),
+    [
+      ["includeConversationHistory", false],
+      ["historyWindowMessages", 8],
+    ]
   );
 });

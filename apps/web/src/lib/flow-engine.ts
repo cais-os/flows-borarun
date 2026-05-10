@@ -58,6 +58,7 @@ import {
 import { buildAgenticFlowVariableContext } from "@/lib/agentic-context";
 import {
   buildAiSendMessageChatMessages,
+  resolveAiSendMessageHistorySettings,
   type AiChatMessage,
 } from "@/lib/ai-message-context";
 import {
@@ -70,6 +71,11 @@ import {
   buildInitialFreePlanPricingResponse,
   shouldAnswerInitialPlanPricing,
 } from "@/lib/initial-plan-pricing";
+import {
+  DEFAULT_AI_MODEL,
+  getChatCompletionTemperatureParams,
+  getChatCompletionTokenParams,
+} from "@/lib/ai-models";
 import { convertToOgg, getAudioFormat, needsOggConversion } from "@/lib/audio-converter";
 import { getCronSecret } from "@/lib/internal-auth";
 import {
@@ -138,25 +144,6 @@ const COMMON_PAYMENT_EMAIL_KEYS = [
   "customer_email",
 ];
 const REUSABLE_PAYMENT_RECORD_MAX_AGE_MS = 1000 * 60 * 60 * 48;
-
-function getChatCompletionTokenParams(model: string | undefined, maxTokens: number) {
-  if (typeof model === "string" && model.toLowerCase().startsWith("gpt-5")) {
-    return { max_completion_tokens: maxTokens };
-  }
-
-  return { max_tokens: maxTokens };
-}
-
-function getChatCompletionTemperatureParams(
-  model: string | undefined,
-  temperature: number
-) {
-  if (typeof model === "string" && model.toLowerCase().startsWith("gpt-5")) {
-    return {};
-  }
-
-  return { temperature };
-}
 
 function findNextNodes(
   nodeId: string,
@@ -851,7 +838,7 @@ async function runAgenticLoopTurn(params: {
   }
 
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  const model = params.loopData.model || "gpt-4o";
+  const model = params.loopData.model || DEFAULT_AI_MODEL;
   const completion = await openai.chat.completions.create({
     model,
     ...getChatCompletionTemperatureParams(model, 0.6),
@@ -1459,7 +1446,7 @@ async function generateAiNodeResponse(
     .eq("key", "ai_coach")
     .maybeSingle();
 
-  const model = guidelines?.model || "gpt-4o-mini";
+  const model = guidelines?.model || DEFAULT_AI_MODEL;
   const temperature = guidelines?.temperature ?? 0.7;
   const maxTokens = guidelines?.max_tokens ?? 500;
   const conversationHistory =
@@ -1955,15 +1942,15 @@ async function executeSendMessageNode(params: {
     try {
       await applyTypingDelay(params.inboundMessageId, typingSeconds, params.metaConfig);
       const aiPrompt = interpolateVariables(params.data.aiPrompt, flowVariables);
+      const historySettings = resolveAiSendMessageHistorySettings(params.data);
       const aiText = await generateAiNodeResponse(
         params.supabase,
         aiPrompt,
         params.organizationId,
         {
           conversationId: params.conversationId,
-          includeConversationHistory:
-            params.data.includeConversationHistory === true,
-          historyWindowMessages: params.data.historyWindowMessages,
+          includeConversationHistory: historySettings.includeConversationHistory,
+          historyWindowMessages: historySettings.historyWindowMessages,
         }
       );
       await sendTextAndPersist({

@@ -5,6 +5,7 @@ import { Bot, Building2, Loader2, RotateCcw, Save, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { AI_MODEL_OPTIONS, DEFAULT_AI_MODEL } from "@/lib/ai-models";
 
 const DEFAULT_PROMPT = `Você é o treinador de corrida virtual da BoraRun. Seu nome é Coach BoraRun.
 
@@ -50,7 +51,7 @@ export function GuidelinesManager({ onClose }: GuidelinesManagerProps) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [systemPrompt, setSystemPrompt] = useState(DEFAULT_PROMPT);
-  const [model, setModel] = useState("gpt-4o-mini");
+  const [model, setModel] = useState(DEFAULT_AI_MODEL);
   const [temperature, setTemperature] = useState(0.7);
   const [maxTokens, setMaxTokens] = useState(500);
 
@@ -73,7 +74,7 @@ export function GuidelinesManager({ onClose }: GuidelinesManagerProps) {
         const data: GuidelinesData | null = await res.json();
         if (data?.system_prompt) {
           setSystemPrompt(data.system_prompt);
-          setModel(data.model || "gpt-4o-mini");
+          setModel(data.model || DEFAULT_AI_MODEL);
           setTemperature(data.temperature ?? 0.7);
           setMaxTokens(data.max_tokens ?? 500);
         }
@@ -157,7 +158,7 @@ export function GuidelinesManager({ onClose }: GuidelinesManagerProps) {
         body: JSON.stringify({
           key: COMPANY_KEY,
           system_prompt: payload,
-          model: "gpt-4o-mini",
+          model: DEFAULT_AI_MODEL,
           temperature: 0.7,
           max_tokens: 500,
         }),
@@ -173,7 +174,7 @@ export function GuidelinesManager({ onClose }: GuidelinesManagerProps) {
 
   const handleReset = () => {
     setSystemPrompt(DEFAULT_PROMPT);
-    setModel("gpt-4o-mini");
+    setModel(DEFAULT_AI_MODEL);
     setTemperature(0.7);
     setMaxTokens(500);
   };
@@ -267,10 +268,11 @@ export function GuidelinesManager({ onClose }: GuidelinesManagerProps) {
                     onChange={(e) => setModel(e.target.value)}
                     className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-gray-400"
                   >
-                    <option value="gpt-4o-mini">GPT-4o Mini</option>
-                    <option value="gpt-4o">GPT-4o</option>
-                    <option value="gpt-4.1-mini">GPT-4.1 Mini</option>
-                    <option value="gpt-4.1">GPT-4.1</option>
+                    {AI_MODEL_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
