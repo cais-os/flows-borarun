@@ -443,17 +443,21 @@ export async function generateAndPersistRunnerPlan(params: {
   });
 
   try {
+    const planGeneratedAt = (params.now || (() => new Date()))().toISOString();
+    const startDate = resolvePlanStartDate(params.flowVariables, planGeneratedAt);
+    const generationFlowVariables: FlowVariables = {
+      ...params.flowVariables,
+      data_inicio_plano: startDate,
+    };
     const { planData, coachingSummary } = await withTimeout(
       generatePlanData({
-        flowVariables: params.flowVariables,
+        flowVariables: generationFlowVariables,
       }),
       params.generationTimeoutMs ?? DEFAULT_RUNNER_PLAN_GENERATION_TIMEOUT_MS,
       "Runner plan generation timed out"
     );
-    const planGeneratedAt = (params.now || (() => new Date()))().toISOString();
-    const startDate = resolvePlanStartDate(params.flowVariables, planGeneratedAt);
     const nextFlowVariables: FlowVariables = {
-      ...params.flowVariables,
+      ...generationFlowVariables,
       _training_plan: serializePlanVariable(planData),
       _coaching_summary: serializePlanVariable(coachingSummary),
       _plan_generated_at: planGeneratedAt,

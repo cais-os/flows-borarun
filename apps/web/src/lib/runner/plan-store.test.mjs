@@ -359,6 +359,73 @@ test("generateAndPersistRunnerPlan saves an AI plan before returning the public 
   assert.deepEqual(asJson(result.flowVariables), asJson(savedVariables));
 });
 
+test("generateAndPersistRunnerPlan sends the resolved start date to the AI", async () => {
+  const generatedInputs = [];
+  const conversationUpdates = [];
+  const supabase = {
+    from(table) {
+      if (table === "runner_profiles") {
+        return {
+          update() {
+            return {
+              async eq() {
+                return { error: null };
+              },
+            };
+          },
+        };
+      }
+
+      if (table === "conversations") {
+        return {
+          update(payload) {
+            conversationUpdates.push(payload);
+            return {
+              async eq() {
+                return { error: null };
+              },
+            };
+          },
+        };
+      }
+
+      throw new Error(`Unexpected table ${table}`);
+    },
+  };
+
+  await generateAndPersistRunnerPlan({
+    supabase,
+    runnerProfileId: "profile-1",
+    conversationId: "conversation-1",
+    organizationId: "organization-1",
+    flowVariables: {
+      objetivo: "Correr 10 km",
+    },
+    now: () => new Date("2026-05-10T12:00:00.000Z"),
+    generatePlanData: async ({ flowVariables }) => {
+      generatedInputs.push(flowVariables);
+      return {
+        planData: {
+          perfil_atleta: { objetivo: "Correr 10 km" },
+          semanas: [],
+        },
+        coachingSummary: {},
+      };
+    },
+    persistPlan: async () => ({
+      profile: { generation_status: "completed" },
+      plan: { goal_type: "10 km" },
+      trainings: [],
+    }),
+  });
+
+  assert.equal(generatedInputs[0].data_inicio_plano, "2026-05-10");
+  assert.equal(
+    conversationUpdates[0].flow_variables.data_inicio_plano,
+    "2026-05-10"
+  );
+});
+
 test("maps plan weeks and days to Monday-based runner rows", () => {
   const result = mapPlanToRunnerRows({
     runnerProfileId: "profile-1",
@@ -409,7 +476,7 @@ test("maps plan weeks and days to Monday-based runner rows", () => {
   assert.equal(result.trainings[1].type, "long");
 });
 
-test("anchors non-Monday start dates to the Monday of that week", () => {
+test("keeps first-week runner rows on or after the plan start date", () => {
   const result = mapPlanToRunnerRows({
     runnerProfileId: "profile-1",
     trainingPlanId: "plan-1",
@@ -429,14 +496,61 @@ test("anchors non-Monday start dates to the Monday of that week", () => {
               treino: "Tiros curtos",
               distancia_km: "4",
             },
+            {
+              dia: "Sabado",
+              treino: "Longao curto",
+              distancia_km: "5",
+            },
           ],
         },
       ],
     },
   });
 
-  assert.equal(result.trainings[0].date, "2026-05-04");
-  assert.equal(result.trainings[1].date, "2026-05-06");
+  assert.equal(result.trainings.length, 1);
+  assert.equal(result.trainings[0].date, "2026-05-09");
+  assert.equal(result.trainings[0].day_of_week, "Sabado");
+  assert.equal(result.trainings[0].title, "Rodagem leve");
+  assert.equal(result.trainings[0].distance, 3);
+  assert.equal(result.plan.total_distance, 3);
+});
+
+test("schedules the first available first-week training on Sunday starts", () => {
+  const result = mapPlanToRunnerRows({
+    runnerProfileId: "profile-1",
+    trainingPlanId: "plan-1",
+    startDate: "2026-05-10",
+    planData: {
+      semanas: [
+        {
+          semana: 1,
+          dias: [
+            {
+              dia: "Segunda",
+              treino: "Rodagem leve",
+              distancia_km: "3",
+            },
+            {
+              dia: "Quarta",
+              treino: "Tiros curtos",
+              distancia_km: "4",
+            },
+            {
+              dia: "Sabado",
+              treino: "Longao curto",
+              distancia_km: "5",
+            },
+          ],
+        },
+      ],
+    },
+  });
+
+  assert.equal(result.trainings.length, 1);
+  assert.equal(result.trainings[0].date, "2026-05-10");
+  assert.equal(result.trainings[0].day_of_week, "Domingo");
+  assert.equal(result.trainings[0].title, "Rodagem leve");
+  assert.equal(result.plan.total_distance, 3);
 });
 
 test("infers long and interval training types from Portuguese plan text", () => {

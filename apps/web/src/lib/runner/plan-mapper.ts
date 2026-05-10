@@ -16,6 +16,16 @@ const DAY_OFFSETS: Record<string, number> = {
   domingo: 6,
 };
 
+const DAY_LABELS_BY_OFFSET = [
+  "Segunda",
+  "Terca",
+  "Quarta",
+  "Quinta",
+  "Sexta",
+  "Sabado",
+  "Domingo",
+];
+
 function asString(value: unknown) {
   if (typeof value === "string") return value;
   if (typeof value === "number") return String(value);
@@ -47,13 +57,50 @@ function toIsoDate(date: Date) {
 
 function getMondayAnchor(startDate: string) {
   const start = new Date(`${startDate}T00:00:00.000Z`);
-  const day = start.getUTCDay();
-  const daysSinceMonday = day === 0 ? 6 : day - 1;
-  return addDays(start, -daysSinceMonday);
+  return addDays(start, -getMondayOffset(start));
 }
 
 function getWeekStart(startDate: string, weekIndex: number) {
   return addDays(getMondayAnchor(startDate), weekIndex * 7);
+}
+
+function getMondayOffset(date: Date) {
+  const day = date.getUTCDay();
+  return day === 0 ? 6 : day - 1;
+}
+
+function getDayOffset(day: JsonRecord, dayIndex: number) {
+  const dayLabel =
+    asString(day.dia) || asString(day.dia_semana) || `Dia ${dayIndex + 1}`;
+
+  return DAY_OFFSETS[normalizeText(dayLabel)] ?? dayIndex;
+}
+
+function uniqueSortedOffsets(offsets: number[]) {
+  return Array.from(
+    new Set(offsets.filter((offset) => offset >= 0 && offset <= 6))
+  ).sort((left, right) => left - right);
+}
+
+function getFirstWeekOffsets(days: JsonRecord[], startDate: string) {
+  const start = new Date(`${startDate}T00:00:00.000Z`);
+  const startOffset = getMondayOffset(start);
+
+  if (startOffset <= 0) {
+    return days.map(getDayOffset);
+  }
+
+  const availableOffsets = uniqueSortedOffsets(
+    days
+      .map(getDayOffset)
+      .filter((offset) => offset >= startOffset)
+  );
+
+  if (availableOffsets.length > 0) {
+    return availableOffsets;
+  }
+
+  return [startOffset];
 }
 
 function inferTrainingType(day: JsonRecord) {
@@ -103,10 +150,22 @@ export function mapPlanToRunnerRows(params: {
     const days = Array.isArray(week.dias) ? (week.dias as JsonRecord[]) : [];
     const weekStart = getWeekStart(params.startDate, weekIndex);
 
-    return days.map((day, dayIndex) => {
+    const weekOffsets =
+      weekIndex === 0 ? getFirstWeekOffsets(days, params.startDate) : [];
+    const mappedDays =
+      weekIndex === 0 && weekOffsets.length !== days.length
+        ? days.slice(0, weekOffsets.length)
+        : days;
+
+    return mappedDays.map((day, dayIndex) => {
+      const assignedOffset =
+        weekIndex === 0
+          ? (weekOffsets[dayIndex] ?? getDayOffset(day, dayIndex))
+          : getDayOffset(day, dayIndex);
       const dayLabel =
-        asString(day.dia) || asString(day.dia_semana) || `Dia ${dayIndex + 1}`;
-      const offset = DAY_OFFSETS[normalizeText(dayLabel)] ?? dayIndex;
+        weekIndex === 0 && DAY_LABELS_BY_OFFSET[assignedOffset]
+          ? DAY_LABELS_BY_OFFSET[assignedOffset]
+          : asString(day.dia) || asString(day.dia_semana) || `Dia ${dayIndex + 1}`;
       const distance = parseNumber(day.distancia_km || day.km);
       const durationMinutes = parseNumber(day.duracao_min || day.duracao);
       const title =
@@ -120,7 +179,7 @@ export function mapPlanToRunnerRows(params: {
         runner_profile_id: params.runnerProfileId,
         week_number: Number.isFinite(weekNumber) ? weekNumber : weekIndex + 1,
         day_of_week: dayLabel,
-        date: toIsoDate(addDays(weekStart, offset)),
+        date: toIsoDate(addDays(weekStart, assignedOffset)),
         type: inferTrainingType(day),
         name: title,
         title,

@@ -140,6 +140,20 @@ test("buildTrainingPlanUserContent includes flow variables and Strava context", 
   assert.match(content, /Ultima corrida: 5 km em ritmo leve/);
 });
 
+test("buildTrainingPlanUserContent tells the AI to avoid dates before the plan start", () => {
+  const content = buildTrainingPlanUserContent({
+    flowVariables: {
+      nome: "Caio",
+      data_inicio_plano: "2026-05-10",
+    },
+  });
+
+  assert.match(content, /Contexto de calendario do plano:/);
+  assert.match(content, /data_inicio_plano: 2026-05-10/);
+  assert.match(content, /Nao planeje treinos antes de 2026-05-10/);
+  assert.match(content, /primeira semana pode ter menos treinos/);
+});
+
 test("generateTrainingPlanData uses the dedicated training plan model", async () => {
   __openAiCalls.length = 0;
 

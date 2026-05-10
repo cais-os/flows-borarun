@@ -36,9 +36,19 @@ export function buildTrainingPlanUserContent(params: {
   flowVariables: Record<string, string>;
   stravaContext?: string;
 }) {
-  const variablesSummary = Object.entries(params.flowVariables)
+  let variablesSummary = Object.entries(params.flowVariables)
     .map(([key, value]) => `${key}: ${value}`)
     .join("\n");
+  const startDate = params.flowVariables.data_inicio_plano?.slice(0, 10);
+  const calendarContext =
+    startDate && /^\d{4}-\d{2}-\d{2}$/.test(startDate)
+      ? `\n\nContexto de calendario do plano:\ndata_inicio_plano: ${startDate}\nNao planeje treinos antes de ${startDate}. Se essa data cair no meio ou no fim da semana, a primeira semana pode ter menos treinos do que a frequencia semanal informada. A partir da segunda semana, siga a frequencia semanal normal.`
+      : "";
+  variablesSummary = `${variablesSummary}${calendarContext}`;
+
+  const baseContent = `InformaÃ§Ãµes do aluno:\n${variablesSummary}${calendarContext}`;
+
+  void baseContent;
 
   return params.stravaContext
     ? `Informações do aluno:\n${variablesSummary}\n\nDados do Strava:\n${params.stravaContext}`
