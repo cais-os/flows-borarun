@@ -89,6 +89,20 @@ function parseNumber(value: string) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function parseNumericFieldRange(value: unknown): NumericRange | null {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return { min: value, max: value };
+  }
+
+  if (typeof value !== "string") return null;
+
+  const trimmed = value.trim();
+  if (!/^\d+(?:[,.]\d+)?$/.test(trimmed)) return null;
+
+  const parsed = parseNumber(trimmed);
+  return parsed !== null && parsed > 0 ? { min: parsed, max: parsed } : null;
+}
+
 function parseWeeklyFrequency(value: string) {
   const normalized = normalizeText(value);
   const digitMatch = normalized.match(
@@ -180,6 +194,10 @@ function parseDistanceRangeKm(text: string) {
   ]);
 }
 
+function parseDistanceFieldKm(value: unknown) {
+  return parseNumericFieldRange(value) || parseDistanceRangeKm(asString(value));
+}
+
 function parseDurationRangeMinutes(text: string) {
   const normalized = normalizeText(text);
 
@@ -191,6 +209,10 @@ function parseDurationRangeMinutes(text: string) {
       /(\d+(?:[.,]\d+)?)\s*min\b/,
     ]) || null
   );
+}
+
+function parseDurationFieldMinutes(value: unknown) {
+  return parseNumericFieldRange(value) || parseDurationRangeMinutes(asString(value));
 }
 
 function paceMinutesFromParts(minutes: string, seconds: string) {
@@ -323,7 +345,9 @@ function estimateDistanceFromDay(
   level: "beginner" | "intermediate" | "advanced"
 ) {
   const directDistance =
-    parseDistanceRangeKm(asString(day.distancia_km)) ||
+    parseDistanceFieldKm(day.distancia_km) ||
+    parseDistanceFieldKm(day.distancia) ||
+    parseDistanceFieldKm(day.km) ||
     parseDistanceRangeKm(asString(day.descricao)) ||
     parseDistanceRangeKm(asString(day.parte_principal)) ||
     parseDistanceRangeKm(asString(day.notas));
@@ -333,7 +357,8 @@ function estimateDistanceFromDay(
       distanceKm: midpoint(directDistance),
       explicit: true,
       durationRange:
-        parseDurationRangeMinutes(asString(day.duracao_min)) ||
+        parseDurationFieldMinutes(day.duracao_min) ||
+        parseDurationFieldMinutes(day.duracao) ||
         parseDurationRangeMinutes(asString(day.parte_principal)) ||
         parseDurationRangeMinutes(asString(day.descricao)) ||
         null,
@@ -341,7 +366,8 @@ function estimateDistanceFromDay(
   }
 
   const durationRange =
-    parseDurationRangeMinutes(asString(day.duracao_min)) ||
+    parseDurationFieldMinutes(day.duracao_min) ||
+    parseDurationFieldMinutes(day.duracao) ||
     parseDurationRangeMinutes(asString(day.parte_principal)) ||
     parseDurationRangeMinutes(asString(day.descricao)) ||
     parseDurationRangeMinutes(asString(day.aquecimento)) ||
@@ -450,11 +476,6 @@ export function normalizeTrainingPlan(
   for (const week of weeks) {
     if (!Array.isArray(week.dias)) continue;
 
-    const weekTotal =
-      typeof week.volume_total_km === "number"
-        ? week.volume_total_km
-        : parseNumber(asString(week.volume_total_km) || "");
-
     const estimates = week.dias.map((day) => {
       if (!isRecord(day) || !isRunningDay(day)) {
         return {
@@ -487,34 +508,6 @@ export function normalizeTrainingPlan(
 
     const effectiveEstimates =
       selectedEstimates.length > 0 ? selectedEstimates : estimates;
-    const shouldIgnoreProvidedWeekTotal =
-      typeof desiredWeeklyFrequency === "number" &&
-      desiredWeeklyFrequency > 0 &&
-      runningEstimates.length > desiredWeeklyFrequency;
-
-    const explicitTotal = effectiveEstimates.reduce(
-      (sum, item) => sum + (item.explicit ? item.distanceKm || 0 : 0),
-      0
-    );
-    const estimatedItems = effectiveEstimates.filter(
-      (item) => item.running && !item.explicit && item.distanceKm !== null
-    );
-    const estimatedTotal = estimatedItems.reduce(
-      (sum, item) => sum + (item.distanceKm || 0),
-      0
-    );
-
-    let scaleFactor = 1;
-    if (
-      !shouldIgnoreProvidedWeekTotal &&
-      typeof weekTotal === "number" &&
-      weekTotal > 0 &&
-      estimatedItems.length > 0 &&
-      estimatedTotal > 0 &&
-      weekTotal > explicitTotal
-    ) {
-      scaleFactor = (weekTotal - explicitTotal) / estimatedTotal;
-    }
 
     for (const item of effectiveEstimates) {
       if (!isRecord(item.day)) continue;
@@ -532,7 +525,7 @@ export function normalizeTrainingPlan(
           ? null
           : item.explicit
             ? item.distanceKm
-            : item.distanceKm * scaleFactor;
+            : item.distanceKm;
 
       if (normalizedDistance !== null) {
         const formattedDistance = formatDistanceKm(normalizedDistance);

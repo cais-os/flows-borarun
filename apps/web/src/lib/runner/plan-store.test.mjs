@@ -426,6 +426,67 @@ test("generateAndPersistRunnerPlan sends the resolved start date to the AI", asy
   );
 });
 
+test("generateAndPersistRunnerPlan resolves default start date in Sao Paulo time", async () => {
+  const generatedInputs = [];
+  const supabase = {
+    from(table) {
+      if (table === "runner_profiles") {
+        return {
+          update() {
+            return {
+              async eq() {
+                return { error: null };
+              },
+            };
+          },
+        };
+      }
+
+      if (table === "conversations") {
+        return {
+          update() {
+            return {
+              async eq() {
+                return { error: null };
+              },
+            };
+          },
+        };
+      }
+
+      throw new Error(`Unexpected table ${table}`);
+    },
+  };
+
+  await generateAndPersistRunnerPlan({
+    supabase,
+    runnerProfileId: "profile-1",
+    conversationId: "conversation-1",
+    organizationId: "organization-1",
+    flowVariables: {
+      objetivo: "Correr 10 km",
+    },
+    now: () => new Date("2026-05-11T02:33:00.000Z"),
+    generatePlanData: async ({ flowVariables }) => {
+      generatedInputs.push(flowVariables);
+      return {
+        planData: {
+          perfil_atleta: { objetivo: "Correr 10 km" },
+          semanas: [],
+        },
+        coachingSummary: {},
+      };
+    },
+    persistPlan: async () => ({
+      profile: { generation_status: "completed" },
+      plan: { goal_type: "10 km" },
+      trainings: [],
+    }),
+  });
+
+  assert.equal(generatedInputs[0].data_inicio_plano, "2026-05-10");
+});
+
 test("maps plan weeks and days to Monday-based runner rows", () => {
   const result = mapPlanToRunnerRows({
     runnerProfileId: "profile-1",

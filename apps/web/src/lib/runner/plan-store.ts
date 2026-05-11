@@ -30,6 +30,7 @@ const PLAN_QUERY_COLUMNS = `id, ${PLAN_PUBLIC_COLUMNS}`;
 const TRAINING_PUBLIC_COLUMNS =
   "id, week_number, day_of_week, date, type, name, title, description, distance, pace, duration, elapsed_time, completed, completed_at, actual_distance, actual_elapsed_time, actual_time, actual_pace, difficulty_level, feedbacks, source";
 const DEFAULT_RUNNER_PLAN_GENERATION_TIMEOUT_MS = 45_000;
+const DEFAULT_RUNNER_PLAN_TIME_ZONE = "America/Sao_Paulo";
 
 export function sanitizeRunnerProfileForPublic(
   profile: Record<string, unknown> | null | undefined
@@ -109,11 +110,27 @@ function serializePlanVariable(value: Record<string, unknown>) {
   return JSON.stringify(value);
 }
 
+function formatDateInTimeZone(date: Date, timeZone = DEFAULT_RUNNER_PLAN_TIME_ZONE) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const values = Object.fromEntries(
+    parts
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value])
+  );
+
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 function resolvePlanStartDate(flowVariables: FlowVariables, generatedAt: string) {
   return typeof flowVariables.data_inicio_plano === "string" &&
     /^\d{4}-\d{2}-\d{2}/.test(flowVariables.data_inicio_plano)
     ? flowVariables.data_inicio_plano.slice(0, 10)
-    : generatedAt.slice(0, 10);
+    : formatDateInTimeZone(new Date(generatedAt));
 }
 
 async function withTimeout<T>(
