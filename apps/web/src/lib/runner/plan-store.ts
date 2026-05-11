@@ -29,7 +29,7 @@ const PLAN_PUBLIC_COLUMNS =
 const PLAN_QUERY_COLUMNS = `id, ${PLAN_PUBLIC_COLUMNS}`;
 const TRAINING_PUBLIC_COLUMNS =
   "id, week_number, day_of_week, date, type, name, title, description, distance, pace, duration, elapsed_time, completed, completed_at, actual_distance, actual_elapsed_time, actual_time, actual_pace, difficulty_level, feedbacks, source";
-const DEFAULT_RUNNER_PLAN_GENERATION_TIMEOUT_MS = 45_000;
+const DEFAULT_RUNNER_PLAN_GENERATION_TIMEOUT_MS = 55_000;
 const DEFAULT_RUNNER_PLAN_TIME_ZONE = "America/Sao_Paulo";
 
 export function sanitizeRunnerProfileForPublic(

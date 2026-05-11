@@ -129,7 +129,7 @@ const PDF_POST_SEND_SETTLE_MS = 750;
 const PDF_GENERATION_TIMEOUT_MS = 90_000;
 const PDF_DELIVERY_TIMEOUT_MS = 45_000;
 const PDF_GENERATION_MAX_ATTEMPTS = 2;
-const WEB_APP_GENERATION_TIMEOUT_MS = 45_000;
+const WEB_APP_GENERATION_TIMEOUT_MS = 55_000;
 const DEFAULT_MESSAGE_ORDER_DELAY_MS = 900;
 const AUDIO_MESSAGE_ORDER_DELAY_MS = 350;
 const UPCOMING_AUDIO_PREWARM_LIMIT = 2;
@@ -2553,12 +2553,16 @@ async function runFlowQueue(params: {
   let pendingAnswer = params.pendingUserAnswer;
   const execId = params.executionId ?? null;
   const startedAt = Date.now();
+  let processedNodeCount = 0;
 
   while (queue.length > 0) {
     const current = queue.shift()!;
     const data = current.data;
 
-    if (shouldYieldBeforeGeneratePdf(startedAt, current, queue)) {
+    if (
+      processedNodeCount > 0 &&
+      shouldYieldBeforeGeneratePdf(startedAt, current, queue)
+    ) {
       return yieldFlowExecution({
         supabase: params.supabase,
         conversationId: params.conversationId,
@@ -2569,7 +2573,7 @@ async function runFlowQueue(params: {
       });
     }
 
-    if (shouldYieldFlowExecution(startedAt, current)) {
+    if (processedNodeCount > 0 && shouldYieldFlowExecution(startedAt, current)) {
       return yieldFlowExecution({
         supabase: params.supabase,
         conversationId: params.conversationId,
@@ -2579,6 +2583,8 @@ async function runFlowQueue(params: {
         remainingQueue: [current, ...queue],
       });
     }
+
+    processedNodeCount += 1;
 
     // Log every node visit for analytics
     if (params.flowId) {
