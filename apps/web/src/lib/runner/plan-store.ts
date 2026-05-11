@@ -110,6 +110,21 @@ function serializePlanVariable(value: Record<string, unknown>) {
   return JSON.stringify(value);
 }
 
+function omitGeneratedPlanVariables(flowVariables: FlowVariables) {
+  const {
+    _training_plan,
+    _coaching_summary,
+    _plan_generated_at,
+    ...publicFlowVariables
+  } = flowVariables;
+
+  void _training_plan;
+  void _coaching_summary;
+  void _plan_generated_at;
+
+  return publicFlowVariables;
+}
+
 function formatDateInTimeZone(date: Date, timeZone = DEFAULT_RUNNER_PLAN_TIME_ZONE) {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone,
@@ -463,7 +478,7 @@ export async function generateAndPersistRunnerPlan(params: {
     const planGeneratedAt = (params.now || (() => new Date()))().toISOString();
     const startDate = resolvePlanStartDate(params.flowVariables, planGeneratedAt);
     const generationFlowVariables: FlowVariables = {
-      ...params.flowVariables,
+      ...omitGeneratedPlanVariables(params.flowVariables),
       data_inicio_plano: startDate,
     };
     const { planData, coachingSummary } = await withTimeout(

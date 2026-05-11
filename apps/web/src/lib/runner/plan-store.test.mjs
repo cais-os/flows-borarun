@@ -426,6 +426,76 @@ test("generateAndPersistRunnerPlan sends the resolved start date to the AI", asy
   );
 });
 
+test("generateAndPersistRunnerPlan does not send previous generated plan internals to the AI", async () => {
+  const generatedInputs = [];
+  const supabase = {
+    from(table) {
+      if (table === "runner_profiles") {
+        return {
+          update() {
+            return {
+              async eq() {
+                return { error: null };
+              },
+            };
+          },
+        };
+      }
+
+      if (table === "conversations") {
+        return {
+          update() {
+            return {
+              async eq() {
+                return { error: null };
+              },
+            };
+          },
+        };
+      }
+
+      throw new Error(`Unexpected table ${table}`);
+    },
+  };
+
+  await generateAndPersistRunnerPlan({
+    supabase,
+    runnerProfileId: "profile-1",
+    conversationId: "conversation-1",
+    organizationId: "organization-1",
+    flowVariables: {
+      objetivo: "Correr 5 km",
+      _training_plan: "{\"semanas\":[{\"dias\":[{\"date\":\"past\"}]}]}",
+      _coaching_summary: "{\"old\":true}",
+      _plan_generated_at: "2026-05-01T12:00:00.000Z",
+      _runner_web_app_link: "https://runner.example.com/plano/5511999990000",
+    },
+    now: () => new Date("2026-05-11T12:00:00.000Z"),
+    generatePlanData: async ({ flowVariables }) => {
+      generatedInputs.push(flowVariables);
+      return {
+        planData: {
+          perfil_atleta: { objetivo: "Correr 5 km" },
+          semanas: [],
+        },
+        coachingSummary: {},
+      };
+    },
+    persistPlan: async () => ({
+      profile: { generation_status: "completed" },
+      plan: { goal_type: "5 km" },
+      trainings: [],
+    }),
+  });
+
+  assert.equal(generatedInputs[0].objetivo, "Correr 5 km");
+  assert.equal(generatedInputs[0].data_inicio_plano, "2026-05-11");
+  assert.equal(generatedInputs[0]._runner_web_app_link, "https://runner.example.com/plano/5511999990000");
+  assert.equal(Object.hasOwn(generatedInputs[0], "_training_plan"), false);
+  assert.equal(Object.hasOwn(generatedInputs[0], "_coaching_summary"), false);
+  assert.equal(Object.hasOwn(generatedInputs[0], "_plan_generated_at"), false);
+});
+
 test("generateAndPersistRunnerPlan resolves default start date in Sao Paulo time", async () => {
   const generatedInputs = [];
   const supabase = {
