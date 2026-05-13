@@ -2,7 +2,7 @@ export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
-import { resumeFlowOnTimeout } from "@/lib/flow-engine";
+import { continueFlowQueue, resumeFlowOnTimeout } from "@/lib/flow-engine";
 import { persistConversationMessage } from "@/lib/conversation-messages";
 import { getOrganizationSettingsById } from "@/lib/organization";
 import {
@@ -21,6 +21,7 @@ import {
 
 const PAYMENT_FOLLOW_UP_AFTER_MINUTES = 45;
 const PAYMENT_FOLLOW_UP_LOOKBACK_HOURS = 24;
+const STALE_RUNNING_FLOW_AFTER_MINUTES = 2;
 const PAYMENT_FOLLOW_UP_MESSAGE =
   "Conseguiu abrir o link para ativar o Premium? Se preferir Pix ou cartao e o checkout nao mostrar a melhor opcao, me responde aqui que eu te ajudo.";
 
@@ -56,6 +57,81 @@ type AgenticSalesFollowUpConversationRow = {
   flow_variables: Record<string, string> | null;
   updated_at: string;
 };
+
+type StaleRunningFlowConversationRow = {
+  id: string;
+  contact_phone: string | null;
+  organization_id: string;
+  updated_at: string;
+};
+
+async function processStaleRunningFlowContinuations(
+  supabase: ReturnType<typeof createServerClient>
+) {
+  const cutoff = new Date(
+    Date.now() - STALE_RUNNING_FLOW_AFTER_MINUTES * 60 * 1000
+  ).toISOString();
+
+  const { data: conversations, error } = await supabase
+    .from("conversations")
+    .select("id, contact_phone, organization_id, updated_at")
+    .eq("status", "running")
+    .not("active_flow_id", "is", null)
+    .not("flow_node_queue", "is", null)
+    .is("current_node_id", null)
+    .lte("updated_at", cutoff)
+    .order("updated_at", { ascending: true })
+    .limit(10);
+
+  if (error) {
+    console.error("Timer cron: failed to query stale running flows", error);
+    return { processed: 0, skipped: 0, error: "Query failed" };
+  }
+
+  let processed = 0;
+  let skipped = 0;
+
+  for (const conversation of (conversations ||
+    []) as StaleRunningFlowConversationRow[]) {
+    if (!conversation.contact_phone) {
+      skipped++;
+      continue;
+    }
+
+    const settings = await getOrganizationSettingsById(
+      conversation.organization_id
+    );
+    const { config: metaConfig } = getMetaConfigFromSettings(settings);
+    if (!metaConfig) {
+      skipped++;
+      continue;
+    }
+
+    try {
+      await continueFlowQueue(
+        supabase,
+        conversation.id,
+        conversation.contact_phone,
+        {
+          organizationId: conversation.organization_id,
+          metaConfig,
+        }
+      );
+      processed++;
+      console.log(
+        `Timer cron: continued stale running flow ${conversation.id}`
+      );
+    } catch (continuationError) {
+      skipped++;
+      console.error(
+        `Timer cron: failed to continue stale running flow ${conversation.id}`,
+        continuationError
+      );
+    }
+  }
+
+  return { processed, skipped };
+}
 
 async function processPendingPaymentFollowUps(
   supabase: ReturnType<typeof createServerClient>
@@ -354,11 +430,13 @@ export async function GET(request: Request) {
 
   const paymentFollowUps = await processPendingPaymentFollowUps(supabase);
   const agenticSalesFollowUps = await processAgenticSalesFollowUps(supabase);
+  const staleRunningFlows = await processStaleRunningFlowContinuations(supabase);
 
   return NextResponse.json({
     processed,
     total: (expired || []).length,
     paymentFollowUps,
     agenticSalesFollowUps,
+    staleRunningFlows,
   });
 }

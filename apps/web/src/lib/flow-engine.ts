@@ -43,7 +43,6 @@ import {
   buildStravaConnectUrl,
   buildStravaConnectMessage,
   buildStravaCoachContext,
-  resolveAppOrigin,
 } from "@/lib/strava";
 import {
   createStripePaymentCheckout,
@@ -77,7 +76,7 @@ import {
   getChatCompletionTokenParams,
 } from "@/lib/ai-models";
 import { convertToOgg, getAudioFormat, needsOggConversion } from "@/lib/audio-converter";
-import { getCronSecret } from "@/lib/internal-auth";
+import { triggerFlowContinuation } from "@/lib/flow-continuation";
 import {
   type MetaConfig,
   sendMetaWhatsAppTextMessage,
@@ -1203,51 +1202,6 @@ async function persistFlowContinuation(params: {
     .eq("id", params.conversationId);
 }
 
-function triggerFlowContinuation(params: {
-  conversationId: string;
-  contactPhone: string;
-  organizationId: string;
-}) {
-  const secret = getCronSecret();
-  if (!secret) {
-    console.error("[flow-engine] CRON_SECRET is not configured; cannot continue flow");
-    return;
-  }
-
-  let origin: string;
-  try {
-    origin = resolveAppOrigin();
-  } catch (error) {
-    console.error("[flow-engine] failed to resolve app origin for continuation", error);
-    return;
-  }
-
-  fetch(`${origin}/api/flow/continue`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-internal-secret": secret,
-    },
-    body: JSON.stringify({
-      conversationId: params.conversationId,
-      contactPhone: params.contactPhone,
-      organizationId: params.organizationId,
-    }),
-  })
-    .then(async (response) => {
-      if (!response.ok) {
-        console.error(
-          "[flow-engine] flow continuation request failed:",
-          response.status,
-          await response.text()
-        );
-      }
-    })
-    .catch((error) =>
-      console.error("[flow-engine] failed to trigger flow continuation", error)
-    );
-}
-
 async function yieldFlowExecution(params: {
   supabase: SupabaseClient;
   conversationId: string;
@@ -1269,7 +1223,7 @@ async function yieldFlowExecution(params: {
     queue: params.remainingQueue,
   });
 
-  triggerFlowContinuation({
+  await triggerFlowContinuation({
     conversationId: params.conversationId,
     contactPhone: params.contactPhone,
     organizationId: params.organizationId,

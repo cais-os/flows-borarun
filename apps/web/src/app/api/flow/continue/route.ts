@@ -1,6 +1,6 @@
 export const maxDuration = 60;
 
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
 import { continueFlowQueue } from "@/lib/flow-engine";
 import { getOrganizationSettingsById } from "@/lib/organization";
@@ -26,19 +26,29 @@ export async function POST(request: Request) {
     organizationId: string;
   };
 
-  const supabase = createServerClient();
-  const settings = await getOrganizationSettingsById(body.organizationId);
-  const { config: metaConfig } = getMetaConfigFromSettings(settings);
+  after(async () => {
+    try {
+      const supabase = createServerClient();
+      const settings = await getOrganizationSettingsById(body.organizationId);
+      const { config: metaConfig } = getMetaConfigFromSettings(settings);
 
-  await continueFlowQueue(
-    supabase,
-    body.conversationId,
-    body.contactPhone,
-    {
-      organizationId: body.organizationId,
-      metaConfig,
+      await continueFlowQueue(
+        supabase,
+        body.conversationId,
+        body.contactPhone,
+        {
+          organizationId: body.organizationId,
+          metaConfig,
+        }
+      );
+    } catch (error) {
+      console.error("[flow/continue] failed to continue queued flow", {
+        conversationId: body.conversationId,
+        organizationId: body.organizationId,
+        error,
+      });
     }
-  );
+  });
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, queued: true });
 }
