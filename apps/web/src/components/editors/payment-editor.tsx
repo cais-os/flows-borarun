@@ -11,6 +11,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useFlowStore } from "@/hooks/use-flow-store";
+import {
+  DEFAULT_PAYMENT_CTA_BUTTON_TEXT,
+  PAYMENT_LINK_VARIABLE,
+} from "@/lib/payment-message";
 import { MediaUploader } from "./media-uploader";
 import type { PaymentNodeData } from "@/types/node-data";
 
@@ -20,7 +24,7 @@ interface PaymentEditorProps {
 }
 
 const DEFAULT_MESSAGE =
-  "Para assinar o plano, clique no link abaixo:\n\n{{payment_link}}\n\nApos o pagamento, sua assinatura sera ativada automaticamente.";
+  "Para assinar o plano, clique no botao abaixo:\n\nApos o pagamento, sua assinatura sera ativada automaticamente.";
 
 export function PaymentEditor({ nodeId, data }: PaymentEditorProps) {
   const updateNodeData = useFlowStore((s) => s.updateNodeData);
@@ -137,14 +141,14 @@ export function PaymentEditor({ nodeId, data }: PaymentEditorProps) {
       </div>
 
       <div className="space-y-2">
-        <Label>Texto do botao (opcional)</Label>
+        <Label>Texto do botao</Label>
         <Input
-          value={data.ctaButtonText || ""}
+          value={data.ctaButtonText || DEFAULT_PAYMENT_CTA_BUTTON_TEXT}
           onChange={(e) => update({ ctaButtonText: e.target.value })}
-          placeholder="Ex: Pagar agora"
+          placeholder={DEFAULT_PAYMENT_CTA_BUTTON_TEXT}
         />
         <p className="text-xs text-slate-400">
-          Se preenchido, envia um botao clicavel em vez do link solto. O usuario clica e abre o checkout.
+          O link do Stripe abre neste botao, como no fluxo do Strava.
         </p>
       </div>
 
@@ -157,9 +161,9 @@ export function PaymentEditor({ nodeId, data }: PaymentEditorProps) {
           onChange={(e) => update({ messageText: e.target.value })}
         />
         <p className="text-xs text-slate-400">
-          Use{" "}
-          <code className="text-sky-600">{"{{payment_link}}"}</code>{" "}
-          para inserir o link de pagamento. Se vazio, usa a mensagem padrao.
+          Se usar{" "}
+          <code className="text-sky-600">{PAYMENT_LINK_VARIABLE}</code>, ele
+          sera removido do texto e usado no botao de pagamento.
         </p>
       </div>
 

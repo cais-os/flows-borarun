@@ -20,6 +20,7 @@ import { createDefaultSplits } from "@/lib/constants";
 import { DEFAULT_WEB_APP_MESSAGE } from "@/lib/runner/web-app-message";
 import { createDefaultWaitRoutes } from "@/lib/wait-for-reply";
 import { DEFAULT_AI_MODEL } from "@/lib/ai-models";
+import { DEFAULT_PAYMENT_CTA_BUTTON_TEXT } from "@/lib/payment-message";
 
 import { TriggerNode } from "@/components/nodes/trigger-node";
 import { SendMessageNode } from "@/components/nodes/send-message-node";
@@ -160,6 +161,7 @@ export function getDefaultData(type: string, preset?: PaletteNodePreset) {
         amount: 0,
         billingMode: "recurring",
         durationDays: 30,
+        ctaButtonText: DEFAULT_PAYMENT_CTA_BUTTON_TEXT,
       } satisfies PaymentNodeData;
     case NODE_TYPES.WHATSAPP_FLOW:
       return {
@@ -198,6 +200,7 @@ export function getDefaultData(type: string, preset?: PaletteNodePreset) {
           durationDays: 30,
           billingMode: "recurring",
           currency: "BRL",
+          ctaButtonText: DEFAULT_PAYMENT_CTA_BUTTON_TEXT,
         },
       } satisfies AgenticLoopNodeData;
     default:

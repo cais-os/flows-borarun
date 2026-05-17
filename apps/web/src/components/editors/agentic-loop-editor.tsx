@@ -12,6 +12,10 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useFlowStore } from "@/hooks/use-flow-store";
 import { AI_MODEL_OPTIONS, DEFAULT_AI_MODEL } from "@/lib/ai-models";
+import {
+  DEFAULT_PAYMENT_CTA_BUTTON_TEXT,
+  PAYMENT_LINK_VARIABLE,
+} from "@/lib/payment-message";
 import type {
   AgenticLoopPdfToolConfig,
   AgenticLoopPaymentToolConfig,
@@ -306,13 +310,13 @@ export function AgenticLoopEditor({
             </div>
 
             <div className="space-y-2">
-              <Label>Texto do botao (opcional)</Label>
+              <Label>Texto do botao</Label>
               <Input
-                value={paymentTool.ctaButtonText || ""}
+                value={paymentTool.ctaButtonText || DEFAULT_PAYMENT_CTA_BUTTON_TEXT}
                 onChange={(event) =>
                   patchPaymentTool({ ctaButtonText: event.target.value })
                 }
-                placeholder="Ex: Pagar agora"
+                placeholder={DEFAULT_PAYMENT_CTA_BUTTON_TEXT}
               />
             </div>
 
@@ -324,10 +328,13 @@ export function AgenticLoopEditor({
                 onChange={(event) =>
                   patchPaymentTool({ messageText: event.target.value })
                 }
-                placeholder={"Para assinar o plano, clique no link abaixo:\n\n{{payment_link}}"}
+                placeholder={
+                  "Para assinar o plano, clique no botao abaixo:\n\nApos o pagamento, ativo seu acesso."
+                }
               />
               <p className="text-xs text-slate-500">
-                Use <code>{"{{payment_link}}"}</code> para inserir o checkout.
+                Se usar <code>{PAYMENT_LINK_VARIABLE}</code>, ele sera removido
+                do texto e usado no botao de pagamento.
               </p>
             </div>
           </div>
