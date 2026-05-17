@@ -2,8 +2,9 @@
 
 import NextImage from "next/image";
 import { useCallback, useRef, type DragEvent, useState } from "react";
-import { Upload, X, FileText, ImageIcon, Mic, Video } from "lucide-react";
+import { Upload, X, FileText, ImageIcon, Mic, Video, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { prepareMediaFileForNode } from "@/lib/media-upload-client";
 
 interface MediaUploaderProps {
   accept: string;
@@ -38,16 +39,32 @@ export function MediaUploader({
 }: MediaUploaderProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const handleFile = useCallback(
-    (file: File) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        onChange(reader.result as string, file.name);
-      };
-      reader.readAsDataURL(file);
+    async (file: File) => {
+      setUploadError(null);
+      setIsUploading(true);
+
+      try {
+        const preparedFile = await prepareMediaFileForNode({ type, file });
+        onChange(preparedFile.url, preparedFile.fileName);
+      } catch (error) {
+        setUploadError(
+          error instanceof Error
+            ? error.message
+            : `Nao foi possivel enviar ${typeLabels[type]}.`
+        );
+      } finally {
+        setIsUploading(false);
+
+        if (inputRef.current) {
+          inputRef.current.value = "";
+        }
+      }
     },
-    [onChange]
+    [onChange, type]
   );
 
   const handleDrop = useCallback(
@@ -55,7 +72,7 @@ export function MediaUploader({
       e.preventDefault();
       setIsDragging(false);
       const file = e.dataTransfer.files[0];
-      if (file) handleFile(file);
+      if (file) void handleFile(file);
     },
     [handleFile]
   );
@@ -96,10 +113,12 @@ export function MediaUploader({
 
   return (
     <div
-      onClick={() => inputRef.current?.click()}
+      onClick={() => {
+        if (!isUploading) inputRef.current?.click();
+      }}
       onDragOver={(e) => {
         e.preventDefault();
-        setIsDragging(true);
+        if (!isUploading) setIsDragging(true);
       }}
       onDragLeave={() => setIsDragging(false)}
       onDrop={handleDrop}
@@ -109,18 +128,28 @@ export function MediaUploader({
           : "border-gray-200 hover:border-gray-300"
       }`}
     >
-      <Upload size={20} className="mx-auto text-gray-400 mb-2" />
+      {isUploading ? (
+        <Loader2 size={20} className="mx-auto mb-2 animate-spin text-gray-400" />
+      ) : (
+        <Upload size={20} className="mx-auto text-gray-400 mb-2" />
+      )}
       <p className="text-sm text-gray-500">
-        Arraste ou clique para enviar {typeLabels[type]}
+        {isUploading
+          ? `Enviando ${typeLabels[type]}...`
+          : `Arraste ou clique para enviar ${typeLabels[type]}`}
       </p>
+      {uploadError && (
+        <p className="mt-2 text-xs text-destructive">{uploadError}</p>
+      )}
       <input
         ref={inputRef}
         type="file"
         accept={accept}
         className="hidden"
+        disabled={isUploading}
         onChange={(e) => {
           const file = e.target.files?.[0];
-          if (file) handleFile(file);
+          if (file) void handleFile(file);
         }}
       />
     </div>
