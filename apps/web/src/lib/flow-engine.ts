@@ -51,6 +51,10 @@ import {
   type StripePaymentBillingMode,
 } from "@/lib/stripe-payments";
 import {
+  buildPaymentCtaBodyText,
+  resolvePaymentCtaButtonText,
+} from "@/lib/payment-message";
+import {
   AGENTIC_LOOP_ACTIVE_NODE_ID_KEY,
   AGENTIC_LOOP_SALES_MODE_KEY,
 } from "@/lib/agentic-loop";
@@ -623,19 +627,25 @@ export async function sendStripePaymentLinkForNode(params: {
     message = buildPaymentMessage(paymentUrl);
   }
 
-  if (params.paymentData.ctaButtonText?.trim()) {
-    const bodyText = params.paymentData.messageText?.trim()
-      ? interpolateVariables(
-          params.paymentData.messageText.replace(/\{\{payment_link\}\}/g, "").trim(),
-          flowVariables
-        )
-      : `Para assinar o plano ${params.paymentData.planName || ""}, clique no botao abaixo:`.trim();
+  const ctaButtonText = resolvePaymentCtaButtonText(
+    params.paymentData.ctaButtonText
+  );
+
+  if (ctaButtonText) {
+    const bodyText = interpolateVariables(
+      buildPaymentCtaBodyText({
+        messageText: params.paymentData.messageText,
+        planName: params.paymentData.planName,
+        paymentUrl,
+      }),
+      flowVariables
+    );
 
     const ctaResult = await sendMetaWhatsAppCtaUrlMessage(
       {
         to: params.contactPhone,
         bodyText,
-        buttonText: params.paymentData.ctaButtonText,
+        buttonText: ctaButtonText,
         url: paymentUrl,
       },
       params.metaConfig
@@ -652,7 +662,7 @@ export async function sendStripePaymentLinkForNode(params: {
       metadata: {
         payment_url: paymentUrl,
         whatsapp_interactive_kind: "cta_url",
-        whatsapp_button_text: params.paymentData.ctaButtonText,
+        whatsapp_button_text: ctaButtonText,
       },
     });
   } else if (params.paymentData.mediaUrl) {
