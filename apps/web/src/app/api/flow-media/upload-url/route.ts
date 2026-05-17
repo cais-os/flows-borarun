@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import {
   FLOW_MEDIA_UPLOAD_BUCKET,
   buildFlowMediaUploadPath,
+  ensureFlowMediaUploadBucket,
   getFlowMediaUploadValidationError,
   type FlowMediaUploadType,
 } from "@/lib/flow-media-upload";
@@ -30,6 +31,21 @@ export async function POST(request: Request) {
 
   const context = await getCurrentOrganizationContext();
   const supabase = createServerClient();
+
+  try {
+    await ensureFlowMediaUploadBucket(supabase.storage);
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Falha ao preparar bucket de upload.",
+      },
+      { status: 500 }
+    );
+  }
+
   const path = buildFlowMediaUploadPath({
     organizationId: context.organizationId,
     mediaType: mediaType as FlowMediaUploadType,

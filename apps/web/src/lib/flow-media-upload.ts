@@ -2,6 +2,25 @@ export const FLOW_MEDIA_UPLOAD_BUCKET = "images";
 
 export type FlowMediaUploadType = "video";
 
+type StorageError = {
+  message?: string;
+  statusCode?: string | number;
+};
+
+type FlowMediaBucketStorage = {
+  getBucket: (bucket: string) => Promise<{
+    data: unknown | null;
+    error: StorageError | null;
+  }>;
+  createBucket: (
+    bucket: string,
+    options: { public: boolean }
+  ) => Promise<{
+    data: unknown | null;
+    error: StorageError | null;
+  }>;
+};
+
 const MIME_EXTENSION_BY_CONTENT_TYPE: Record<string, string> = {
   "video/mp4": "mp4",
   "video/3gpp": "3gp",
@@ -34,6 +53,53 @@ function getSafeFileStem(fileName: string) {
     .replace(/^-+|-+$/g, "");
 
   return normalized || "media";
+}
+
+function isMissingStorageResource(error: StorageError | null) {
+  if (!error) return false;
+
+  const statusCode = String(error.statusCode || "");
+  const message = String(error.message || "").toLowerCase();
+
+  return (
+    statusCode === "404" ||
+    message.includes("does not exist") ||
+    message.includes("not found")
+  );
+}
+
+function isAlreadyExistingStorageResource(error: StorageError | null) {
+  if (!error) return false;
+
+  const statusCode = String(error.statusCode || "");
+  const message = String(error.message || "").toLowerCase();
+
+  return (
+    statusCode === "409" ||
+    message.includes("already exists") ||
+    message.includes("already exist")
+  );
+}
+
+export async function ensureFlowMediaUploadBucket(
+  storage: FlowMediaBucketStorage,
+  bucket = FLOW_MEDIA_UPLOAD_BUCKET
+) {
+  const { data, error } = await storage.getBucket(bucket);
+
+  if (data) return;
+
+  if (error && !isMissingStorageResource(error)) {
+    throw new Error(error.message || "Falha ao verificar bucket de midia.");
+  }
+
+  const { error: createError } = await storage.createBucket(bucket, {
+    public: true,
+  });
+
+  if (createError && !isAlreadyExistingStorageResource(createError)) {
+    throw new Error(createError.message || "Falha ao criar bucket de midia.");
+  }
 }
 
 export function buildFlowMediaUploadPath(params: {
