@@ -32,6 +32,7 @@ function loadTypeScriptModule(relativePath) {
 const {
   FLOW_MEDIA_UPLOAD_BUCKET,
   buildFlowMediaUploadPath,
+  ensureFlowMediaUploadBucket,
   getFlowMediaUploadValidationError,
 } = loadTypeScriptModule("./flow-media-upload.ts");
 
@@ -72,4 +73,50 @@ test("validates video upload metadata before creating a signed URL", () => {
     }) || "",
     /video/i
   );
+});
+
+test("creates the public media bucket when it is missing", async () => {
+  const calls = [];
+
+  await ensureFlowMediaUploadBucket({
+    async getBucket(bucket) {
+      calls.push({ method: "getBucket", bucket });
+      return {
+        data: null,
+        error: {
+          message: "The related resource does not exist",
+          statusCode: "404",
+        },
+      };
+    },
+    async createBucket(bucket, options) {
+      calls.push({ method: "createBucket", bucket, options });
+      return { data: { name: bucket }, error: null };
+    },
+  });
+
+  assert.equal(
+    JSON.stringify(calls),
+    JSON.stringify([
+      { method: "getBucket", bucket: "images" },
+      { method: "createBucket", bucket: "images", options: { public: true } },
+    ])
+  );
+});
+
+test("does not recreate the media bucket when it already exists", async () => {
+  const calls = [];
+
+  await ensureFlowMediaUploadBucket({
+    async getBucket(bucket) {
+      calls.push({ method: "getBucket", bucket });
+      return { data: { id: bucket }, error: null };
+    },
+    async createBucket(bucket, options) {
+      calls.push({ method: "createBucket", bucket, options });
+      return { data: { name: bucket }, error: null };
+    },
+  });
+
+  assert.deepEqual(calls, [{ method: "getBucket", bucket: "images" }]);
 });
