@@ -1933,16 +1933,26 @@ async function executeSendMessageNode(params: {
         params.metaConfig
       );
 
-      await params.supabase.from("messages").insert({
-        conversation_id: params.conversationId,
-        content: caption || params.data.fileName || "Video",
-        type: "video",
-        sender: "bot",
-        media_url: videoUrl,
-        file_name: params.data.fileName,
-        node_id: params.node.id,
-        wa_message_id: result.messageId,
-      });
+      const { error: messageInsertError } = await params.supabase
+        .from("messages")
+        .insert({
+          conversation_id: params.conversationId,
+          content: caption || params.data.fileName || "Video",
+          type: "video",
+          sender: "bot",
+          media_url: videoUrl,
+          file_name: params.data.fileName,
+          node_id: params.node.id,
+          wa_message_id: result.messageId,
+        });
+
+      if (messageInsertError) {
+        console.error("Flow engine: failed to persist video message", {
+          conversationId: params.conversationId,
+          nodeId: params.node.id,
+          error: messageInsertError,
+        });
+      }
     } catch (error) {
       console.error("Flow engine: failed to send video", error);
     }
